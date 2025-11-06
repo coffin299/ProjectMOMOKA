@@ -1,0 +1,33 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://coffin399.github.io/llmcord-JP-plana/sitemap.xml
+
+# Crawl-delay (prevents aggressive crawling)
+Crawl-delay: 1
+
+# Additional directives for better SEO
+# Allow all major search engines
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+# Disallow crawling of unnecessary files
+Disallow: /assets/icons/
+Disallow: /*.bat$
+Disallow: /*.py$
+Disallow: /*.yaml$
+Disallow: /*.yml$
+Disallow: /Dockerfile
+Disallow: /docker-compose.yaml
+Disallow: /requirements.txt
+Disallow: /main.py
+Disallow: /PLANA/
+Disallow: /docs/
+Disallow: /startPLANA.bat

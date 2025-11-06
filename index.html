@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta name="google-site-verification" content="STqpZioRe0Gg_BgeWLFgpXYZzfbKt-Ts0jZnscRFByg" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOMOKA - 他機能ボットをセルフホストしよう！</title>
+    <meta name="description" content="MOMOKA is a multi-functional Discord bot featuring AI chat (GPT-4o, Gemini), music playback, games, and more. Self-host your all-in-one Discord bot!">
+    <meta name="keywords" content="Discord Chat Bot,MOMOKA,ももか,AI Chat,Discord Bot,GPT-4o,Gemini,Music Bot,Discord Music Bot,AI Discord Bot,Japanese Discord Bot,TTS Bot,Game Bot,Self-Host">
+    <meta name="author" content="coffin399">
+    <meta name="robots" content="index, follow">
+    <meta name="language" content="ja">
+    <meta name="revisit-after" content="7 days">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://momoka-project.com/">
+
+    <!-- Alternate Languages -->
+    <link rel="alternate" hreflang="en" href="https://momoka-project.com/">
+    <link rel="alternate" hreflang="ja" href="https://momoka-project.com/">
+
+    <!-- Favicon -->
+    <link rel="icon" href="./assets/icons/favicon.ico">
+    <link rel="apple-touch-icon" href="./assets/images/icon.png">
+
+    <!-- OGP -->
+    <meta property="og:title" content="MOMOKA - 他機能ボットをセルフホストしよう！">
+    <meta property="og:description" content="MOMOKA is a multi-functional Discord bot featuring AI chat (GPT-4o, Gemini), music playback, games, and more. Self-host your all-in-one Discord bot!">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://momoka-project.com/">
+    <meta property="og:site_name" content="MOMOKA">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:site" content="@coffin299">
+    <meta name="twitter:creator" content="@coffin299">
+    <meta name="twitter:title" content="MOMOKA - 他機能ボットをセルフホストしよう！">
+    <meta name="twitter:description" content="MOMOKA is a multi-functional Discord bot featuring AI chat (GPT-4o, Gemini), music playback, games, and more.">
+
+    <!-- Discord Theme Color -->
+    <meta name="theme-color" content="#5865F2">
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "MOMOKA",
+      "description": "MOMOKA is a multi-functional Discord bot featuring AI chat (GPT-4o, Gemini), music playback, games, and more. Self-host your all-in-one Discord bot!",
+      "operatingSystem": "Discord",
+      "applicationCategory": "CommunicationApplication",
+      "url": "https://momoka-project.com",
+      "image": "https://momoka-project.com/assets/images/icon.png",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "coffin399",
+        "url": "https://github.com/coffin399"
+      },
+      "codeRepository": "https://github.com/coffin399/ProjectMOMOKA",
+      "programmingLanguage": "Python",
+      "datePublished": "2024-01-01",
+      "dateModified": "2025-11-04",
+      "version": "2.0",
+      "featureList": [
+        "AI Chat with GPT-4o and Gemini",
+        "Music Playback from YouTube, Spotify",
+        "Text-to-Speech (TTS)",
+        "Image Generation",
+        "Game Features and Entertainment",
+        "Real-time Notifications",
+        "Media Downloader"
+      ]
+    }
+    </script>
+
+    <!-- Preconnect for Performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <img src="./assets/images/icon.png" alt="MOMOKA" class="nav-logo-img">
+                <h2>MOMOKA</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#commands" class="nav-link">Commands</a>
+                <a href="#setup" class="nav-link">Setup</a>
+                <a href="commands.html" class="nav-link">Command List</a>
+            </div>
+            <div class="nav-toggle" aria-label="Toggle navigation menu">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" role="banner">
+        <div class="hero-container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="gradient-text">MOMOKA</span>
+                    <br>他機能ボットをセルフホストしよう！
+                </h1>
+                <p class="hero-subtitle">
+                    All-in-one Discord bot with AI chat, music playback, image generation, and more!
+                </p>
+                <div class="hero-buttons">
+                    <a href="https://github.com/coffin399/ProjectMOMOKA"
+                       class="btn btn-primary" target="_blank" rel="noopener noreferrer" aria-label="View MOMOKA on GitHub">
+                        <i class="fab fa-github" aria-hidden="true"></i>
+                        View on GitHub
+                    </a>
+                    <a href="https://discord.gg/H79HKKqx3s"
+                       class="btn btn-secondary" target="_blank" rel="noopener noreferrer" aria-label="Join Discord Server">
+                        <i class="fab fa-discord" aria-hidden="true"></i>
+                        Discord Server
+                    </a>
+                </div>
+            </div>
+            <div class="hero-discord-window">
+                <div class="discord-window">
+                    <div class="discord-header">
+                        <div class="discord-header-buttons">
+                            <span class="discord-button close"></span>
+                            <span class="discord-button minimize"></span>
+                            <span class="discord-button maximize"></span>
+                        </div>
+                        <div class="discord-title">MOMOKA Bot</div>
+                    </div>
+                    <div class="discord-content">
+                        <div class="discord-message">
+                            <img src="./assets/images/icon.png" alt="MOMOKA" class="discord-avatar">
+                            <div class="discord-message-content">
+                                <div class="discord-message-header">
+                                    <span class="discord-username">MOMOKA</span>
+                                    <span class="discord-timestamp">今日 12:34</span>
+                                </div>
+                                <div class="discord-message-text">
+                                    <span class="lang-ja">こんにちは！MOMOKAです。AIチャット、音楽再生、画像生成など、様々な機能を搭載したオールインワンボットです！</span>
+                                    <span class="lang-en">Hello! I'm MOMOKA. An all-in-one bot with AI chat, music playback, image generation, and more!</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="discord-message">
+                            <img src="./assets/images/icon.png" alt="MOMOKA" class="discord-avatar">
+                            <div class="discord-message-content">
+                                <div class="discord-message-header">
+                                    <span class="discord-username">MOMOKA</span>
+                                    <span class="discord-timestamp">今日 12:35</span>
+                                </div>
+                                <div class="discord-message-text">
+                                    <span class="lang-ja">多言語対応で、日本語と英語の両方で会話できます。セルフホストして、あなたのサーバーに最適なボットを作りましょう！</span>
+                                    <span class="lang-en">I support multiple languages including Japanese and English. Self-host me and create the perfect bot for your server!</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="discord-message typing">
+                            <img src="./assets/images/icon.png" alt="MOMOKA" class="discord-avatar">
+                            <div class="discord-message-content">
+                                <div class="discord-typing-indicator">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features" aria-label="Main features">
+        <div class="container">
+            <h2 class="section-title">Main Features / 主な機能</h2>
+            <div class="features-grid">
+                <!-- AI Chat Feature -->
+                <article class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <h3>AI Chat (LLM)</h3>
+                    <p>Advanced AI conversation with multiple models support. Context-aware conversations, image recognition, and customizable personality.</p>
+                    <ul class="feature-list">
+                        <li>OpenAI GPT-4o, Google Gemini 2.5 Pro</li>
+                        <li>Image recognition & generation</li>
+                        <li>Web search integration</li>
+                        <li>Multi-language support</li>
+                    </ul>
+                </article>
+
+                <!-- Music Feature -->
+                <article class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <i class="fas fa-music"></i>
+                    </div>
+                    <h3>Music Playback</h3>
+                    <p>High-quality music playback with advanced queue management and multiple source support.</p>
+                    <ul class="feature-list">
+                        <li>YouTube, Spotify, Google Drive</li>
+                        <li>Queue management & shuffle</li>
+                        <li>Loop modes & seek function</li>
+                        <li>Volume control</li>
+                    </ul>
+                </article>
+
+                <!-- Image Generation -->
+                <article class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <i class="fas fa-image"></i>
+                    </div>
+                    <h3>Image Generation</h3>
+                    <p>Generate images using Stable Diffusion with local model support.</p>
+                    <ul class="feature-list">
+                        <li>Stable Diffusion WebUI Forge</li>
+                        <li>Local model support</li>
+                        <li>Custom prompts & styles</li>
+                        <li>High-quality output</li>
+                    </ul>
+                </article>
+
+                <!-- TTS -->
+                <article class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <i class="fas fa-volume-up"></i>
+                    </div>
+                    <h3>Text-to-Speech</h3>
+                    <p>High-quality Japanese voice synthesis with Style-Bert-VITS2 integration.</p>
+                    <ul class="feature-list">
+                        <li>Style-Bert-VITS2 support</li>
+                        <li>Join/leave notifications</li>
+                        <li>Customizable speech settings</li>
+                        <li>Dictionary management</li>
+                    </ul>
+                </article>
+
+                <!-- Game Tracking -->
+                <article class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h3>Game Statistics</h3>
+                    <p>Track player statistics for popular games.</p>
+                    <ul class="feature-list">
+                        <li>Rainbow Six Siege stats</li>
+                        <li>VALORANT stats</li>
+                        <li>Player comparison</li>
+                        <li>Real-time updates</li>
+                    </ul>
+                </article>
+
+                <!-- Notifications -->
+                <article class="feature-card">
+                    <div class="feature-icon" aria-hidden="true">
+                        <i class="fas fa-bell"></i>
+                    </div>
+                    <h3>Real-time Notifications</h3>
+                    <p>Stay informed with real-time notifications for earthquakes, tsunamis, and Twitch streams.</p>
+                    <ul class="feature-list">
+                        <li>Earthquake & tsunami alerts (Japan)</li>
+                        <li>Twitch stream notifications</li>
+                        <li>Custom message settings</li>
+                        <li>Multiple channel support</li>
+                    </ul>
+                </article>
+            </div>
+        </div>
+    </section>
+
+    <!-- Commands Preview -->
+    <section id="commands" class="commands-preview" aria-label="Command categories">
+        <div class="container">
+            <h2 class="section-title">Command Categories / コマンドカテゴリ</h2>
+            <div class="commands-grid">
+                <div class="command-category">
+                    <h3><i class="fas fa-robot" aria-hidden="true"></i> AI & LLM</h3>
+                    <div class="command-list">
+                        <span class="command">/chat</span>
+                        <span class="command">/set-ai-bio</span>
+                        <span class="command">/switch-models</span>
+                        <span class="command">/memory-save</span>
+                    </div>
+                </div>
+                <div class="command-category">
+                    <h3><i class="fas fa-music" aria-hidden="true"></i> Music</h3>
+                    <div class="command-list">
+                        <span class="command">/play</span>
+                        <span class="command">/queue</span>
+                        <span class="command">/skip</span>
+                        <span class="command">/volume</span>
+                    </div>
+                </div>
+                <div class="command-category">
+                    <h3><i class="fas fa-image" aria-hidden="true"></i> Image</h3>
+                    <div class="command-list">
+                        <span class="command">/generate</span>
+                        <span class="command">/meow</span>
+                    </div>
+                </div>
+                <div class="command-category">
+                    <h3><i class="fas fa-chart-line" aria-hidden="true"></i> Trackers</h3>
+                    <div class="command-list">
+                        <span class="command">/valorant-stats</span>
+                        <span class="command">/r6s-stats</span>
+                        <span class="command">/r6s-compare</span>
+                    </div>
+                </div>
+                <div class="command-category">
+                    <h3><i class="fas fa-bell" aria-hidden="true"></i> Notifications</h3>
+                    <div class="command-list">
+                        <span class="command">/earthquake_channel</span>
+                        <span class="command">/twitch_set</span>
+                        <span class="command">/earthquake_status</span>
+                    </div>
+                </div>
+                <div class="command-category">
+                    <h3><i class="fas fa-volume-up" aria-hidden="true"></i> TTS</h3>
+                    <div class="command-list">
+                        <span class="command">/say</span>
+                        <span class="command">/speech enable</span>
+                        <span class="command">/tts volume</span>
+                    </div>
+                </div>
+            </div>
+            <div class="commands-cta">
+                <a href="commands.html" class="btn btn-primary">
+                    <i class="fas fa-list" aria-hidden="true"></i>
+                    View All Commands
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Setup Section -->
+    <section id="setup" class="setup" aria-label="Quick setup guide">
+        <div class="container">
+            <h2 class="section-title">Quick Setup / クイックセットアップ</h2>
+            <div class="setup-content">
+                <div class="setup-steps">
+                    <article class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h3>Clone Repository</h3>
+                            <p>Clone the MOMOKA repository to your local machine.</p>
+                        </div>
+                    </article>
+                    <article class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h3>Configure Settings</h3>
+                            <p>Copy <code>config.default.yaml</code> to <code>config.yaml</code> and fill in your bot token and API keys.</p>
+                        </div>
+                    </article>
+                    <article class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h3>Run the Bot</h3>
+                            <p>Use <code>startMOMOKA.bat</code> on Windows or <code>python main.py</code> to start the bot!</p>
+                        </div>
+                    </article>
+                </div>
+                <div class="setup-info">
+                    <h3>Self-Hosting / セルフホスト</h3>
+                    <p>For advanced users who want to host their own instance:</p>
+                    <div class="code-block">
+                        <code>git clone https://github.com/coffin399/ProjectMOMOKA.git</code>
+                        <code>cd ProjectMOMOKA</code>
+                        <code>pip install -r requirements.txt</code>
+                        <code>python main.py</code>
+                    </div>
+                    <p>See the <a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub repository</a> for detailed setup instructions.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer" role="contentinfo">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>MOMOKA</h3>
+                    <p>Multi-functional Discord Bot with AI, Music, and more!</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Links</h3>
+                    <ul>
+                        <li><a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+                        <li><a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">Discord Server</a></li>
+                        <li><a href="commands.html">Command List</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Support</h3>
+                    <ul>
+                        <li>Discord: coffin299</li>
+                        <li>Twitter: @coffin299</li>
+                        <li>GitHub Issues</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 MOMOKA. Dev by ごみぃ(coffin299) & えんじょ(Autmn134F)</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

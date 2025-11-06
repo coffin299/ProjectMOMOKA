@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOMOKA Commands - Complete Command List | Discord Bot Commands</title>
+    <meta name="description" content="Complete list of all MOMOKA Discord bot commands including AI chat, music, games, TTS, notifications, and more. Find the perfect command for your server.">
+    <meta name="keywords" content="MOMOKA commands,Discord bot commands,AI chat commands,music bot commands,TTS commands,Discord bot list">
+    <meta name="author" content="coffin399">
+    
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://momoka-project.com/commands.html">
+    
+    <!-- OGP -->
+    <meta property="og:title" content="MOMOKA Commands - Complete Command List">
+    <meta property="og:description" content="Complete list of all MOMOKA Discord bot commands including AI chat, music, games, TTS, notifications, and more.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://momoka-project.com/commands.html">
+    <meta property="og:site_name" content="MOMOKA">
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:site" content="@coffin299">
+    <meta name="twitter:creator" content="@coffin299">
+    <meta name="twitter:title" content="MOMOKA Commands - Complete Command List">
+    <meta name="twitter:description" content="Complete list of all MOMOKA Discord bot commands including AI chat, music, games, TTS, notifications, and more.">
+    
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "MOMOKA Commands - Complete Command List",
+      "description": "Complete list of all MOMOKA Discord bot commands including AI chat, music, games, TTS, notifications, and more.",
+      "url": "https://momoka-project.com/commands.html",
+      "image": "https://momoka-project.com/assets/images/icon.png",
+      "mainEntity": {
+        "@type": "SoftwareApplication",
+        "name": "MOMOKA",
+        "applicationCategory": "CommunicationApplication",
+        "operatingSystem": "Discord"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "coffin399",
+        "url": "https://github.com/coffin399"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-logo">
+                <a href="index.html">
+                    <img src="./assets/images/icon.png" alt="MOMOKA" class="nav-logo-img">
+                    <h2>MOMOKA</h2>
+                </a>
+            </div>
+            <div class="nav-menu">
+                <a href="index.html" class="nav-link">Home</a>
+                <a href="index.html#features" class="nav-link">Features</a>
+                <a href="index.html#setup" class="nav-link">Setup</a>
+                <a href="commands.html" class="nav-link active">Commands</a>
+            </div>
+            <div class="nav-toggle">
+                <span class="bar"></span>
+                <span class="bar"></span>
+                <span class="bar"></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Commands Header -->
+    <section class="commands-header">
+        <div class="container">
+            <h1 class="page-title">MOMOKA Commands / コマンド一覧</h1>
+            <p class="page-subtitle">Complete list of all available commands organized by category</p>
+        </div>
+    </section>
+
+    <!-- Commands Content -->
+    <section class="commands-content">
+        <div class="container">
+            <!-- AI & LLM Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-robot"></i>
+                    AI & LLM Commands / AI・LLMコマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/chat</h3>
+                        <p>Chat with the AI without needing to mention. / AIと対話します。メンション不要で会話できます。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>message</code> - The message you want to send to the AI</li>
+                                <li><code>image_url</code> - URL of an image (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/set-ai-bio</h3>
+                        <p>Set the AI's personality/role (bio) for this channel. / このチャンネルのAIの性格や役割(bio)を設定します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>bio</code> - AI personality description</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/show-ai-bio</h3>
+                        <p>Show the AI's current bio for this channel. / このチャンネルのAIに現在設定されているbioを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/reset-ai-bio</h3>
+                        <p>Reset the AI's bio to default for this channel. / このチャンネルのAIのbioをデフォルト設定に戻します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/set-user-bio</h3>
+                        <p>Save your information for the AI to remember. / AIにあなたの情報を記憶させます。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>bio</code> - Your information</li>
+                                <li><code>mode</code> - Overwrite or append mode</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/show-user-bio</h3>
+                        <p>Show the information the AI has stored about you. / AIが記憶しているあなたの情報を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/reset-user-bio</h3>
+                        <p>Delete all information the AI has stored about you. / AIが記憶しているあなたの情報をすべて削除します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/memory-save</h3>
+                        <p>Save information to the global shared memory. / グローバル共有メモリに情報を保存します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>key</code> - Memory key</li>
+                                <li><code>value</code> - Memory value</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/memory-list</h3>
+                        <p>List all global shared memories. / グローバル共有メモリの情報を一覧表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/memory-delete</h3>
+                        <p>Delete a global shared memory. / グローバル共有メモリから情報を削除します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>key</code> - The key of the memory to delete</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/switch-models</h3>
+                        <p>Switches the AI model used for this channel. / このチャンネルで使用するAIモデルを切り替えます。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>model</code> - Select the model you want to use</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/switch-models-default-server</h3>
+                        <p>Resets the AI model for this channel to the server default. / このチャンネルのAIモデルをサーバーのデフォルト設定に戻します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/switch-image-model</h3>
+                        <p>Switch the image generation model for this channel. / このチャンネルの画像生成モデルを切り替えます。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>model</code> - Image generation model</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/reset-image-model</h3>
+                        <p>Reset the image generation model to default for this channel. / このチャンネルの画像生成モデルをデフォルトに戻します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/show-image-model</h3>
+                        <p>Show the current image generation model for this channel. / このチャンネルの現在の画像生成モデルを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/list-image-models</h3>
+                        <p>List all available image generation models. / 利用可能な画像生成モデルの一覧を表示します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>provider</code> - Filter by provider (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/llm_help</h3>
+                        <p>Displays help and usage guidelines for LLM (AI Chat) features. / LLM (AI対話) 機能のヘルプと利用ガイドラインを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/clear_history</h3>
+                        <p>Clears the history of the current conversation thread. / 現在の会話スレッドの履歴をクリアします。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Music Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-music"></i>
+                    Music Commands / 音楽コマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/play</h3>
+                        <p>Play or add a song to the queue. / 楽曲を再生またはキューに追加します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Song name, URL, or search query</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/seek</h3>
+                        <p>Seek to a specific time in the current song. / 現在の楽曲の特定の時間に移動します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>time</code> - Time in seconds or MM:SS format</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/pause</h3>
+                        <p>Pause playback. / 再生を一時停止します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/resume</h3>
+                        <p>Resume playback. / 再生を再開します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/skip</h3>
+                        <p>Skip the current song. / 現在の楽曲をスキップします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/stop</h3>
+                        <p>Stop playback and clear the queue. / 再生を停止し、キューをクリアします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/leave</h3>
+                        <p>Disconnect the bot from the voice channel. / ボイスチャンネルからボットを切断します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/queue</h3>
+                        <p>Display the current playback queue. / 現在の再生キューを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/nowplaying</h3>
+                        <p>Display information about the currently playing song. / 現在再生中の楽曲の情報を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/shuffle</h3>
+                        <p>Shuffle the playback queue. / 再生キューをシャッフルします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/clear</h3>
+                        <p>Clear the playback queue. / 再生キューをクリアします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/remove</h3>
+                        <p>Remove a song from the queue by its number. / キューから楽曲を番号で削除します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>index</code> - Queue position number</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/volume</h3>
+                        <p>Change the playback volume. / 再生音量を変更します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>level</code> - Volume level (0-200)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/loop</h3>
+                        <p>Set the loop mode. / ループモードを設定します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>mode</code> - Loop mode (off, one, all)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/join</h3>
+                        <p>Connect the bot to the user's voice channel. / ユーザーのボイスチャンネルにボットを接続します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/music_help</h3>
+                        <p>Display help for music features. / 音楽機能のヘルプを表示します。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TTS Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-volume-up"></i>
+                    TTS Commands / TTSコマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/say</h3>
+                        <p>Convert text to speech. / テキストを音声で読み上げます。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>text</code> - Text to convert to speech</li>
+                                <li><code>model_id</code> - Model ID (optional)</li>
+                                <li><code>style</code> - Style name (optional)</li>
+                                <li><code>style_weight</code> - Style strength (optional)</li>
+                                <li><code>speed</code> - Speech rate (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/tts volume</h3>
+                        <p>Set TTS volume. / TTSの音量を設定します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>volume</code> - Volume level (0-200)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/speech enable</h3>
+                        <p>Enable message reading for this channel. / このチャンネルのメッセージ読み上げを有効にします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/speech disable</h3>
+                        <p>Disable message reading. / メッセージ読み上げを無効にします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/speech skip</h3>
+                        <p>Skip current speech. / 現在の読み上げをスキップします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/autojoin enable</h3>
+                        <p>Enable automatic joining when you join a voice channel. / あなたがVCに参加した際、BOTも自動で参加するようにします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/autojoin disable</h3>
+                        <p>Disable automatic joining. / BOTの自動参加設定を解除します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/join-leave-notification enable</h3>
+                        <p>Enable voice notifications for VC join/leave. / VCへの入退室を音声で通知するようにします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/join-leave-notification disable</h3>
+                        <p>Disable voice notifications for VC join/leave. / VCへの入退室通知を無効にします。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/dictionary add</h3>
+                        <p>Add a word to the speech dictionary. / 読み上げ辞書に単語を追加します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>word</code> - Word to add</li>
+                                <li><code>reading</code> - Pronunciation</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/dictionary remove</h3>
+                        <p>Remove a word from the speech dictionary. / 読み上げ辞書から単語を削除します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>word</code> - Word to remove</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/dictionary list</h3>
+                        <p>Display the speech dictionary. / 登録されている辞書の一覧を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/dictionary search</h3>
+                        <p>Search the speech dictionary. / 辞書から単語を検索します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Search query</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Utility Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-tools"></i>
+                    Utility Commands / ユーティリティコマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/gacha</h3>
+                        <p>Simulate Blue Archive-style student recruitment. / ブルーアーカイブ風の生徒募集をシミュレートします。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>rolls</code> - Number of rolls</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/diceroll</h3>
+                        <p>Roll a dice within a specified range. / 指定された範囲でダイスを振ります。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>min_value</code> - Minimum value</li>
+                                <li><code>max_value</code> - Maximum value</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/roll</h3>
+                        <p>Roll dice in nDn format. / nDn形式でダイスを振ります。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>expression</code> - Dice expression (e.g., 2d6+3)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/check</h3>
+                        <p>Roll dice and optionally perform a check. / ダイスを振り、オプションでチェックを実行します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>expression</code> - Dice expression</li>
+                                <li><code>condition</code> - Check condition (optional)</li>
+                                <li><code>target</code> - Target value (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/ping</h3>
+                        <p>Show the bot's current latency. / ボットの現在のレイテンシを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/serverinfo</h3>
+                        <p>Display information about the current server. / 現在のサーバーの情報を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/userinfo</h3>
+                        <p>Display information about a specified user. / 指定されたユーザーの情報を表示します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>user</code> - User to get info for (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/avatar</h3>
+                        <p>Display the avatar of a specified user. / 指定されたユーザーのアバターを表示します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>user</code> - User to get avatar for (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/arona</h3>
+                        <p>Show the Arona Music Bot repository. / Arona Music Botリポジトリを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/plana</h3>
+                        <p>Show the llmcord-JP-plana repository. / llmcord-JP-planaリポジトリを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/support</h3>
+                        <p>Show how to contact the developer. / 開発者への連絡方法を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/invite</h3>
+                        <p>Invite the bot to a server. / サーバーにボットを招待します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/updates</h3>
+                        <p>Show the bot's latest update history. / ボットの最新更新履歴を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/enable-logging</h3>
+                        <p>Set a channel to receive bot logs. / ボットログを受信するチャンネルを設定します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>channel</code> - Channel for logging</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/disable-logging</h3>
+                        <p>Stop sending bot logs to a channel. / チャンネルへのボットログ送信を停止します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>channel</code> - Channel to disable logging for</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/help</h3>
+                        <p>Display general help information for the bot. / ボットの一般的なヘルプ情報を表示します。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Image Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-image"></i>
+                    Image Commands / 画像コマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/meow</h3>
+                        <p>Display a cute cat picture. / 可愛い猫の画像を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/yandere</h3>
+                        <p>Search images from Yandere (NSFW only). / Yandereから画像を検索します（NSFW専用）。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Search query (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/danbooru</h3>
+                        <p>Search images from Danbooru (NSFW only). / Danbooruから画像を検索します（NSFW専用）。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Search query (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timer Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-clock"></i>
+                    Timer Commands / タイマーコマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/timer start</h3>
+                        <p>Start a timer. / タイマーを開始します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/timer stop</h3>
+                        <p>Stop a timer and display elapsed time. / タイマーを停止し、経過時間を表示します。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Tracker Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-chart-line"></i>
+                    Game Tracker Commands / ゲームトラッカーコマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/valorant-stats</h3>
+                        <p>Get Valorant player statistics. / Valorantプレイヤーの統計を取得します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>riot_id</code> - Player's Riot ID (e.g., PlayerName#TAG)</li>
+                                <li><code>region</code> - Region (eu, na, ap, kr, latam, br)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/valorant-recent</h3>
+                        <p>Get recent competitive matches. / 最近のコンペティティブマッチを取得します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>riot_id</code> - Player's Riot ID</li>
+                                <li><code>region</code> - Region</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-stats</h3>
+                        <p>Display comprehensive R6 Siege player statistics. / 包括的なR6 Siegeプレイヤー統計を表示します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>username</code> - Player username</li>
+                                <li><code>platform</code> - Platform (uplay, psn, xbl)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-compare</h3>
+                        <p>Compare two players' statistics. / 2人のプレイヤーの統計を比較します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>player1</code> - First player username</li>
+                                <li><code>player2</code> - Second player username</li>
+                                <li><code>platform</code> - Platform</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-operator</h3>
+                        <p>Search Rainbow Six Siege operator information. / Rainbow Six Siegeオペレーター情報を検索します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>name</code> - Operator name (optional)</li>
+                                <li><code>role</code> - Filter by role (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-server-status</h3>
+                        <p>Check Rainbow Six Siege server status. / Rainbow Six Siegeサーバー状態を確認します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-search</h3>
+                        <p>Search for operators, weapons, maps, and more. / オペレーター、武器、マップなどを検索します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Search query</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-map</h3>
+                        <p>Get information about Rainbow Six Siege maps. / Rainbow Six Siegeマップの情報を取得します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>name</code> - Map name (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/r6s-weapon</h3>
+                        <p>Get information about weapons. / 武器の情報を取得します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>name</code> - Weapon name</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notification Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-bell"></i>
+                    Notification Commands / 通知コマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/earthquake_channel</h3>
+                        <p>Set notification channel for earthquake and tsunami information. / 地震・津波情報の通知チャンネルを設定します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>channel</code> - Notification channel</li>
+                                <li><code>info_type</code> - Type of information (緊急地震速報, 地震情報, 津波予報, すべて)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_status</h3>
+                        <p>Check the status of the earthquake and tsunami information system. / 地震・津波情報システムの状態を確認します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_test</h3>
+                        <p>Send a test notification for earthquake and tsunami information. / 地震・津波情報のテスト通知を送信します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>info_type</code> - Type of information to test</li>
+                                <li><code>max_scale</code> - Maximum seismic intensity for test</li>
+                                <li><code>tsunami_level</code> - Tsunami level for test</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_remove</h3>
+                        <p>Remove earthquake and tsunami notification settings. / 地震・津波情報の通知設定を削除します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>info_type</code> - Type of notification to remove</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_help</h3>
+                        <p>Display help for the earthquake and tsunami information system. / 地震・津波情報システムのヘルプを表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_map</h3>
+                        <p>Display recent earthquakes on a map of Japan. / 最近の地震を日本地図上に表示します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>limit</code> - Number of earthquakes to display</li>
+                                <li><code>min_scale</code> - Minimum seismic intensity</li>
+                                <li><code>hours</code> - Hours to look back</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_history</h3>
+                        <p>Display recent earthquake information. / 最近の地震情報を表示します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>limit</code> - Number of earthquakes to display</li>
+                                <li><code>min_scale</code> - Minimum seismic intensity</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/earthquake_debug</h3>
+                        <p>Display detailed diagnostic information for notification settings. / 通知設定の詳細診断情報を表示します。</p>
+                    </div>
+                    <div class="command-card">
+                        <h3>/twitch_set</h3>
+                        <p>Set up Twitch stream notifications. / Twitch配信通知を設定します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>twitch_url</code> - Twitch channel URL</li>
+                                <li><code>notification_channel</code> - Discord notification channel</li>
+                                <li><code>message</code> - Custom notification message (optional)</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/twitch_remove</h3>
+                        <p>Remove Twitch stream notification settings. / Twitch配信通知の設定を解除します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>twitch_channel</code> - Twitch channel to remove</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/twitch_test</h3>
+                        <p>Send a test notification for Twitch streams. / Twitch配信通知のテストメッセージを送信します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>twitch_channel</code> - Twitch channel to test</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/twitch_list</h3>
+                        <p>Display list of configured Twitch notifications. / 設定されているTwitch通知の一覧を表示します。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Media Downloader Commands -->
+            <div class="command-section">
+                <h2 class="section-title">
+                    <i class="fas fa-download"></i>
+                    Media Downloader Commands / メディアダウンローダーコマンド
+                </h2>
+                <div class="commands-grid">
+                    <div class="command-card">
+                        <h3>/ytdlp_video</h3>
+                        <p>Download a video and share it via Google Drive. / 動画をダウンロードし、Google Drive経由で共有します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Video URL or search query</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="command-card">
+                        <h3>/ytdlp_audio</h3>
+                        <p>Download audio and share it via Google Drive. / 音声をダウンロードし、Google Drive経由で共有します。</p>
+                        <div class="command-params">
+                            <strong>Parameters:</strong>
+                            <ul>
+                                <li><code>query</code> - Video URL or search query</li>
+                                <li><code>audio_format</code> - Output audio format (mp3, m4a, opus, flac, wav)</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3>MOMOKA</h3>
+                    <p>Multi-functional Discord Bot with AI, Music, and more!</p>
+                </div>
+                <div class="footer-section">
+                    <h3>Links</h3>
+                    <ul>
+                        <li><a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+                        <li><a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">Discord Server</a></li>
+                        <li><a href="index.html">Home</a></li>
+                    </ul>
+                </div>
+                <div class="footer-section">
+                    <h3>Support</h3>
+                    <ul>
+                        <li>Discord: coffin299</li>
+                        <li>Twitter: @coffin299</li>
+                        <li>GitHub Issues</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 MOMOKA. Dev by ごみぃ(coffin299) & えんじょ(Autmn134F)</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
