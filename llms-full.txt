@@ -44,7 +44,7 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 2. If bots appear offline site-wide, wait; the operator’s PC may be updating unnoticed.
 3. Slash commands missing: re-invite and wait for Discord sync.
 4. debate/cross_check broken: ensure both PLANA and ARONA are in the guild.
-5. Link Fix: suppress original embeds then silent quote-reply with fixer URL; needs Send Messages + Embed Links + Manage Messages; skip with `fxignore` or `<url>`; configure `/linkfix`.
+5. Link Fix: suppress original embeds then silent quote-reply with fixer URL; needs Send Messages + Embed Links + Manage Messages; skip with `fxignore` or `<url>`; configure `/linkfix` (master/site/bulk-all toggles; enabled by default).
 6. NSFW image commands require Discord NSFW channels (except safe variants).
 
 ## Self-hosting
