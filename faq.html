@@ -78,7 +78,7 @@
               "name": "Link Fix を止めたい",
               "acceptedAnswer": {
                 "@type": "Answer",
-                "text": "メッセージ単位では本文にfxignoreを含めるかURLを<>で囲みます。サーバー単位ではManage Server権限で/linkfixを使い、機能全体・全サイト一括・サイト別で無効化できます（デフォルトは有効）。"
+                "text": "メッセージ単位では本文にfxignoreを含めるかURLを<>で囲みます。サーバー単位ではチャットでスラッシュコマンド/linkfixを実行（サーバー管理権限が必要）し、設定画面から機能全体・全サイト一括・サイト別で無効化できます（デフォルトは有効）。"
               }
             },
             {
@@ -191,8 +191,8 @@
                 <ul>
                     <li class="lang-ja">そのメッセージだけ: 本文に <code>fxignore</code> を含める、または URL を <code>&lt;...&gt;</code> で囲む</li>
                     <li class="lang-en">Per message: include <code>fxignore</code>, or wrap the URL in <code>&lt;...&gt;</code></li>
-                    <li class="lang-ja">サーバー単位: <code>/linkfix</code>（サーバー管理権限）で機能全体・全サイト一括・サイト別の無効化（デフォルトは有効）</li>
-                    <li class="lang-en">Per server: use <code>/linkfix</code> (Manage Server) for master, bulk-all, or per-site disable (enabled by default)</li>
+                    <li class="lang-ja">サーバー単位: チャットでスラッシュコマンド <code>/linkfix</code> を実行（サーバー管理権限が必要）。設定画面で機能全体・全サイト一括・サイト別の無効化（デフォルトは有効）</li>
+                    <li class="lang-en">Per server: run the <code>/linkfix</code> slash command in Discord (Manage Server required). Disable via the settings panel — master, bulk-all, or per-site (enabled by default)</li>
                 </ul>
 
                 <h2 id="arona-redirect">
