@@ -541,6 +541,16 @@ pre code {
     border-top: 1px solid var(--border);
 }
 
+.docs-credit {
+    margin-top: 0.75rem;
+    font-size: 0.85rem;
+    color: var(--text-faint);
+}
+
+.docs-credit a {
+    color: var(--text-muted);
+}
+
 .docs-toc {
     position: sticky;
     top: var(--header-height);
