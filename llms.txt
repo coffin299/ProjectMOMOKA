@@ -28,7 +28,7 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 - TTS / speech (PLANA)
 - Notifications: earthquake/tsunami (Japan), Twitch (PLANA)
 - Trackers: Valorant, Rainbow Six Siege (PLANA)
-- Link Fix for broken social embeds (PLANA); skip with `fxignore` or `<>` around URLs; configure via `/linkfix`
+- Link Fix suppresses original social embeds and quote-replies with fixer URLs (PLANA); skip with `fxignore` or `<>` around URLs; configure via `/linkfix`
 - Media download via `/download_audio` / `/download_video` (PLANA)
 - Utilities: `/help`, `/invite`, `/support`, timers, `/match_time`, etc.
 
