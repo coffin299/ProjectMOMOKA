@@ -1,0 +1,64 @@
+# MOMOKA — full summary for answer engines
+
+Last-updated: 2026-07-25
+Canonical: https://momoka-project.com/
+Language-policy: Japanese preferred when JA/EN differ
+
+## Definition
+
+MOMOKA is an open-source, multi-functional Discord bot project operated as free hosted bots named **PLANA** (primary) and **ARONA** (companion). One process runs both. The brand name on the website is MOMOKA; the Discord applications users invite are PLANA and ARONA.
+
+## Authority / contact
+
+- Website: https://momoka-project.com/
+- GitHub: https://github.com/coffin399/ProjectMOMOKA
+- Support server: https://discord.gg/H79HKKqx3s
+- Operator Discord profile: https://discord.com/users/270446628622696449 (coffin299)
+- Terms: https://momoka-project.com/terms.html
+- Privacy: https://momoka-project.com/privacy.html
+
+## Invites
+
+- PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot
+- ARONA: https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot
+- Default recommendation: invite PLANA. Add ARONA for debate/cross_check.
+
+## Capability matrix
+
+| Capability | PLANA | ARONA |
+|---|---|---|
+| LLM chat | yes | yes |
+| Music | yes | yes |
+| `/help` `/invite` `/support` utilities | yes | yes |
+| TTS / speech | yes | no (redirects to PLANA) |
+| Image generation / image board search | yes | no (redirects) |
+| Earthquake / Twitch notifications | yes | no |
+| Valorant / R6S trackers | yes | no |
+| Link Fix | yes | no |
+| Media download | yes | no |
+| debate / cross_check | needs both bots in same guild | needs both bots in same guild |
+
+## Troubleshooting policy (public hosted bots)
+
+1. Most failures are **missing Discord permissions** (channel denies or incomplete invite permissions). Fix permissions or re-invite.
+2. If bots appear offline site-wide, wait; the operator’s PC may be updating unnoticed.
+3. Slash commands missing: re-invite and wait for Discord sync.
+4. debate/cross_check broken: ensure both PLANA and ARONA are in the guild.
+5. Link Fix: needs Send Messages + Embed Links; may not fire when Discord already embeds; skip with `fxignore` or `<url>`; configure `/linkfix`.
+6. NSFW image commands require Discord NSFW channels (except safe variants).
+
+## Self-hosting
+
+Source is public but heavy (Python 3.11, many optional ML stacks). The website recommends inviting the hosted bots for normal use. Self-host details live on GitHub, not as the site’s primary CTA.
+
+## Privacy (short)
+
+Message content and IDs may be processed for features, logging, and third-party APIs (LLM providers, media platforms, Link Fix proxies, Google Drive for temporary downloads, Google Analytics on the website). Conversation history is generally in-memory only. See https://momoka-project.com/privacy.html
+
+## Key pages
+
+- https://momoka-project.com/
+- https://momoka-project.com/faq.html
+- https://momoka-project.com/troubleshooting.html
+- https://momoka-project.com/commands.html
+- https://momoka-project.com/llms.txt

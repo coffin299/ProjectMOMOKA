@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-46J394MX23"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-46J394MX23');
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAQ｜MOMOKA Discordボットよくある質問</title>
+    <meta name="description" content="MOMOKA（PLANA / ARONA）のFAQ。招待の選び方、権限、Link Fixの止め方、サポート連絡先、トラブル時の案内。">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+    <link rel="canonical" href="https://momoka-project.com/faq.html">
+    <link rel="alternate" hreflang="ja" href="https://momoka-project.com/faq.html">
+    <link rel="alternate" hreflang="en" href="https://momoka-project.com/faq.html">
+    <link rel="alternate" hreflang="x-default" href="https://momoka-project.com/faq.html">
+    <link rel="icon" href="./assets/icons/favicon.ico">
+    <link rel="apple-touch-icon" href="./assets/images/icon.png">
+    <meta property="og:title" content="FAQ｜MOMOKA Discordボット">
+    <meta property="og:description" content="PLANA / ARONA の招待、権限、Link Fix、サポートについて。">
+    <meta property="og:url" content="https://momoka-project.com/faq.html">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="MOMOKA">
+    <meta property="og:locale" content="ja_JP">
+    <meta property="og:image" content="https://momoka-project.com/assets/images/icon.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="FAQ｜MOMOKA">
+    <meta name="twitter:description" content="PLANA / ARONA の招待、権限、Link Fix、サポート。">
+    <meta name="twitter:image" content="https://momoka-project.com/assets/images/icon.png">
+    <meta name="theme-color" content="#1c1917">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "BreadcrumbList",
+          "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://momoka-project.com/" },
+            { "@type": "ListItem", "position": 2, "name": "FAQ", "item": "https://momoka-project.com/faq.html" }
+          ]
+        },
+        {
+          "@type": "FAQPage",
+          "url": "https://momoka-project.com/faq.html",
+          "dateModified": "2026-07-25",
+          "inLanguage": ["ja", "en"],
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "MOMOKA / PLANA / ARONA の関係は？",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "MOMOKAはプロジェクト名です。ユーザーが招待するDiscordボットはPLANA（プライマリ）とARONA（コンパニオン）の2体で、1プロセスで両方を動かしています。公式サイトは https://momoka-project.com/ です。"
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "どっちを招待すればいい？",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "まずはPLANAを招待してください。TTS・画像・通知・トラッカー・Link Fix・メディアダウンロードはPLANAのみです。LLMのdebateやcross_checkを使う場合だけ、同じサーバーにARONAも入れてください。"
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "必要な権限は？",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "公式招待リンクに含まれる権限一式を付与してください。チャンネルごとの拒否があると動きません。不具合の多くは権限不足が原因です。詳細は https://momoka-project.com/troubleshooting.html を参照してください。"
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Link Fix を止めたい",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "メッセージ単位では本文にfxignoreを含めるかURLを<>で囲みます。サーバー単位ではManage Server権限で/linkfixを使います。"
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "ボットがオフラインのときは？",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "開発者のPCにアップデート等が入って気づいていないことが多いです。しばらく待ってから再試行し、長時間続く場合のみサポートサーバーまたはcoffin299へ連絡してください。"
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "動かないときは？",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "https://momoka-project.com/troubleshooting.html を確認してください。多くの場合は権限不足か、ボットが一時オフラインです。"
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("momoka-theme");
+          if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", t);
+          var l = localStorage.getItem("momoka-lang");
+          if (!l) l = (navigator.language || "ja").toLowerCase().indexOf("ja") === 0 ? "ja" : "en";
+          document.documentElement.setAttribute("data-lang", l);
+          document.documentElement.setAttribute("lang", l);
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="docs-body">
+    <header class="docs-header">
+        <div class="docs-header-left">
+            <button type="button" class="docs-menu-btn" data-docs-menu aria-expanded="false" aria-label="Menu">☰</button>
+            <a class="docs-brand" href="index.html">
+                <img src="./assets/images/icon.png" alt="" width="28" height="28">
+                <span>MOMOKA</span>
+            </a>
+        </div>
+        <div class="site-controls">
+            <button type="button" class="ctrl-btn" data-lang-toggle>EN</button>
+            <button type="button" class="ctrl-btn" data-theme-toggle>Dark</button>
+        </div>
+    </header>
+    <div class="docs-overlay" aria-hidden="true"></div>
+
+    <div class="docs-layout">
+        <aside class="docs-sidebar" aria-label="Docs">
+            <div class="docs-nav-label">Docs</div>
+            <nav class="docs-nav">
+                <a href="index.html"><span class="lang-ja">ホーム</span><span class="lang-en">Home</span></a>
+                <a href="faq.html" class="active">FAQ</a>
+                <a href="troubleshooting.html"><span class="lang-ja">トラブルシューティング</span><span class="lang-en">Troubleshooting</span></a>
+                <a href="commands.html"><span class="lang-ja">コマンド</span><span class="lang-en">Commands</span></a>
+                <a href="terms.html"><span class="lang-ja">利用規約</span><span class="lang-en">Terms</span></a>
+                <a href="privacy.html"><span class="lang-ja">プライバシー</span><span class="lang-en">Privacy</span></a>
+            </nav>
+        </aside>
+
+        <main class="docs-main">
+            <article class="docs-article">
+                <h1 class="lang-ja">よくある質問</h1>
+                <h1 class="lang-en">FAQ</h1>
+                <p class="docs-lede lang-ja">MOMOKA（PLANA / ARONA）の使い方に関する質問です。動かないときは <a href="troubleshooting.html">トラブルシューティング</a> を先に確認してください。</p>
+                <p class="docs-lede lang-en">Common questions about MOMOKA (PLANA / ARONA). If something is broken, start with <a href="troubleshooting.html">Troubleshooting</a>.</p>
+
+                <h2 id="what-is-momoka">
+                    <span class="lang-ja">MOMOKA / PLANA / ARONA の関係は？</span>
+                    <span class="lang-en">What are MOMOKA, PLANA, and ARONA?</span>
+                </h2>
+                <p class="lang-ja"><strong>答え:</strong> <strong>MOMOKA</strong> はプロジェクト名です。実際に招待する Discord ボットは <strong>PLANA</strong>（プライマリ）と <strong>ARONA</strong>（コンパニオン）の2体です。1プロセスで両方を動かしています。</p>
+                <p class="lang-en"><strong>Answer:</strong> <strong>MOMOKA</strong> is the project name. The Discord bots you invite are <strong>PLANA</strong> (primary) and <strong>ARONA</strong> (companion), run together in one process.</p>
+
+                <h2 id="which-to-invite">
+                    <span class="lang-ja">どっちを招待すればいい？</span>
+                    <span class="lang-en">Which bot should I invite?</span>
+                </h2>
+                <p class="lang-ja"><strong>答え:</strong> まずは <strong>PLANA</strong> を招待してください。TTS・画像・通知・トラッカー・Link Fix・メディアダウンロードなどは PLANA のみです。LLM の討論（debate）やクロスチェックを使う場合は、同じサーバーに <strong>ARONA も</strong> 入れてください。</p>
+                <p class="lang-en"><strong>Answer:</strong> Start with <strong>PLANA</strong>. TTS, images, notifications, trackers, Link Fix, and media download are PLANA-only. For LLM debate / cross_check, invite <strong>ARONA as well</strong> to the same server.</p>
+
+                <h2 id="permissions">
+                    <span class="lang-ja">必要な権限は？</span>
+                    <span class="lang-en">What permissions are needed?</span>
+                </h2>
+                <p class="lang-ja">招待リンクに含まれる権限一式を付与してください。チャンネルごとに閲覧・送信・履歴・埋め込みリンク・ボイス接続などが拒否されていると動きません。不具合の多くは権限不足が原因です。詳しくは <a href="troubleshooting.html">トラブルシューティング</a> を参照してください。</p>
+                <p class="lang-en">Grant the permission set included in the invite link. Channel-level denies (view, send, history, embed links, voice, etc.) will break features. Most issues are permission-related — see <a href="troubleshooting.html">Troubleshooting</a>.</p>
+
+                <h2 id="privacy">
+                    <span class="lang-ja">データはどう扱われる？</span>
+                    <span class="lang-en">How is my data handled?</span>
+                </h2>
+                <p class="lang-ja">機能提供のため、メッセージ内容や ID などが処理・ログ・外部 API に渡ることがあります。詳細は <a href="privacy.html">プライバシーポリシー</a> を読んでください。</p>
+                <p class="lang-en">Message content and IDs may be processed, logged, or sent to third-party APIs to provide features. See the <a href="privacy.html">Privacy Policy</a>.</p>
+
+                <h2 id="linkfix">
+                    <span class="lang-ja">Link Fix を止めたい</span>
+                    <span class="lang-en">How do I stop Link Fix?</span>
+                </h2>
+                <ul>
+                    <li class="lang-ja">そのメッセージだけ: 本文に <code>fxignore</code> を含める、または URL を <code>&lt;...&gt;</code> で囲む</li>
+                    <li class="lang-en">Per message: include <code>fxignore</code>, or wrap the URL in <code>&lt;...&gt;</code></li>
+                    <li class="lang-ja">サーバー単位: <code>/linkfix</code>（サーバー管理権限）で無効化やサイト別設定</li>
+                    <li class="lang-en">Per server: use <code>/linkfix</code> (Manage Server) to disable or configure sites</li>
+                </ul>
+
+                <h2 id="arona-redirect">
+                    <span class="lang-ja">ARONA に TTS などを頼むと？</span>
+                    <span class="lang-en">What if I ask ARONA for TTS / images / etc.?</span>
+                </h2>
+                <p class="lang-ja">ARONA は LLM・音楽・一部ユーティリティ中心です。TTS・画像・通知・トラッカー・Link Fix などは PLANA 専用のため、PLANA への誘導メッセージが返ります。</p>
+                <p class="lang-en">ARONA focuses on LLM, music, and some utilities. TTS, images, notifications, trackers, and Link Fix are PLANA-only — ARONA will redirect you to PLANA.</p>
+
+                <h2 id="support">
+                    <span class="lang-ja">不具合や要望はどこへ？</span>
+                    <span class="lang-en">Where do I report bugs or requests?</span>
+                </h2>
+                <ul>
+                    <li class="lang-ja"><a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">サポートサーバー</a></li>
+                    <li class="lang-en"><a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">Support server</a></li>
+                    <li class="lang-ja">運営 Discord: <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a> へ DM</li>
+                    <li class="lang-en">Operator Discord: <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a> — DM</li>
+                    <li class="lang-ja">またはボットの <code>/support</code></li>
+                    <li class="lang-en">Or use <code>/support</code> on the bot</li>
+                </ul>
+
+                <h2 id="self-host">
+                    <span class="lang-ja">セルフホストはできる？</span>
+                    <span class="lang-en">Can I self-host?</span>
+                </h2>
+                <p class="lang-ja">ソースは公開していますが、依存が多く上級者向けです。一般利用は公開ボットの招待を推奨します。詳細は <a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a> を参照してください。</p>
+                <p class="lang-en">The source is public but heavy and aimed at advanced users. For normal use, invite the hosted bots. See <a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>
+
+                <h2 id="broken">
+                    <span class="lang-ja">動かないときは？</span>
+                    <span class="lang-en">Something is not working?</span>
+                </h2>
+                <p class="lang-ja"><a href="troubleshooting.html">トラブルシューティング</a> を確認してください。多くの場合は権限不足か、ボットが一時オフラインです。</p>
+                <p class="lang-en">See <a href="troubleshooting.html">Troubleshooting</a>. Most issues are missing permissions or a temporary offline period.</p>
+
+                <p class="docs-meta lang-ja">日英で内容に差異がある場合は、日本語を優先します。</p>
+                <p class="docs-meta lang-en">If the Japanese and English texts differ, the Japanese version takes priority.</p>
+            </article>
+        </main>
+
+        <aside class="docs-toc" aria-label="On this page">
+            <div class="docs-toc-title">On this page</div>
+            <nav data-docs-toc></nav>
+        </aside>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

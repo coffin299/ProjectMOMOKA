@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404｜ページが見つかりません — MOMOKA</title>
+    <meta name="robots" content="noindex, follow">
+    <meta name="description" content="お探しのページは見つかりませんでした。MOMOKA 公式サイトへ戻ってください。">
+    <link rel="canonical" href="https://momoka-project.com/">
+    <link rel="icon" href="./assets/icons/favicon.ico">
+    <meta name="theme-color" content="#1c1917">
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("momoka-theme");
+          if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", t);
+          var l = localStorage.getItem("momoka-lang");
+          if (!l) l = (navigator.language || "ja").toLowerCase().indexOf("ja") === 0 ? "ja" : "en";
+          document.documentElement.setAttribute("data-lang", l);
+          document.documentElement.setAttribute("lang", l);
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="lp-body">
+    <header class="lp-header">
+        <a class="lp-brand" href="index.html">
+            <img src="./assets/images/icon.png" alt="" width="36" height="36">
+            <span>MOMOKA</span>
+        </a>
+    </header>
+    <main class="lp-main">
+        <div class="lp-hero">
+            <h1>404</h1>
+            <p class="lp-lede lang-ja">ページが見つかりませんでした。</p>
+            <p class="lp-lede lang-en">Page not found.</p>
+            <div class="lp-ctas">
+                <a class="btn btn-primary" href="index.html">
+                    <span class="lang-ja">ホームへ</span>
+                    <span class="lang-en">Home</span>
+                </a>
+                <a class="btn btn-ghost" href="faq.html">FAQ</a>
+            </div>
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-46J394MX23"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-46J394MX23');
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>トラブルシューティング｜MOMOKA Discordボット</title>
+    <meta name="description" content="MOMOKAが動かないときの対処。権限不足、オフライン、slashコマンド、音楽、Link Fix、通知など症状別の確認手順。">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+    <link rel="canonical" href="https://momoka-project.com/troubleshooting.html">
+    <link rel="alternate" hreflang="ja" href="https://momoka-project.com/troubleshooting.html">
+    <link rel="alternate" hreflang="en" href="https://momoka-project.com/troubleshooting.html">
+    <link rel="alternate" hreflang="x-default" href="https://momoka-project.com/troubleshooting.html">
+    <link rel="icon" href="./assets/icons/favicon.ico">
+    <link rel="apple-touch-icon" href="./assets/images/icon.png">
+    <meta property="og:title" content="トラブルシューティング｜MOMOKA">
+    <meta property="og:description" content="権限・オフライン・コマンド・音楽・Link Fixなど症状別の対処法。">
+    <meta property="og:url" content="https://momoka-project.com/troubleshooting.html">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="MOMOKA">
+    <meta property="og:locale" content="ja_JP">
+    <meta property="og:image" content="https://momoka-project.com/assets/images/icon.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="トラブルシューティング｜MOMOKA">
+    <meta name="twitter:description" content="権限・オフライン・コマンド・音楽・Link Fixなどの対処法。">
+    <meta name="twitter:image" content="https://momoka-project.com/assets/images/icon.png">
+    <meta name="theme-color" content="#1c1917">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebPage",
+          "name": "トラブルシューティング｜MOMOKA",
+          "description": "MOMOKA Discordボットの症状別トラブルシューティング。多くの不具合は権限不足が原因です。",
+          "url": "https://momoka-project.com/troubleshooting.html",
+          "dateModified": "2026-07-25",
+          "inLanguage": ["ja", "en"],
+          "isPartOf": { "@type": "WebSite", "name": "MOMOKA", "url": "https://momoka-project.com/" },
+          "breadcrumb": {
+            "@type": "BreadcrumbList",
+            "itemListElement": [
+              { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://momoka-project.com/" },
+              { "@type": "ListItem", "position": 2, "name": "Troubleshooting", "item": "https://momoka-project.com/troubleshooting.html" }
+            ]
+          }
+        },
+        {
+          "@type": "HowTo",
+          "name": "MOMOKAが動かないときに権限を直す",
+          "description": "公開ホストのMOMOKA（PLANA / ARONA）で機能しない場合、まずDiscord権限を見直します。",
+          "totalTime": "PT10M",
+          "step": [
+            {
+              "@type": "HowToStep",
+              "name": "チャンネル権限を確認",
+              "text": "対象チャンネルでボットの閲覧、メッセージ送信、履歴閲覧、埋め込みリンク、アプリコマンド使用、ボイス接続・発言が拒否されていないか確認する。"
+            },
+            {
+              "@type": "HowToStep",
+              "name": "招待リンクから再付与",
+              "text": "公式招待リンクまたは /invite からPLANA / ARONAを再招待し、不足権限を付け直す。"
+            },
+            {
+              "@type": "HowToStep",
+              "name": "オフラインなら待つ",
+              "text": "ボット全体がオフラインのときは、運営PCのアップデート等で一時停止していることが多い。しばらく待ってから再試行する。"
+            },
+            {
+              "@type": "HowToStep",
+              "name": "それでもダメならサポートへ",
+              "text": "サポートサーバー https://discord.gg/H79HKKqx3s または運営 coffin299 にDMする。"
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("momoka-theme");
+          if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", t);
+          var l = localStorage.getItem("momoka-lang");
+          if (!l) l = (navigator.language || "ja").toLowerCase().indexOf("ja") === 0 ? "ja" : "en";
+          document.documentElement.setAttribute("data-lang", l);
+          document.documentElement.setAttribute("lang", l);
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="docs-body">
+    <header class="docs-header">
+        <div class="docs-header-left">
+            <button type="button" class="docs-menu-btn" data-docs-menu aria-expanded="false" aria-label="Menu">☰</button>
+            <a class="docs-brand" href="index.html">
+                <img src="./assets/images/icon.png" alt="" width="28" height="28">
+                <span>MOMOKA</span>
+            </a>
+        </div>
+        <div class="site-controls">
+            <button type="button" class="ctrl-btn" data-lang-toggle>EN</button>
+            <button type="button" class="ctrl-btn" data-theme-toggle>Dark</button>
+        </div>
+    </header>
+    <div class="docs-overlay" aria-hidden="true"></div>
+
+    <div class="docs-layout">
+        <aside class="docs-sidebar" aria-label="Docs">
+            <div class="docs-nav-label">Docs</div>
+            <nav class="docs-nav">
+                <a href="index.html"><span class="lang-ja">ホーム</span><span class="lang-en">Home</span></a>
+                <a href="faq.html">FAQ</a>
+                <a href="troubleshooting.html" class="active"><span class="lang-ja">トラブルシューティング</span><span class="lang-en">Troubleshooting</span></a>
+                <a href="commands.html"><span class="lang-ja">コマンド</span><span class="lang-en">Commands</span></a>
+                <a href="terms.html"><span class="lang-ja">利用規約</span><span class="lang-en">Terms</span></a>
+                <a href="privacy.html"><span class="lang-ja">プライバシー</span><span class="lang-en">Privacy</span></a>
+            </nav>
+        </aside>
+
+        <main class="docs-main">
+            <article class="docs-article">
+                <h1 class="lang-ja">トラブルシューティング</h1>
+                <h1 class="lang-en">Troubleshooting</h1>
+                <p class="docs-lede lang-ja">まず疑うのは<strong>権限不足</strong>です。チャンネル権限や招待時のパーミッションを見直し、必要なら招待リンクから再付与してください。ボット全体がオフラインのときは、しばらく待ってから再度お試しください。</p>
+                <p class="docs-lede lang-en">Start by checking <strong>missing permissions</strong>. Review channel permissions and the invite permission set; re-invite via the invite link if needed. If bots are offline site-wide, wait a while and try again.</p>
+
+                <div class="docs-callout">
+                    <strong class="lang-ja">ボットがオフラインのとき</strong>
+                    <strong class="lang-en">When the bot is offline</strong>
+                    <p class="lang-ja" style="margin:0">開発者の PC にアップデート等が入っていて、本人が気づいていないだけのことが多いです。しばらく待ってから再度お試しください。長時間続く場合のみサポートへご連絡ください。</p>
+                    <p class="lang-en" style="margin:0">Often the developer’s PC is updating (or similar) and they simply have not noticed yet. Please wait a while and try again. Contact support only if it stays offline for a long time.</p>
+                </div>
+
+                <h2 id="offline">
+                    <span class="lang-ja">ボットがオフライン / 全体的に応答しない</span>
+                    <span class="lang-en">Bot offline / no response at all</span>
+                </h2>
+                <ol>
+                    <li class="lang-ja">上記のとおり、しばらく待つ</li>
+                    <li class="lang-en">Wait for a while, as noted above</li>
+                    <li class="lang-ja">長時間続く場合は <a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">サポートサーバー</a>、または <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a> へ DM</li>
+                    <li class="lang-en">If it lasts a long time: <a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">support server</a>, or DM <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a></li>
+                </ol>
+
+                <h2 id="ai-silent">
+                    <span class="lang-ja">AI / メンションに反応しない</span>
+                    <span class="lang-en">AI / mentions do not respond</span>
+                </h2>
+                <ul>
+                    <li class="lang-ja">チャンネルで Bot の<strong>閲覧・メッセージ送信・履歴閲覧・アプリコマンド使用</strong>が許可されているか</li>
+                    <li class="lang-en">Channel allows the bot to <strong>view, send, read history, use application commands</strong></li>
+                    <li class="lang-ja">正しいボット（PLANA または ARONA）をメンションしているか</li>
+                    <li class="lang-en">You are mentioning the correct bot (PLANA or ARONA)</li>
+                    <li class="lang-ja">解決しなければ招待リンクから再招待して権限を付け直す</li>
+                    <li class="lang-en">If still broken, re-invite with the invite link to refresh permissions</li>
+                </ul>
+
+                <h2 id="slash">
+                    <span class="lang-ja">スラッシュコマンドが出ない</span>
+                    <span class="lang-en">Slash commands missing</span>
+                </h2>
+                <p class="lang-ja">招待スコープや権限不足が原因であることが多いです。<code>/invite</code> やサイトの招待リンクから再招待し、反映まで少し待ってください。</p>
+                <p class="lang-en">Usually invite scope or permissions. Re-invite via <code>/invite</code> or the site invite links, then wait a bit for Discord to sync.</p>
+
+                <h2 id="debate">
+                    <span class="lang-ja">debate / cross_check が動かない</span>
+                    <span class="lang-en">debate / cross_check does not work</span>
+                </h2>
+                <p class="lang-ja">同じサーバーに <strong>PLANA と ARONA の両方</strong>が必要です。不足している方を <code>/invite</code> から追加してください。</p>
+                <p class="lang-en">Both <strong>PLANA and ARONA</strong> must be in the same server. Add the missing one via <code>/invite</code>.</p>
+
+                <h2 id="arona-features">
+                    <span class="lang-ja">ARONA で TTS・画像・通知などが使えない</span>
+                    <span class="lang-en">TTS / images / notifications fail on ARONA</span>
+                </h2>
+                <p class="lang-ja">仕様です。これらの機能は <strong>PLANA のみ</strong>です。誘導に従って PLANA を使ってください。</p>
+                <p class="lang-en">By design — those features are <strong>PLANA-only</strong>. Follow the redirect and use PLANA.</p>
+
+                <h2 id="music">
+                    <span class="lang-ja">音楽が鳴らない</span>
+                    <span class="lang-en">Music does not play</span>
+                </h2>
+                <ul>
+                    <li class="lang-ja">ボイスチャンネルへの<strong>接続・発言</strong>権限</li>
+                    <li class="lang-en"><strong>Connect / Speak</strong> in the voice channel</li>
+                    <li class="lang-ja">Bot がその VC に入れるか、他 Bot との競合</li>
+                    <li class="lang-en">The bot can join that VC; check conflicts with other bots</li>
+                    <li class="lang-ja">権限を直してもダメならサポートへ</li>
+                    <li class="lang-en">If permissions look fine, contact support</li>
+                </ul>
+
+                <h2 id="linkfix">
+                    <span class="lang-ja">Link Fix が動かない</span>
+                    <span class="lang-en">Link Fix does not run</span>
+                </h2>
+                <ul>
+                    <li class="lang-ja"><strong>メッセージ送信・埋め込みリンク</strong>（元メッセージの embed 抑制にはメッセージ管理）</li>
+                    <li class="lang-en"><strong>Send Messages / Embed Links</strong> (Manage Messages helps suppress broken embeds)</li>
+                    <li class="lang-ja">公式 embed が既にある場合は発火しないことがあります</li>
+                    <li class="lang-en">May not fire when Discord already shows a normal embed</li>
+                    <li class="lang-ja"><code>fxignore</code> / URL を <code>&lt;&gt;</code> 囲み / <code>/linkfix</code> で無効化していないか</li>
+                    <li class="lang-en">Check <code>fxignore</code>, <code>&lt;&gt;</code>-wrapped URLs, or <code>/linkfix</code> disabled</li>
+                </ul>
+
+                <h2 id="notifications">
+                    <span class="lang-ja">地震・Twitch 通知が来ない</span>
+                    <span class="lang-en">Earthquake / Twitch notifications missing</span>
+                </h2>
+                <p class="lang-ja">PLANA で通知チャンネルを設定し、そのチャンネルへの<strong>投稿権限</strong>があるか確認してください。</p>
+                <p class="lang-en">Configure channels on PLANA and ensure the bot can <strong>post in that channel</strong>.</p>
+
+                <h2 id="download">
+                    <span class="lang-ja">メディアダウンロードが失敗する</span>
+                    <span class="lang-en">Media download fails</span>
+                </h2>
+                <p class="lang-ja">チャンネル権限のほか、URL 非対応や運営側の一時制限のことがあります。繰り返す場合はサポートへ。</p>
+                <p class="lang-en">Besides channel permissions, the URL may be unsupported or temporarily limited. Contact support if it keeps failing.</p>
+
+                <h2 id="nsfw">
+                    <span class="lang-ja">画像検索が拒否される</span>
+                    <span class="lang-en">Image search is rejected</span>
+                </h2>
+                <p class="lang-ja">NSFW 系コマンドは Discord の NSFW チャンネルでのみ利用できます（安全版コマンドを除く）。</p>
+                <p class="lang-en">NSFW image commands require a Discord NSFW channel (except safe variants).</p>
+
+                <h2 id="permission-hint">
+                    <span class="lang-ja">権限更新のヒントが出る</span>
+                    <span class="lang-en">Permission update hint appears</span>
+                </h2>
+                <p class="lang-ja">ボットが不足権限を検出しています。表示された招待リンクから権限を付け直してください。</p>
+                <p class="lang-en">The bot detected missing permissions. Use the shown invite link to re-grant them.</p>
+
+                <h2 id="still-stuck">
+                    <span class="lang-ja">それでも解決しない</span>
+                    <span class="lang-en">Still stuck</span>
+                </h2>
+                <ul>
+                    <li class="lang-ja"><a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">サポートサーバー</a></li>
+                    <li class="lang-en"><a href="https://discord.gg/H79HKKqx3s" target="_blank" rel="noopener noreferrer">Support server</a></li>
+                    <li class="lang-ja">Discord: <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a>（DM）</li>
+                    <li class="lang-en">Discord: <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a> (DM)</li>
+                    <li class="lang-ja">可能ならサーバー ID と再現手順を添えてください</li>
+                    <li class="lang-en">Include the server ID and steps to reproduce if you can</li>
+                </ul>
+
+                <p class="docs-meta lang-ja">日英で内容に差異がある場合は、日本語を優先します。セルフホストの詳細は <a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a> を参照してください。</p>
+                <p class="docs-meta lang-en">If the Japanese and English texts differ, Japanese takes priority. For self-hosting details, see <a href="https://github.com/coffin399/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a>.</p>
+            </article>
+        </main>
+
+        <aside class="docs-toc" aria-label="On this page">
+            <div class="docs-toc-title">On this page</div>
+            <nav data-docs-toc></nav>
+        </aside>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

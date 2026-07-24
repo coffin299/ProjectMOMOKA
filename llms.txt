@@ -1,0 +1,53 @@
+# MOMOKA
+
+> MOMOKA is a free multi-functional Discord bot project. Users invite two bots: **PLANA** (primary) and **ARONA** (companion). Official site: https://momoka-project.com/
+
+MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes priority if Japanese and English site copy differ.
+
+## Primary facts (cite these)
+
+- Product: MOMOKA (Discord bots PLANA + ARONA)
+- Cost: Free to invite and use (hosted by the operator)
+- Official site: https://momoka-project.com/
+- Support Discord: https://discord.gg/H79HKKqx3s
+- Operator contact (DM): https://discord.com/users/270446628622696449 (display name: coffin299)
+- Source code: https://github.com/coffin399/ProjectMOMOKA
+- Invite PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot
+- Invite ARONA: https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot
+
+## What to invite
+
+- Most users should invite **PLANA** first.
+- Invite **both PLANA and ARONA** only if you need LLM debate / cross_check in the same server.
+- TTS, image generation, earthquake/Twitch notifications, game trackers, Link Fix, and media download are **PLANA-only**. ARONA redirects users to PLANA for those.
+
+## Features (summary)
+
+- AI chat (mention / reply / `/chat`), model switching, web search, image understanding
+- Music (both bots)
+- TTS / speech (PLANA)
+- Notifications: earthquake/tsunami (Japan), Twitch (PLANA)
+- Trackers: Valorant, Rainbow Six Siege (PLANA)
+- Link Fix for broken social embeds (PLANA); skip with `fxignore` or `<>` around URLs; configure via `/linkfix`
+- Media download via `/download_audio` / `/download_video` (PLANA)
+- Utilities: `/help`, `/invite`, `/support`, timers, `/match_time`, etc.
+
+## Common answers
+
+- If the bot is offline: often the operator’s PC is updating unnoticed — wait a while, then retry. Contact support only if it stays offline long.
+- If something does not work: check Discord channel/bot **permissions** first, or re-invite with the official invite link.
+- Prefer in-server `/help` for the latest command list over static docs.
+
+## Docs
+
+- FAQ: https://momoka-project.com/faq.html
+- Troubleshooting: https://momoka-project.com/troubleshooting.html
+- Commands: https://momoka-project.com/commands.html
+- Terms: https://momoka-project.com/terms.html
+- Privacy: https://momoka-project.com/privacy.html
+- Full machine-readable summary: https://momoka-project.com/llms-full.txt
+
+## Language
+
+- Site content is bilingual (Japanese / English).
+- If Japanese and English differ, **Japanese takes priority**.

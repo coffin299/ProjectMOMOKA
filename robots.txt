@@ -1,33 +1,45 @@
 User-agent: *
 Allow: /
 
-# Sitemap
-Sitemap: https://coffin399.github.io/llmcord-JP-plana/sitemap.xml
+Sitemap: https://momoka-project.com/sitemap.xml
 
-# Crawl-delay (prevents aggressive crawling)
-Crawl-delay: 1
-
-# Additional directives for better SEO
-# Allow all major search engines
+# Traditional search
 User-agent: Googlebot
 Allow: /
 
 User-agent: Bingbot
 Allow: /
 
-User-agent: Slurp
+User-agent: DuckDuckBot
 Allow: /
 
-# Disallow crawling of unnecessary files
-Disallow: /assets/icons/
-Disallow: /*.bat$
-Disallow: /*.py$
-Disallow: /*.yaml$
-Disallow: /*.yml$
-Disallow: /Dockerfile
-Disallow: /docker-compose.yaml
-Disallow: /requirements.txt
-Disallow: /main.py
-Disallow: /PLANA/
-Disallow: /docs/
-Disallow: /startPLANA.bat
+# Answer / generative engines (GEO/AEO) — allow crawlers to read docs
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+User-agent: Bytespider
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
