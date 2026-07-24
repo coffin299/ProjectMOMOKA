@@ -29,7 +29,7 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 |---|---|---|
 | LLM chat | yes | yes |
 | Music | yes | yes |
-| `/help` `/invite` `/support` utilities | yes | yes |
+| `/help` `/invite` `/support` `/feedback` utilities | yes | yes |
 | TTS / speech | yes | no (redirects to PLANA) |
 | Image generation / image board search | yes | no (redirects) |
 | Earthquake / Twitch notifications | yes | no |

@@ -30,7 +30,7 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 - Trackers: Valorant, Rainbow Six Siege (PLANA)
 - Link Fix suppresses original social embeds and quote-replies with fixer URLs (PLANA); skip with `fxignore` or `<>` around URLs; configure via `/linkfix`
 - Media download via `/download_audio` / `/download_video` (PLANA)
-- Utilities: `/help`, `/invite`, `/support`, timers, `/match_time`, etc.
+- Utilities: `/help`, `/invite`, `/support`, `/feedback`, timers, `/match_time`, etc.
 
 ## Common answers
 
