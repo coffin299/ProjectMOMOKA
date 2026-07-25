@@ -97,7 +97,8 @@ llm:
   - debate
   - cross_check
   - feedback
-  max_tool_iterations: 3
+  # ツール往復の上限。超過時はツールなしで最終回答を1回生成する
+  max_tool_iterations: 5
   concurrency:
     max_inflight_chat: 64
     max_inflight_per_channel: 1
@@ -130,7 +131,7 @@ llm:
 
     Actively call tools when they help the user. Do not announce tool names in character unless asked.
 
-    - The `search` tool: use when up-to-date or external facts are needed.
+    - The `search` tool: use when up-to-date or external facts are needed. Prefer 1-2 focused queries. Do not keep re-searching with near-identical queries; synthesize from results you already have, and state uncertainty if sources disagree or lack a clear number.
 
     - The `image_generator` tool: use when the user asks to create, generate, draw, or visualize images.
 
@@ -149,7 +150,7 @@ llm:
 
     Actively call tools when they help the user. Do not announce tool names in character unless asked.
 
-    - The `search` tool: use when up-to-date or external facts are needed.
+    - The `search` tool: use when up-to-date or external facts are needed. Prefer 1-2 focused queries. Do not keep re-searching with near-identical queries; synthesize from results you already have, and state uncertainty if sources disagree or lack a clear number.
 
     - The `command_executor` tool: music-related commands only on this bot (play/pause/skip/queue etc.).
 

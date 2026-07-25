@@ -70,7 +70,7 @@
 
 ### Key Features / 主な機能
 
-- **AI Chat (LLM)** — `@PLANA` / `@ARONA`, `/chat`, model switch, web search, image understanding
+- **AI Chat (LLM)** — `@PLANA` / `@ARONA`, `/chat`, model switch, web search, image understanding (`max_tool_iterations` caps tool loops; then answers from results already gathered)
 - **debate / cross_check** — **JA:** PLANA↔ARONA 討論（両ボット必要） · **EN:** PLANA↔ARONA debate (both bots required)
 - **Music** — YouTube / Spotify, etc. (**JA:** 両ボット · **EN:** both bots)
 - **TTS / images / notifications / trackers** — **JA:** PLANA のみ · **EN:** PLANA only

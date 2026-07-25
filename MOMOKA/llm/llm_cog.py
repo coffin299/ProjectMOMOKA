@@ -2157,7 +2157,8 @@ class LLMCog(commands.Cog, name="LLM"):
                     "Consider enabling 'supports_tools: true' in config if the model supports it."
                 )
         else:
-            logger.warning("⚠️ [TOOLS] No tools available to pass to API")
+            # ツール未設定、または強制最終回答などで意図的に渡さない場合
+            logger.info("🔧 [TOOLS] No tools passed to API this turn")
 
     async def _rotate_provider_api_key(
         self, client: openai.AsyncOpenAI, provider_name: str, api_keys: List[str], current_key_index: int
@@ -2233,8 +2234,11 @@ class LLMCog(commands.Cog, name="LLM"):
         current_messages = messages.copy()
         # API送信前に履歴＋最新分の画像を重複排除し枚数上限に収める
         current_messages = self._dedupe_and_trim_images_in_messages(current_messages)
+        # ツール往復の上限（超過時はツールなしの最終回答を1回追加する）
         max_iterations = self.llm_config.get('max_tool_iterations', 5)
         extra_params = self.llm_config.get('extra_api_parameters', {})
+        # 強制最終回答用の誘導メッセージを既に入れたか
+        force_final_nudge_injected = False
 
         provider_name = getattr(client, 'provider_name', None)
         if not provider_name:
@@ -2254,9 +2258,41 @@ class LLMCog(commands.Cog, name="LLM"):
         model_chain = self._get_model_fallback_chain(primary_model_string)
         logger.debug(f"LLM model attempt chain: {model_chain}")
 
-        for iteration in range(max_iterations):
-            logger.debug(f"Starting LLM API call (iteration {iteration + 1}/{max_iterations})")
+        # +1 回目はツール上限超過後の「ツールなし強制回答」枠
+        for iteration in range(max_iterations + 1):
+            # 通常枠を使い切ったあとの最終回答ターンか
+            force_final = iteration >= max_iterations
+            # 最終回答枠なのにツール結果が無いならエラーへ落とす
+            if force_final and not self._messages_have_tool_results(current_messages):
+                # これ以上合成できる材料が無いのでループを抜ける
+                break
+            if force_final:
+                # 検索などを繰り返して上限に達した旨をログに残す
+                logger.warning(
+                    f"⚠️ Tool processing reached max iterations ({max_iterations}); "
+                    "forcing final answer without tools"
+                )
+                # 誘導メッセージ未投入なら、手元の結果で答えるよう指示する
+                if not force_final_nudge_injected:
+                    # ユーザー向けではなく内部指示として明示する
+                    current_messages.append({
+                        "role": "user",
+                        "content": (
+                            "[Internal] Tool call budget is exhausted. "
+                            "Answer the user now using previous tool results. "
+                            "If information is incomplete or uncertain, say so clearly. "
+                            "Do not call tools."
+                        ),
+                    })
+                    # 二重投入を防ぐ
+                    force_final_nudge_injected = True
+            else:
+                # 通常のツール往復ターンをログする
+                logger.debug(f"Starting LLM API call (iteration {iteration + 1}/{max_iterations})")
+            # 利用可能なツール定義を取得する（最終回答時は渡さない）
             tools_def = self.get_tools_definition()
+            # 強制最終回答では tools を無効化する
+            tools_for_api = None if force_final else tools_def
 
             api_kwargs = {
                 "model": client.model_name_for_api_calls,
@@ -2266,10 +2302,10 @@ class LLMCog(commands.Cog, name="LLM"):
                 "max_tokens": extra_params.get('max_tokens', 4096)
             }
 
-            # 初期クライアント向けに tools を載せる
+            # 初期クライアント向けに tools を載せる（最終回答時は除去）
             self._apply_tools_to_api_kwargs(
                 api_kwargs,
-                tools_def,
+                tools_for_api,
                 provider_name,
                 getattr(client, "supports_tools", True),
             )
@@ -2312,10 +2348,10 @@ class LLMCog(commands.Cog, name="LLM"):
                     api_kwargs["model"] = client.model_name_for_api_calls
                     # API 引数の messages も更新する
                     api_kwargs["messages"] = current_messages
-                    # tools 可否を切替先に合わせて再設定する
+                    # tools 可否を切替先に合わせて再設定する（最終回答時は tools_for_api が None）
                     self._apply_tools_to_api_kwargs(
                         api_kwargs,
-                        tools_def,
+                        tools_for_api,
                         provider_name,
                         getattr(client, "supports_tools", True),
                     )
@@ -2555,6 +2591,21 @@ class LLMCog(commands.Cog, name="LLM"):
                 logger.debug(f"No tool calls, returning final response (Finish reason: {finish_reason})")
                 return
 
+            # 強制最終回答中にツール要求が来ても実行せず打ち切る
+            if force_final:
+                # 既にストリームした本文があればそれを最終応答とする
+                if assistant_response_content:
+                    logger.warning(
+                        "⚠️ Model requested tools during forced final answer; "
+                        "ignoring tool calls and keeping streamed text"
+                    )
+                    return
+                # 本文も無い場合はループ後のエラーメッセージへ進む
+                logger.warning(
+                    "⚠️ Model requested tools during forced final answer with empty content; aborting"
+                )
+                break
+
             logger.info(f"🔧 [TOOL] LLM requested {len(tool_calls_buffer)} tool call(s)")
             for tc in tool_calls_buffer:
                 logger.debug(
@@ -2584,6 +2635,17 @@ class LLMCog(commands.Cog, name="LLM"):
         logger.warning(f"⚠️ Tool processing exceeded max iterations ({max_iterations})")
         yield self.llm_config.get('error_msg', {}).get('tool_loop_timeout',
                                                        "Tool processing exceeded max iterations.\nツールの処理が最大反復回数を超えました.")
+
+    @staticmethod
+    def _messages_have_tool_results(messages: List[Dict[str, Any]]) -> bool:
+        """会話履歴に tool 結果メッセージが1件でもあるか判定する。"""
+        # 各メッセージを走査して role=tool を探す
+        for msg in messages:
+            # tool 結果があれば True
+            if msg.get("role") == "tool":
+                return True
+        # 見つからなければ False
+        return False
 
     def _debate_just_started(self, messages: List[Dict[str, Any]]) -> bool:
         """直近の tool 結果が討論開始成功か判定する。"""

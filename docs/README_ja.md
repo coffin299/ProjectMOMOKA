@@ -253,6 +253,7 @@ music:
 | `/switch-models` | チャンネル専用モデル切替 |
 
 ※ debate / cross_check / feedback は LLM ツールとして呼び出されます（討論・検証・開発者へのフィードバック送信）。
+※ `max_tool_iterations`（既定 5）はツール往復の上限です。超過時は手元の検索結果などからツールなしで最終回答を生成します。
 
 ### 音楽
 

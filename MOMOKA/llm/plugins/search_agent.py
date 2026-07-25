@@ -30,7 +30,10 @@ class SearchAgent:
         "type": "function",
         "function": {
             "name": name,
-            "description": "Run a web search and return results.",
+            "description": (
+                "Run a web search and return results. "
+                "Prefer 1-2 focused queries; avoid near-duplicate re-searches."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string"}},

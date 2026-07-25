@@ -36,6 +36,7 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 
 - If the bot is offline: often the operator’s PC is updating unnoticed — wait a while, then retry. Contact support only if it stays offline long.
 - If something does not work: check Discord channel/bot **permissions** first, or re-invite with the official invite link.
+- If AI says tool processing was too complex: it hit the search/tool round-trip limit; current builds try a final answer from results already gathered. See troubleshooting.html.
 - Prefer in-server `/help` for the latest command list over static docs.
 
 ## Docs
