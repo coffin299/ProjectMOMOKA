@@ -12,10 +12,10 @@ link_fix:
   ignore_keyword: fxignore
   # 返信末尾の小さな注記（-# 行）。ギルド preferred_locale で言語選択
   # 旧キー footnote はコード側でフォールバック用に残してもよい
-  footnote_ja: "邪魔な場合は、チャットでスラッシュコマンド「/linkfix」を実行してください（サーバーの管理権限が必要）。設定画面から無効化できます。"
-  footnote_en: "To turn this off, run the /linkfix slash command in Discord (requires Manage Server). Open the settings panel and disable it there."
+  footnote_ja: "設定は `/linkfix`"
+  footnote_en: "Manage via `/linkfix`"
   # 互換用（未設定の footnote_ja/en がある環境向け）
-  footnote: "To turn this off, run the /linkfix slash command in Discord (requires Manage Server). Open the settings panel and disable it there."
+  footnote: "Manage via `/linkfix`"
   # ギルド設定の保存先（リポジトリルート相対）
   settings_path: data/link_fix_settings.json
   # Twitter 翻訳ボタンのタイムアウト（秒）

@@ -183,10 +183,8 @@ class LinkFixSettingsView(discord.ui.LayoutView):
             "### Link Fix Settings\n"
             f"**Feature:** `{status}`\n"
             f"**Sites enabled:** `{on_count}/{total}`\n\n"
-            "Suppress original social embeds and quote-replace with fixer proxy URLs.\n"
-            "Default is **disabled** — press **Enable Feature** to turn it on.\n"
-            "Use **Enable/Disable All Sites** for bulk toggles, or **Sites** for per-network settings.\n"
-            "Requires **Manage Server**."
+            "Suppress original social embeds and quote-replace with fixer URLs.\n"
+            "Default: **disabled**. Toggle below or open **Sites**."
         )
         # TextDisplay
         container.add_item(discord.ui.TextDisplay(body))

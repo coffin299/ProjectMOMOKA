@@ -434,13 +434,9 @@ class HelpLayoutView(discord.ui.LayoutView):
             return (
                 "### 🔗 Link Fix（Embed）\n"
                 "SNS の公式埋め込みを抑制し、Fix URL で引用置換します（**PLANA**）。\n"
-                "対応例: X/Twitter, Instagram, TikTok, Reddit, YouTube など。\n\n"
-                "**設定**\n"
-                "• `/linkfix` — スラッシュコマンドを実行（**サーバー管理権限**が必要）\n"
-                "• 機能全体 / サイト別 / 全サイト一括の on/off（デフォルト無効・必要時に有効化）\n\n"
-                "**一時的に止めたいとき**\n"
-                "• 本文に `fxignore` を含める\n"
-                "• URL を `<>` で囲む（プレビュー対象外）"
+                "デフォルト無効。設定は `/linkfix`（サーバー管理権限）。\n\n"
+                "**一時スキップ**\n"
+                "• `fxignore` を本文に含める / URL を `<>` で囲む"
                 f"{note}"
             )
         note_en = ""
@@ -453,13 +449,9 @@ class HelpLayoutView(discord.ui.LayoutView):
             "### 🔗 Link Fix (Embed)\n"
             "Suppresses original SNS embeds and quote-replies with Fix URLs "
             "(**PLANA**).\n"
-            "Examples: X/Twitter, Instagram, TikTok, Reddit, YouTube, …\n\n"
-            "**Settings**\n"
-            "• Run the `/linkfix` slash command (**Manage Server** required)\n"
-            "• Master / per-site / bulk-all toggles (disabled by default; enable when needed)\n\n"
-            "**Skip for one message**\n"
-            "• Include `fxignore` in the message body\n"
-            "• Wrap the URL in `<>` (no preview extraction)"
+            "Disabled by default. Manage via `/linkfix` (Manage Server).\n\n"
+            "**Skip one message**\n"
+            "• Include `fxignore`, or wrap the URL in `<>`"
             f"{note_en}"
         )
 
