@@ -168,6 +168,13 @@
                     <li class="lang-en">If still broken, re-invite with the invite link to refresh permissions</li>
                 </ul>
 
+                <h2 id="ai-tool-loop">
+                    <span class="lang-ja">「ツールの処理が複雑すぎた」と出る</span>
+                    <span class="lang-en">“Tool processing was too complex” error</span>
+                </h2>
+                <p class="lang-ja">Web 検索などを繰り返してツール往復上限に達したときに出ます。現行版では上限到達後に手元の結果から最終回答を試みます。繰り返す場合は質問を具体化するか、運営側で <code>llm_config.yaml</code> の <code>max_tool_iterations</code> を確認してください。</p>
+                <p class="lang-en">Appears when the bot hits the tool round-trip limit (e.g. repeated web searches). Current builds try a final answer from results already gathered. If it keeps happening, rephrase more specifically, or operators can check <code>max_tool_iterations</code> in <code>llm_config.yaml</code>.</p>
+
                 <h2 id="slash">
                     <span class="lang-ja">スラッシュコマンドが出ない</span>
                     <span class="lang-en">Slash commands missing</span>
