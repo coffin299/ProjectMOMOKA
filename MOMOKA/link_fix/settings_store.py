@@ -93,7 +93,8 @@ class LinkFixSettingsStore:
             return bool(guild.get("enabled"))
         # YAML デフォルト
         section = get_link_fix_config(self.bot_config)
-        return bool(section.get("enabled", True))
+        # 未設定時は無効（ユーザーが /linkfix で有効化する想定）
+        return bool(section.get("enabled", False))
 
     def set_feature_enabled(self, guild_id: int, enabled: bool) -> None:
         """全体 on/off を保存する。"""

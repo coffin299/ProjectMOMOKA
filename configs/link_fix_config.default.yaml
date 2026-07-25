@@ -1,7 +1,7 @@
 # Link Fix（SNS embed の抑制＋Fix URL 引用置換）設定
 link_fix:
-  # 機能全体のデフォルト（ギルド未設定時）
-  enabled: true
+  # 機能全体のデフォルト（ギルド未設定時）。必要なら /linkfix で有効化
+  enabled: false
   # 返信は常に @silent
   silent: true
   # 元メッセージの公式 embed 待ち秒数（抑制前）

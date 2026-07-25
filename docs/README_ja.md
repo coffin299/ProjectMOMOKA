@@ -96,7 +96,7 @@ Rainbow Six Siege / VALORANT の統計表示。
 - 対応例: X (Twitter)、Instagram、TikTok、Reddit、Threads、Bluesky、Facebook、Pixiv、YouTube など
 - 本文に `fxignore` を含める、または URL を `<>` で囲むとスキップ
 - X 投稿はサーバー言語（`preferred_locale`）が取れると、返信下に `🌐` / 国旗ボタンで原文・翻訳を切替（FxEmbed 系の Fix 先のみ）
-- `/linkfix`（Manage Server）で全体・サイト別 on/off、**全サイト一括**有効化/無効化、Fix 元／Fix 先（宗派）をギルド単位で変更（Components V2・**デフォルト有効**）
+- `/linkfix`（Manage Server）で全体・サイト別 on/off、**全サイト一括**有効化/無効化、Fix 元／Fix 先（宗派）をギルド単位で変更（Components V2・**デフォルト無効**・必要時に有効化）
 - 設定: `configs/link_fix_config.yaml`、ギルド上書きは `data/link_fix_settings.json`
 - Fix 側に embed が付かない場合は返信を削除し、元 embed の抑制を戻します
 - 元 embed 抑制には **Manage Messages** が必要です
@@ -296,7 +296,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | コマンド / 操作 | 説明 |
 |----------------|------|
 | SNS URL を投稿 | 元 embed を抑制し、Fix URL を silent 引用返信で置換 |
-| `/linkfix` | 全体・サイト別・全サイト一括 on/off、Fix 元／Fix 先の設定（Components V2・Manage Server・デフォルト有効） |
+| `/linkfix` | 全体・サイト別・全サイト一括 on/off、Fix 元／Fix 先の設定（Components V2・Manage Server・デフォルト無効） |
 | メッセージに `fxignore` | その投稿では Link Fix をスキップ |
 
 ### ユーティリティ
@@ -339,7 +339,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 - 対象 URL を検知したら公式 embed を短時間待ち、**抑制（破壊）**してから Fix プロキシ URL を引用返信
 - 返信は `@silent`。Fix 側に embed が付かない場合は返信削除＋元 embed 復元
-- `/linkfix` でギルドごとに宗派（例: `fxtwitter.com` / `vxtwitter.com`）やマッチ元ドメインを変更可能。全サイト一括 on/off もあり（デフォルト有効）
+- `/linkfix` でギルドごとに宗派（例: `fxtwitter.com` / `vxtwitter.com`）やマッチ元ドメインを変更可能。全サイト一括 on/off もあり（デフォルト無効・必要時に有効化）
 - 元 embed 抑制には Manage Messages が必要
 
 ---

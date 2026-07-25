@@ -96,7 +96,7 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 - Examples: X (Twitter), Instagram, TikTok, Reddit, Threads, Bluesky, Facebook, Pixiv, YouTube, and more
 - Skip with `fxignore` in the message, or wrap the URL in `<>`
 - For X posts, if the guild `preferred_locale` is known, `🌐` / flag buttons switch original vs translated embeds (FxEmbed-compatible fixers only)
-- `/linkfix` (Manage Server): per-guild master/site toggles, **bulk enable/disable all sites**, and fixer source/destination domains (Components V2; **enabled by default**)
+- `/linkfix` (Manage Server): per-guild master/site toggles, **bulk enable/disable all sites**, and fixer source/destination domains (Components V2; **disabled by default** — enable when needed)
 - Config: `configs/link_fix_config.yaml`; guild overrides in `data/link_fix_settings.json`
 - If the fixer reply gets no embed, it is deleted and the original embed suppress is undone
 - Suppressing the original embed requires **Manage Messages**
@@ -278,7 +278,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | Command / action | Description |
 |------------------|-------------|
 | Post an SNS URL | Suppress the original embed, then silent quote-reply with a fixer URL |
-| `/linkfix` | Master/site/bulk-all toggles and fixer source/destination (Components V2, Manage Server; enabled by default) |
+| `/linkfix` | Master/site/bulk-all toggles and fixer source/destination (Components V2, Manage Server; disabled by default) |
 | Include `fxignore` | Skip Link Fix for that message |
 
 ### Utilities
@@ -321,7 +321,7 @@ Real-time JMA WebSocket alerts (early warning, quake info, tsunami forecast).
 
 - On a matched URL, waits briefly for Discord’s official embed, **suppresses it**, then quote-replies with a fixer URL
 - Replies are `@silent`; if the fixer reply gets no embed, it is deleted and the original suppress is undone
-- `/linkfix` lets each guild pick fixer denominations (e.g. `fxtwitter.com` / `vxtwitter.com`) and match domains; also supports bulk enable/disable all sites (enabled by default)
+- `/linkfix` lets each guild pick fixer denominations (e.g. `fxtwitter.com` / `vxtwitter.com`) and match domains; also supports bulk enable/disable all sites (disabled by default — enable when needed)
 - Suppressing the original embed requires Manage Messages
 
 ---
