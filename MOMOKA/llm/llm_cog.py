@@ -46,12 +46,6 @@ from MOMOKA.llm.debate.channel_lock import channel_lock
 from MOMOKA.llm.concurrency import chat_limiter
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
 from MOMOKA.utilities.restart_notice import RESTART_NOTICE_TEXT
-from MOMOKA.utilities.bot_permissions import (
-    append_permission_update_hint,
-    build_permission_update_hint,
-    is_missing_required_permissions,
-    resolve_bot_invite_url,
-)
 from MOMOKA.utilities.feedback import (
     create_support_report_view,
     support_footer_text,
@@ -413,17 +407,6 @@ class LLMCog(commands.Cog, name="LLM"):
         # message.content は followup/edit 後に空のことがあるため、呼び出し側の本文を使う
         # 案内文言を結合した最終テキストを組み立てる
         hinted_content = f"{base_content}{CHAT_HISTORY_HINT}"
-        # 権限不足時は履歴ヒントの後に再認可案内を付ける（ストリーム完了後のみ）
-        guild = getattr(channel, "guild", None)
-        invite_url = resolve_bot_invite_url(self.bot)
-        hinted_content = append_permission_update_hint(
-            hinted_content,
-            guild,
-            invite_url,
-            max_length=DISCORD_MESSAGE_MAX_LENGTH,
-        )
-        # 長さ超過で権限案内が本文に入らなかった場合の別送信用
-        overflow_hint = self._permission_hint_overflow(hinted_content, guild, invite_url)
         try:
             # 文字数制限内なら同一メッセージを編集して追記する
             if len(hinted_content) <= DISCORD_MESSAGE_MAX_LENGTH:
@@ -431,50 +414,9 @@ class LLMCog(commands.Cog, name="LLM"):
             else:
                 # 収まらない場合は案内だけ別メッセージで送る
                 await channel.send(CHAT_HISTORY_HINT.lstrip("\n"))
-            # 権限案内が本文に載らなかったときだけ別メッセージで送る
-            if overflow_hint:
-                await channel.send(overflow_hint)
         except discord.HTTPException as e:
             # 案内付与失敗は応答本体を壊さないので警告のみ残す
             logger.warning(f"Failed to append /chat history hint: {e}")
-
-    def _permission_hint_overflow(
-            self,
-            content: str,
-            guild: Optional[discord.Guild],
-            invite_url: str,
-    ) -> Optional[str]:
-        """本文に権限案内が入らなかった場合の別送信用 -# 文言を返す。"""
-        # invite が無い／権限が揃っているなら不要
-        if not invite_url or not is_missing_required_permissions(guild):
-            return None
-        # 既に本文へ付与済みなら不要
-        if "Required permissions were updated" in (content or ""):
-            return None
-        # 単独メッセージ用に先頭改行を除いた案内を返す
-        hint = build_permission_update_hint(invite_url).lstrip("\n")
-        return hint or None
-
-    def _apply_final_permission_hint(
-            self,
-            content: str,
-            channel: discord.abc.Messageable,
-    ) -> Tuple[str, Optional[str]]:
-        """ストリーム完了後の最終本文にだけ再認可案内を付ける。"""
-        # チャンネルからギルドを取る（DM なら None）
-        guild = getattr(channel, "guild", None)
-        # 当該 Bot の招待 URL を config から取る
-        invite_url = resolve_bot_invite_url(self.bot)
-        # 本文末尾へ追記を試みる（上限超過時は本文そのまま）
-        hinted = append_permission_update_hint(
-            content,
-            guild,
-            invite_url,
-            max_length=DISCORD_MESSAGE_MAX_LENGTH,
-        )
-        # 載らなかった場合の別送信用ヒント
-        overflow = self._permission_hint_overflow(hinted, guild, invite_url)
-        return hinted, overflow
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -1898,10 +1840,7 @@ class LLMCog(commands.Cog, name="LLM"):
             if full_response_text:
                 if len(full_response_text) <= SAFE_MESSAGE_LENGTH:
                     # 最終本文のみ（寄付ボタンは付けない — 待機中のみ表示）
-                    # ストリーム完了後にだけ再認可案内を付ける
-                    final_content, overflow_hint = self._apply_final_permission_hint(
-                        full_response_text, channel
-                    )
+                    final_content = full_response_text
                     for attempt in range(max_final_retries):
                         try:
                             if not waiting_v2_cleared:
@@ -1929,24 +1868,13 @@ class LLMCog(commands.Cog, name="LLM"):
                                 logger.warning(
                                     f"⚠️ Failed to update final message (attempt {attempt + 1}/{max_final_retries}): {e.status} - {getattr(e, 'text', str(e))}")
                                 if attempt < max_final_retries - 1: await asyncio.sleep(final_retry_delay)
-                    # 本文に載らなかった権限案内があれば別メッセージで送る
-                    if overflow_hint:
-                        try:
-                            await channel.send(overflow_hint)
-                        except discord.HTTPException as e:
-                            logger.debug("Failed to send permission overflow hint: %s", e)
                     return [sent_message], full_response_text, getattr(llm_client, 'last_used_key_index', None)
                 else:
                     logger.debug(f"Response is {len(full_response_text)} chars, splitting into multiple messages")
                     # 修正: タプル作成のバグを修正
                     chunks = _split_message_smartly(full_response_text, SAFE_MESSAGE_LENGTH)
                     all_messages = []
-                    # 最後のチャンクにだけ再認可案内を付ける（途中チャンクには付けない）
-                    last_chunk, overflow_hint = self._apply_final_permission_hint(
-                        chunks[-1], channel
-                    )
-                    chunks[-1] = last_chunk
-                    # hint 適用後の先頭チャンクを使う（1チャンク時も案内が載る）
+                    # 先頭チャンクを取り出す
                     first_chunk = chunks[0]
 
                     for attempt in range(max_final_retries):
@@ -1984,12 +1912,6 @@ class LLMCog(commands.Cog, name="LLM"):
                                 else:
                                     logger.error(f"❌ Failed to send continuation message {i}: {e}")
                                     if attempt < max_final_retries - 1: await asyncio.sleep(final_retry_delay)
-                    # 最終チャンクに載らなかった権限案内があれば別メッセージで送る
-                    if overflow_hint:
-                        try:
-                            await channel.send(overflow_hint)
-                        except discord.HTTPException as e:
-                            logger.debug("Failed to send permission overflow hint: %s", e)
                     return all_messages, full_response_text, getattr(llm_client, 'last_used_key_index', None)
             else:
                 finish_reason = getattr(llm_client, 'last_finish_reason', None)

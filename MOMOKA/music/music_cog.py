@@ -23,10 +23,6 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from MOMOKA.utilities.donation import donation_from_bot, make_subtle_link_button
-from MOMOKA.utilities.bot_permissions import (
-    append_permission_update_hint,
-    resolve_bot_invite_url,
-)
 
 try:
     from MOMOKA.music.plugins.ytdlp_wrapper import (
@@ -496,16 +492,6 @@ class MusicCog(commands.Cog, name="music_cog"):
     ) -> Optional[discord.Message]:
         # ContextオブジェクトからInteractionを取得する（スラッシュコマンドの場合は存在する）
         interaction = getattr(ctx, "interaction", None)
-        # 本文があるときだけ権限不足の再認可案内を末尾に付ける
-        if content:
-            # 当該 Bot の招待 URL を config から解決する
-            invite_url = resolve_bot_invite_url(self.bot)
-            # ギルド権限が不足していれば -# 案内を追記する
-            content = append_permission_update_hint(
-                content,
-                ctx.guild,
-                invite_url,
-            )
         try:
             # Interactionが存在する場合の処理
             if interaction:
