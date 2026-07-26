@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 import logging
 
-from MOMOKA.music.plugins.process_log_bridge import ChildProcessLogPump
+from MOMOKA.music.plugins.process_log_bridge import (
+    ChildProcessLogPump,
+    redact_media_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -259,6 +262,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         self._stderr_file = tempfile.TemporaryFile(mode="w+b")
         # ストリームURLを保持（エラーログ用）
         self._stream_url = source if isinstance(source, str) else "(pipe)"
+        # 署名・IP等を含むクエリを除去したログ専用URLを保持する。
+        self._safe_stream_url = redact_media_url(self._stream_url)
         # トラックのタイトル（ログ用）
         self.title = title
         # ギルドID（ログ用）
@@ -340,6 +345,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 logger=logger,
                 level=logging.WARNING,
                 label="yt-dlp",
+                # FFmpegが先に閉じるskip/停止時の二次エラーはDEBUGへ下げる。
+                debug_markers=("broken pipe",),
             )
             # 子プロセスが出力を始める前に読み取りを開始する。
             self._ytdlp_stderr_pump.start()
@@ -409,7 +416,7 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         ytdlp_pid = self._ytdlp_proc.pid if self._ytdlp_proc else None
         logger.info(
             f"Guild {guild_id}: FFmpeg PID={pid} yt-dlp PID={ytdlp_pid} started for '{title}' "
-            f"url={self._stream_url[:150]}..."
+            f"url={self._safe_stream_url[:150]}..."
         )
 
     def read(self) -> bytes:
@@ -506,7 +513,7 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 f"Guild {self.guild_id}: FFmpeg for '{self.title}' produced NO audio!\n"
                 f"  read_count={self._read_count}, returncode={returncode}, "
                 f"process_alive={process_alive}, ytdlp_alive={ytdlp_alive}\n"
-                f"  url={self._stream_url[:200]}\n"
+                f"  url={self._safe_stream_url[:200]}\n"
                 f"  stderr={stderr_output}\n"
                 f"  ytdlp_stderr={ytdlp_err}"
             )

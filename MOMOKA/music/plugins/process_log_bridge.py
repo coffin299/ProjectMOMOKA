@@ -7,10 +7,25 @@ import re
 import threading
 from collections import deque
 from typing import IO, Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 
 # 外部プロセスが出力し得る認証情報を GUI へ渡す前に除去する。
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r'(?i)(["\']?integrityToken["\']?\s*:\s*["\'])'
+            r'[^"\']+(["\'])'
+        ),
+        r"\1[REDACTED]\2",
+    ),
+    (
+        re.compile(
+            r"(?i)\b(integrity[_ -]?token)\s*[:=]\s*"
+            r"[A-Za-z0-9._~+/=-]+"
+        ),
+        r"\1=[REDACTED]",
+    ),
     (
         re.compile(
             r"(?i)\b(authorization)\s*[:=]\s*"
@@ -61,6 +76,24 @@ def redact_process_log(value: str) -> str:
     return redacted
 
 
+def redact_media_url(value: object) -> str:
+    """署名付きメディアURLからクエリとフラグメントを除去する。"""
+    # ログ対象を安全に文字列へ変換する。
+    text = str(value)
+    # HTTP(S)以外のローカルパス等は元の表記を返す。
+    if not text.lower().startswith(("http://", "https://")):
+        # 非URL値を変更しない。
+        return text
+    try:
+        # URLを構成要素へ分割する。
+        parts = urlsplit(text)
+        # scheme・host・pathだけを残して署名パラメータを捨てる。
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    except ValueError:
+        # 不正URLは内容を公開せず固定文言へ置換する。
+        return "[REDACTED_URL]"
+
+
 class ChildProcessLogPump:
     """PIPEを継続排出し、末尾ログを保持するデーモンスレッド。"""
 
@@ -72,6 +105,7 @@ class ChildProcessLogPump:
         level: int,
         label: str,
         history_size: int = 100,
+        debug_markers: tuple[str, ...] = (),
     ) -> None:
         # 読み取り対象のテキストストリームを保持する。
         self._stream = stream
@@ -81,6 +115,12 @@ class ChildProcessLogPump:
         self._level = level
         # 表示時に出力元を識別する短い名前を保持する。
         self._label = label
+        # 正常な終了競合としてDEBUGへ下げる文言を小文字で保持する。
+        self._debug_markers = tuple(
+            marker.lower()
+            for marker in debug_markers
+            if marker
+        )
         # 診断用途の末尾ログだけを上限付きで保持する。
         self._history: deque[str] = deque(maxlen=max(1, history_size))
         # 複数スレッドから履歴を読むためのロックを用意する。
@@ -149,8 +189,17 @@ class ChildProcessLogPump:
                 with self._history_lock:
                     # 障害時に参照する末尾履歴へ追加する。
                     self._history.append(safe_line)
+                # 正常終了時にも出る既知文言かを判定する。
+                log_level = (
+                    logging.DEBUG
+                    if any(
+                        marker in safe_line.lower()
+                        for marker in self._debug_markers
+                    )
+                    else self._level
+                )
                 # 指定ロガーへ出力してGUIキューへ伝播させる。
-                self._logger.log(self._level, "[%s] %s", self._label, safe_line)
+                self._logger.log(log_level, "[%s] %s", self._label, safe_line)
         except (OSError, ValueError) as error:
             # シャットダウン中のclose由来はDEBUGに留める。
             if not self._stop_event.is_set():
