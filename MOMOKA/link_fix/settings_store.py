@@ -2,9 +2,12 @@
 # ギルド単位の Link Fix 設定の読込・保存。
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 from pathlib import Path
+import tempfile
 from typing import Any, Dict, Optional
 
 from MOMOKA.link_fix.presets import (
@@ -33,6 +36,8 @@ class LinkFixSettingsStore:
         self.path = (self.project_root / rel).resolve()
         # メモリ上の設定
         self._data: Dict[str, Dict[str, Any]] = {}
+        # 同時に届く設定更新を直列化する
+        self._lock = asyncio.Lock()
         # 初回読込
         self.load()
 
@@ -59,17 +64,48 @@ class LinkFixSettingsStore:
             logger.error("Failed to load link_fix settings: %s", exc)
             self._data = {}
 
-    def save(self) -> None:
-        """ファイルへ保存する。"""
+    async def save(self) -> None:
+        """ファイルへ排他的かつ原子的に保存する。"""
         # 親を確保する
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        # 書き込む
+        # 更新処理と保存処理が競合しないようにする
+        async with self._lock:
+            # ロック取得済みの保存処理を呼ぶ
+            self._save_locked()
+
+    def _save_locked(self) -> None:
+        """ロック取得済みの状態を原子的にファイルへ保存する。"""
+        # 一時ファイルのパスを初期化する
+        temp_path: Optional[str] = None
         try:
-            with self.path.open("w", encoding="utf-8") as f:
-                json.dump(self._data, f, indent=2, ensure_ascii=False)
+            # 対象と同じディレクトリに一時ファイルを作る
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=f"{self.path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                # 完全な JSON を一時ファイルへ書き込む
+                json.dump(self._data, temp_file, indent=2, ensure_ascii=False)
+                # OS バッファの内容をディスクへ反映する
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+                # 原子的な置換と後片付けにパスを保存する
+                temp_path = temp_file.name
+            # 完成済みファイルだけを既存ファイルと原子的に置き換える
+            os.replace(temp_path, self.path)
         except OSError as exc:
             # 失敗をログする
             logger.error("Failed to save link_fix settings: %s", exc)
+        finally:
+            # 置換されなかった一時ファイルを残さない
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError as exc:
+                    logger.warning("Failed to remove temporary link_fix settings: %s", exc)
 
     def _guild_key(self, guild_id: int) -> str:
         """ギルド id を辞書キーにする。"""
@@ -96,16 +132,18 @@ class LinkFixSettingsStore:
         # 未設定時は無効（ユーザーが /linkfix で有効化する想定）
         return bool(section.get("enabled", False))
 
-    def set_feature_enabled(self, guild_id: int, enabled: bool) -> None:
+    async def set_feature_enabled(self, guild_id: int, enabled: bool) -> None:
         """全体 on/off を保存する。"""
-        # キー
-        key = self._guild_key(guild_id)
-        # 既存を取る
-        entry = self._data.setdefault(key, {})
-        # フラグを書く
-        entry["enabled"] = bool(enabled)
-        # 保存する
-        self.save()
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
+            # キーを作る
+            key = self._guild_key(guild_id)
+            # 既存設定を確保する
+            entry = self._data.setdefault(key, {})
+            # フラグを書く
+            entry["enabled"] = bool(enabled)
+            # 更新後の状態を保存する
+            self._save_locked()
 
     def get_site(self, guild_id: int, site_id: str) -> Dict[str, Any]:
         """サイト単位のギルド上書き（無ければ空）。"""
@@ -141,43 +179,55 @@ class LinkFixSettingsStore:
         meta = get_site_meta(self.bot_config, site_id)
         return bool(meta.get("enabled", True))
 
-    def set_site_enabled(self, guild_id: int, site_id: str, enabled: bool) -> None:
+    async def set_site_enabled(
+        self, guild_id: int, site_id: str, enabled: bool
+    ) -> None:
         """サイト on/off を保存する。"""
-        # サイト dict を確保する
-        site = self._ensure_site(guild_id, site_id)
-        # 書く
-        site["enabled"] = bool(enabled)
-        # 保存する
-        self.save()
-
-    def set_all_sites_enabled(self, guild_id: int, enabled: bool) -> None:
-        """定義済み全サイトの on/off を一括で保存する。"""
-        # 全サイト id を取る
-        for site_id in list_site_ids(self.bot_config):
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
             # サイト dict を確保する
             site = self._ensure_site(guild_id, site_id)
-            # 有効フラグを書く
+            # フラグを書く
             site["enabled"] = bool(enabled)
-        # まとめて1回だけ保存する
-        self.save()
+            # 更新後の状態を保存する
+            self._save_locked()
 
-    def set_fix_domain(self, guild_id: int, site_id: str, domain: str) -> bool:
+    async def set_all_sites_enabled(self, guild_id: int, enabled: bool) -> None:
+        """定義済み全サイトの on/off を一括で保存する。"""
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
+            # 全サイト id を取る
+            for site_id in list_site_ids(self.bot_config):
+                # サイト dict を確保する
+                site = self._ensure_site(guild_id, site_id)
+                # 有効フラグを書く
+                site["enabled"] = bool(enabled)
+            # まとめて1回だけ保存する
+            self._save_locked()
+
+    async def set_fix_domain(
+        self, guild_id: int, site_id: str, domain: str
+    ) -> bool:
         """Fix 先ドメインを保存する。不正なら False。"""
         # 正規化する
         normalized = normalize_domain(domain)
         # 失敗
         if not normalized:
             return False
-        # サイトを確保する
-        site = self._ensure_site(guild_id, site_id)
-        # 書く
-        site["fix_domain"] = normalized
-        # 保存する
-        self.save()
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
+            # サイトを確保する
+            site = self._ensure_site(guild_id, site_id)
+            # 正規化済みの値を書く
+            site["fix_domain"] = normalized
+            # 更新後の状態を保存する
+            self._save_locked()
         # 成功
         return True
 
-    def set_match_domains(self, guild_id: int, site_id: str, domains: list[str]) -> bool:
+    async def set_match_domains(
+        self, guild_id: int, site_id: str, domains: list[str]
+    ) -> bool:
         """Fix 元ドメイン一覧を保存する。"""
         # 正規化リスト
         cleaned: list[str] = []
@@ -189,30 +239,36 @@ class LinkFixSettingsStore:
         # 空は拒否
         if not cleaned:
             return False
-        # サイトを確保する
-        site = self._ensure_site(guild_id, site_id)
-        # 書く
-        site["match_domains"] = cleaned
-        # 保存する
-        self.save()
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
+            # サイトを確保する
+            site = self._ensure_site(guild_id, site_id)
+            # 正規化済み一覧を書く
+            site["match_domains"] = cleaned
+            # 更新後の状態を保存する
+            self._save_locked()
         # 成功
         return True
 
-    def clear_match_domains(self, guild_id: int, site_id: str) -> None:
+    async def clear_match_domains(self, guild_id: int, site_id: str) -> None:
         """マッチ元上書きを消し、YAML デフォルトに戻す。"""
-        # サイト
-        site = self._ensure_site(guild_id, site_id)
-        # キー削除
-        site.pop("match_domains", None)
-        # 保存する
-        self.save()
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
+            # サイトを確保する
+            site = self._ensure_site(guild_id, site_id)
+            # キーを削除する
+            site.pop("match_domains", None)
+            # 更新後の状態を保存する
+            self._save_locked()
 
-    def reset_guild(self, guild_id: int) -> None:
+    async def reset_guild(self, guild_id: int) -> None:
         """ギルド設定を全削除してデフォルトに戻す。"""
-        # キー削除
-        self._data.pop(self._guild_key(guild_id), None)
-        # 保存する
-        self.save()
+        # 更新と保存を一続きの排他処理にする
+        async with self._lock:
+            # 対象ギルドのキーを削除する
+            self._data.pop(self._guild_key(guild_id), None)
+            # 更新後の状態を保存する
+            self._save_locked()
 
     def count_enabled_sites(self, guild_id: int) -> tuple[int, int]:
         """(有効数, 総数) を返す。"""

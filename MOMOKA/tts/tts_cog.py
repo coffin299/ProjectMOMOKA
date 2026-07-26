@@ -91,7 +91,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self._load_speech_settings()
 
         self.dictionary_file = Path("data/speech_dictionary.json")
-        self.speech_dictionary: Dict[str, str] = {}
+        self.speech_dictionary: Dict[str, Dict[str, str]] = {}
         self._load_dictionary()
 
         self.llm_bot_ids = [1031673203774464160, 1311866016011124736]
@@ -202,6 +202,9 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self._save_settings()
 
     async def fetch_available_models(self) -> bool:
+        # レガシー API URL が未設定なら無効な HTTP リクエストを行わない
+        if not self.api_url:
+            return False
         try:
             async with self.session.get(f"{self.api_url}/models/info") as response:
                 if response.status == 200:
@@ -432,29 +435,85 @@ class TTSCog(commands.Cog, name="tts_cog"):
         try:
             if self.dictionary_file.exists():
                 with open(self.dictionary_file, 'r', encoding='utf-8') as f:
-                    self.speech_dictionary = json.load(f)
+                    dictionary_data = json.load(f)
+                # ギルド ID ごとの辞書だけを受け入れ、旧来のフラット形式は破棄する
+                if self._is_guild_scoped_dictionary(dictionary_data):
+                    self.speech_dictionary = dictionary_data
                     logging.getLogger(__name__).info(
-                        "[TTSCog] 読み上げ辞書を読み込みました: %d単語", len(self.speech_dictionary)
+                        "[TTSCog] 読み上げ辞書を読み込みました: %dギルド",
+                        len(self.speech_dictionary),
+                    )
+                else:
+                    self.speech_dictionary = {}
+                    logging.getLogger(__name__).warning(
+                        "[TTSCog] 旧形式または不正形式の読み上げ辞書を破棄しました。"
                     )
             else:
                 self.dictionary_file.parent.mkdir(parents=True, exist_ok=True)
                 self._save_dictionary()
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 辞書読み込みエラー: %s", e)
+            self.speech_dictionary = {}
 
     def _save_dictionary(self):
         try:
+            # 初回保存でも保存先ディレクトリが存在するようにする
+            self.dictionary_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.dictionary_file, 'w', encoding='utf-8') as f:
                 json.dump(self.speech_dictionary, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 辞書保存エラー: %s", e)
 
-    def _apply_dictionary(self, text: str) -> str:
-        if not self.speech_dictionary:
+    @staticmethod
+    def _is_guild_scoped_dictionary(dictionary_data: Any) -> bool:
+        """辞書データがギルド単位の JSON 形式か判定する。"""
+        # 最上位はギルド ID をキーにした辞書でなければならない
+        if not isinstance(dictionary_data, dict):
+            return False
+        # 全ギルドの単語・読み方が文字列ペアか確認する
+        return all(
+            str(guild_id).isdigit()
+            and isinstance(entries, dict)
+            and all(
+                isinstance(word, str) and isinstance(reading, str)
+                for word, reading in entries.items()
+            )
+            for guild_id, entries in dictionary_data.items()
+        )
+
+    def _get_guild_dictionary(self, guild_id: int) -> Dict[str, str]:
+        """指定ギルド専用の読み上げ辞書を返す。"""
+        # JSON のキー形式に合わせてギルド ID を文字列化する
+        guild_id_key = str(guild_id)
+        # 未登録ギルドには空の辞書を作成して返す
+        return self.speech_dictionary.setdefault(guild_id_key, {})
+
+    async def _get_interaction_dictionary(
+        self,
+        interaction: discord.Interaction,
+    ) -> Optional[Dict[str, str]]:
+        """辞書コマンドの実行ギルドを検証して辞書を返す。"""
+        # DM にはギルド固有の辞書がないため実行を拒否する
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "❌ 読み上げ辞書コマンドはサーバー内でのみ使用できます。",
+                ephemeral=True,
+            )
+            return None
+        # 実行元ギルドだけの辞書を返して他ギルドの辞書を分離する
+        return self._get_guild_dictionary(interaction.guild.id)
+
+    def _apply_dictionary(self, guild_id: int, text: str) -> str:
+        """指定ギルドの辞書を読み上げテキストへ適用する。"""
+        # 現在のギルドに登録された単語だけを置換対象にする
+        guild_dictionary = self._get_guild_dictionary(guild_id)
+        if not guild_dictionary:
             return text
-        sorted_words = sorted(self.speech_dictionary.keys(), key=len, reverse=True)
+        # 長い単語から置換して短い単語による部分一致を防ぐ
+        sorted_words = sorted(guild_dictionary.keys(), key=len, reverse=True)
         for word in sorted_words:
-            text = text.replace(word, self.speech_dictionary[word])
+            # 登録済みの読み方へ単語を置換する
+            text = text.replace(word, guild_dictionary[word])
         return text
 
     dictionary_group = app_commands.Group(name="dictionary", description="Manage the read-aloud dictionary.")
@@ -462,9 +521,12 @@ class TTSCog(commands.Cog, name="tts_cog"):
     @dictionary_group.command(name="add", description="Add a word to the read-aloud dictionary.")
     @app_commands.describe(word="Word to register.", reading="How to read it.")
     async def add_dictionary(self, interaction: discord.Interaction, word: str, reading: str):
-        is_update = word in self.speech_dictionary
-        old_reading = self.speech_dictionary.get(word)
-        self.speech_dictionary[word] = reading
+        dictionary = await self._get_interaction_dictionary(interaction)
+        if dictionary is None:
+            return
+        is_update = word in dictionary
+        old_reading = dictionary.get(word)
+        dictionary[word] = reading
         self._save_dictionary()
         
         embed = discord.Embed(title=f"📖 辞書を{'更新' if is_update else '追加'}しました", color=discord.Color.blue() if is_update else discord.Color.green())
@@ -476,10 +538,13 @@ class TTSCog(commands.Cog, name="tts_cog"):
     @dictionary_group.command(name="remove", description="Remove a word from the read-aloud dictionary.")
     @app_commands.describe(word="Word to remove.")
     async def remove_dictionary(self, interaction: discord.Interaction, word: str):
-        if word not in self.speech_dictionary:
+        dictionary = await self._get_interaction_dictionary(interaction)
+        if dictionary is None:
+            return
+        if word not in dictionary:
             return await interaction.response.send_message(f"❌ `{word}` は辞書にありません。", ephemeral=True)
         
-        reading = self.speech_dictionary.pop(word)
+        reading = dictionary.pop(word)
         self._save_dictionary()
         embed = discord.Embed(title="📖 辞書から削除しました", color=discord.Color.orange())
         embed.add_field(name="単語", value=f"`{word}`", inline=True).add_field(name="読み方", value=f"`{reading}`", inline=True)
@@ -487,18 +552,31 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
     @dictionary_group.command(name="list", description="List registered dictionary entries.")
     async def list_dictionary(self, interaction: discord.Interaction):
-        if not self.speech_dictionary:
+        dictionary = await self._get_interaction_dictionary(interaction)
+        if dictionary is None:
+            return
+        if not dictionary:
             return await interaction.response.send_message("📖 辞書は空です。", ephemeral=True)
         
         # Simple list for now, pagination can be re-added if needed
-        description = "\n".join(f"`{word}` → `{reading}`" for word, reading in sorted(self.speech_dictionary.items()))
+        description = "\n".join(
+            f"`{word}` → `{reading}`"
+            for word, reading in sorted(dictionary.items())
+        )
         embed = discord.Embed(title="📖 読み上げ辞書", description=description, color=discord.Color.blue())
         await interaction.response.send_message(embed=embed)
 
     @dictionary_group.command(name="search", description="Search the dictionary for a word.")
     @app_commands.describe(query="Word to search (partial match).")
     async def search_dictionary(self, interaction: discord.Interaction, query: str):
-        results = {w: r for w, r in self.speech_dictionary.items() if query.lower() in w.lower()}
+        dictionary = await self._get_interaction_dictionary(interaction)
+        if dictionary is None:
+            return
+        results = {
+            word: reading
+            for word, reading in dictionary.items()
+            if query.lower() in word.lower()
+        }
         if not results:
             return await interaction.response.send_message(f"❌ `{query}` に一致する単語は見つかりませんでした。", ephemeral=True)
 
@@ -515,7 +593,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         # テキストの前処理: URLを省略し、辞書変換を適用
         processed_text = re.sub(r'https?://[\S]+', ' URL省略 ', text)
-        converted_text = self._apply_dictionary(processed_text)
+        converted_text = self._apply_dictionary(guild.id, processed_text)
         # 200文字以上は切り詰め
         if len(converted_text) > 200:
             converted_text = converted_text[:200] + " 以下省略"

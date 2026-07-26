@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import time
 import uuid
 from typing import Any, Dict, Optional
 
@@ -29,6 +31,10 @@ TOKEN_FILE = "token.json"
 GDRIVE_FOLDER_ID = "1g5KmfB7xVrL-Y59RTf6f2IDbbJsTSFZs"  # ← ここを必ず書き換えてください
 DELETE_DELAY_SECONDS = 600
 DOWNLOAD_DIR = "temp_media_gdrive"
+GDRIVE_DELETION_SCHEDULE_FILE = os.path.join(
+    "data",
+    "gdrive_deletion_schedule.json",
+)
 # --- 設定項目ここまで ---
 
 logger = logging.getLogger(__name__)
@@ -53,6 +59,27 @@ def _format_duration(duration: Optional[int]) -> str:
         return f"{hours:02}:{minutes:02}:{seconds:02}"
     # 分秒のみ
     return f"{minutes:02}:{seconds:02}"
+
+
+def _select_download_info(info: Any) -> Optional[Dict[str, Any]]:
+    """単体情報または検索結果から最初の有効なメディア情報を返す。"""
+    # 情報が辞書以外なら利用できない
+    if not isinstance(info, dict):
+        return None
+    # 検索結果のエントリ一覧を取得する
+    entries = info.get("entries")
+    # 単体メディア情報ならそのまま返す
+    if entries is None:
+        return info
+    # None を除外して最初に見つかったエントリを返す
+    return next(
+        (
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+        ),
+        None,
+    )
 
 
 class StatusLayoutView(discord.ui.LayoutView):
@@ -177,12 +204,15 @@ class VideoFormatSelect(discord.ui.Select):
         info: Dict[str, Any],
         url: str,
         *,
+        requester_user_id: int,
         lang: str = "en",
     ) -> None:
         # Cog・メタ・URL を保持する
         self.cog = cog_instance
         self.info = info
         self.url = url
+        # 操作を許可するリクエスト元ユーザー ID
+        self.requester_user_id = requester_user_id
         # UI 言語
         self.lang = "ja" if lang == "ja" else "en"
         # 選択肢リスト
@@ -242,6 +272,17 @@ class VideoFormatSelect(discord.ui.Select):
         """選択後にダウンロード→結合→GDrive アップロードする。"""
         # 押した人の locale を優先する（無ければ作成時言語）
         lang = resolve_interaction_lang(interaction) or self.lang
+        # リクエスト元以外の選択操作を拒否する
+        if interaction.user.id != self.requester_user_id:
+            await interaction.response.send_message(
+                pick_str(
+                    lang,
+                    ja="このフォーマット選択はコマンドを実行したユーザーのみ操作できます。",
+                    en="Only the user who requested this download can select a format.",
+                ),
+                ephemeral=True,
+            )
+            return
         # 無効値ならエラー表示へ
         if self.values[0] == "none":
             err_view = StatusLayoutView(
@@ -359,7 +400,7 @@ class VideoFormatSelect(discord.ui.Select):
             # 完了表示へ差し替え
             await interaction.edit_original_response(content=None, embed=None, view=ready)
             # 期限後削除をスケジュール
-            asyncio.create_task(self.cog.schedule_gdrive_deletion(file_id))
+            await self.cog.schedule_gdrive_deletion(file_id)
         except Exception as e:
             # 例外メッセージをエラー LayoutView で表示
             progress.update(
@@ -387,6 +428,7 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         info: Dict[str, Any],
         url: str,
         *,
+        requester_user_id: int,
         lang: str = "en",
         timeout: float = 300.0,
     ) -> None:
@@ -396,6 +438,8 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         self.cog = cog_instance
         self.info = info
         self.url = url
+        # 操作を許可するリクエスト元ユーザー ID
+        self.requester_user_id = requester_user_id
         # UI 言語
         self.lang = "ja" if lang == "ja" else "en"
         # UI を組み立てる
@@ -451,7 +495,13 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         # セレクトを ActionRow に載せる
         select_row = discord.ui.ActionRow()
         select_row.add_item(
-            VideoFormatSelect(self.cog, self.info, self.url, lang=self.lang)
+            VideoFormatSelect(
+                self.cog,
+                self.info,
+                self.url,
+                requester_user_id=self.requester_user_id,
+                lang=self.lang,
+            )
         )
         container.add_item(select_row)
         # ルートへ追加
@@ -504,9 +554,24 @@ class GDriveUploader:
             return None, None
         file_metadata = {"name": file_name, "parents": [folder_id]}
         media = MediaFileUpload(file_path, resumable=True)
-        file = self.service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+        file = self.service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields="id",
+        ).execute()
+        # 作成直後から失敗時の孤立ファイルを追跡する
         file_id = file.get("id")
-        self.service.permissions().create(fileId=file_id, body={"type": "anyone", "role": "reader"}).execute()
+        try:
+            # 誰でも読み取れる共有権限を付与する
+            self.service.permissions().create(
+                fileId=file_id,
+                body={"type": "anyone", "role": "reader"},
+            ).execute()
+        except Exception:
+            # 権限付与に失敗したファイルを Drive から削除する
+            if file_id:
+                self.delete_file(file_id)
+            raise
         download_link = f"https://drive.google.com/uc?export=download&id={file_id}"
         return file_id, download_link
 
@@ -532,12 +597,147 @@ class YtdlpGdriveCog(commands.Cog):
         self.bot = bot
         self.gdrive_uploader = GDriveUploader(CLIENT_SECRETS_FILE, TOKEN_FILE)
         self.exception_handler = YTDLPExceptionHandler()
+        # 削除予定の UNIX 時刻をファイル ID ごとに保持する
+        self._gdrive_deletion_schedule: Dict[str, float] = {}
+        # 稼働中の削除タスクをファイル ID ごとに保持する
+        self._gdrive_deletion_tasks: Dict[str, asyncio.Task[None]] = {}
+        # 削除予定の更新を直列化する
+        self._gdrive_deletion_lock = asyncio.Lock()
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    async def schedule_gdrive_deletion(self, file_id: str):
-        """期限後に Drive 上のファイルを削除する。"""
-        await asyncio.sleep(DELETE_DELAY_SECONDS)
-        await asyncio.to_thread(self.gdrive_uploader.delete_file, file_id)
+    async def cog_load(self) -> None:
+        """永続化済みの Google Drive 削除予定を復元する。"""
+        # 保存済みの削除予定を読み込む
+        self._gdrive_deletion_schedule = self._load_gdrive_deletion_schedule()
+        # 各予定を現在のイベントループで再開する
+        for file_id, delete_at in self._gdrive_deletion_schedule.items():
+            self._start_gdrive_deletion_task(file_id, delete_at)
+
+    def cog_unload(self) -> None:
+        """再読み込み時に削除予定を保持したままタスクを停止する。"""
+        # 再読み込み後に復元できるよう実行中タスクだけを停止する
+        for task in self._gdrive_deletion_tasks.values():
+            task.cancel()
+
+    def _load_gdrive_deletion_schedule(self) -> Dict[str, float]:
+        """削除予定 JSON を読み込み、有効な値だけを返す。"""
+        try:
+            # JSON ファイルを UTF-8 で開く
+            with open(GDRIVE_DELETION_SCHEDULE_FILE, "r", encoding="utf-8") as file:
+                schedule_data = json.load(file)
+        except FileNotFoundError:
+            # 初回起動時は予定なしとして扱う
+            return {}
+        except (OSError, json.JSONDecodeError):
+            # 読み込み不能な予定ファイルは安全に無視する
+            logger.exception("Google Drive 削除予定ファイルの読み込みに失敗しました。")
+            return {}
+        # 辞書以外の JSON は予定として扱わない
+        if not isinstance(schedule_data, dict):
+            logger.error("Google Drive 削除予定ファイルの形式が不正です。")
+            return {}
+        # 検証済みの削除予定を格納する
+        schedule: Dict[str, float] = {}
+        # 各ファイル ID と削除予定時刻を検証する
+        for file_id, delete_at in schedule_data.items():
+            # ファイル ID が文字列以外なら無視する
+            if not isinstance(file_id, str):
+                continue
+            try:
+                # 削除予定時刻を浮動小数へ正規化する
+                schedule[file_id] = float(delete_at)
+            except (TypeError, ValueError):
+                # 時刻へ変換できない値は無視する
+                logger.warning(
+                    "Google Drive 削除予定の時刻が不正です: %s",
+                    file_id,
+                )
+        return schedule
+
+    def _save_gdrive_deletion_schedule(self) -> None:
+        """削除予定を JSON ファイルへ原子的に保存する。"""
+        # 中断時の破損を避けるため一時ファイルのパスを作る
+        temporary_file = f"{GDRIVE_DELETION_SCHEDULE_FILE}.tmp"
+        try:
+            # 保存先ディレクトリを取得する
+            directory = os.path.dirname(GDRIVE_DELETION_SCHEDULE_FILE)
+            # ディレクトリが指定されている場合だけ作成する
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            # 一時ファイルへ最新予定を書き込む
+            with open(temporary_file, "w", encoding="utf-8") as file:
+                json.dump(
+                    self._gdrive_deletion_schedule,
+                    file,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            # 一時ファイルを正式ファイルへ置換する
+            os.replace(temporary_file, GDRIVE_DELETION_SCHEDULE_FILE)
+        except OSError:
+            # 保存失敗は削除処理を止めずに記録する
+            logger.exception("Google Drive 削除予定ファイルの保存に失敗しました。")
+            try:
+                # 残った一時ファイルを掃除する
+                os.remove(temporary_file)
+            except OSError:
+                # 一時ファイルの掃除失敗は追加の例外にしない
+                pass
+
+    def _start_gdrive_deletion_task(self, file_id: str, delete_at: float) -> None:
+        """同じファイルの重複実行を避けて削除タスクを開始する。"""
+        # すでに実行中なら同じファイルを重複予約しない
+        existing_task = self._gdrive_deletion_tasks.get(file_id)
+        if existing_task and not existing_task.done():
+            return
+        # 指定時刻に実行する削除タスクを開始する
+        self._gdrive_deletion_tasks[file_id] = asyncio.create_task(
+            self._delete_gdrive_file_at(file_id, delete_at)
+        )
+
+    async def schedule_gdrive_deletion(
+        self,
+        file_id: str,
+        *,
+        delete_at: Optional[float] = None,
+    ) -> None:
+        """削除予定を保存して期限後の Google Drive 削除を開始する。"""
+        # 削除予定時刻が無ければ標準の有効期限を使う
+        scheduled_time = (
+            time.time() + DELETE_DELAY_SECONDS
+            if delete_at is None
+            else delete_at
+        )
+        # 予定ファイルと実行タスクを一貫した状態で更新する
+        async with self._gdrive_deletion_lock:
+            # ファイル ID ごとに削除予定を登録する
+            self._gdrive_deletion_schedule[file_id] = scheduled_time
+            # 再起動後にも復元できるよう予定を保存する
+            self._save_gdrive_deletion_schedule()
+            # 現在のプロセスでも削除タスクを開始する
+            self._start_gdrive_deletion_task(file_id, scheduled_time)
+
+    async def _delete_gdrive_file_at(self, file_id: str, delete_at: float) -> None:
+        """保存済みの予定時刻まで待機して Drive ファイルを削除する。"""
+        try:
+            # 過去の予定は再起動後すぐに実行する
+            await asyncio.sleep(max(0.0, delete_at - time.time()))
+            # Google Drive API の同期削除をスレッドで実行する
+            await asyncio.to_thread(self.gdrive_uploader.delete_file, file_id)
+        except asyncio.CancelledError:
+            # 再読み込み時は永続予定を残したまま停止する
+            raise
+        else:
+            # 削除試行が終わった予定を永続ストアから外す
+            async with self._gdrive_deletion_lock:
+                # 完了したファイル ID を予定から削除する
+                self._gdrive_deletion_schedule.pop(file_id, None)
+                # 最新の予定を JSON へ保存する
+                self._save_gdrive_deletion_schedule()
+        finally:
+            # 自分自身が登録中ならタスク一覧から外す
+            if self._gdrive_deletion_tasks.get(file_id) is asyncio.current_task():
+                self._gdrive_deletion_tasks.pop(file_id, None)
 
     @app_commands.command(
         name="download_audio",
@@ -568,7 +768,7 @@ class YtdlpGdriveCog(commands.Cog):
         # 思考表示で遅延応答
         await interaction.response.defer(thinking=True)
         # 一時ファイル用 ID
-        unique_id = uuid.uuid4()
+        unique_id = str(uuid.uuid4())
         output_path = os.path.join(DOWNLOAD_DIR, f"{unique_id}.{audio_format}")
         # yt-dlp 音声抽出オプション
         ydl_opts = apply_youtube_ejs_opts(
@@ -604,9 +804,13 @@ class YtdlpGdriveCog(commands.Cog):
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # メタ取得（ダウンロードなし）
                 info = await asyncio.to_thread(ydl.extract_info, query, download=False)
-                # 検索結果なら先頭を使う
-                if "entries" in info:
-                    info = info["entries"][0]
+                # 検索結果から None でない最初のメディア情報を選ぶ
+                info = _select_download_info(info)
+                # 有効なメディア情報が無ければダウンロードを開始しない
+                if not info:
+                    raise yt_dlp.utils.DownloadError(
+                        "ダウンロード可能なメディア情報が見つかりませんでした。"
+                    )
                 video_title = info.get("title", "audio")
                 # 進捗本文を更新
                 progress.update(
@@ -675,7 +879,7 @@ class YtdlpGdriveCog(commands.Cog):
             )
             await message.edit(view=ready)
             # 期限後削除
-            asyncio.create_task(self.schedule_gdrive_deletion(file_id))
+            await self.schedule_gdrive_deletion(file_id)
         except Exception as e:
             # エラー文言
             error_msg = self.exception_handler.handle_exception(e, lang=lang)
@@ -692,12 +896,24 @@ class YtdlpGdriveCog(commands.Cog):
             else:
                 await interaction.followup.send(view=err_view)
         finally:
-            # 出力ファイル削除
-            if os.path.exists(output_path):
-                os.remove(output_path)
-            # 元ファイル削除
-            if temp_original_file_path and os.path.exists(temp_original_file_path):
-                os.remove(temp_original_file_path)
+            # UUID 接頭辞が一致する関連一時ファイルをすべて掃除する
+            try:
+                # 一時ディレクトリ内のファイルを走査する
+                for item in os.listdir(DOWNLOAD_DIR):
+                    # 今回の UUID で作成したファイルだけを対象にする
+                    if item.startswith(unique_id):
+                        try:
+                            # 対象ファイルを削除する
+                            os.remove(os.path.join(DOWNLOAD_DIR, item))
+                        except OSError:
+                            # 個別ファイルの削除失敗は処理全体を止めない
+                            logger.warning(
+                                "一時ファイルの削除に失敗しました: %s",
+                                item,
+                            )
+            except OSError:
+                # 一時ディレクトリの走査失敗は処理全体を止めない
+                logger.exception("一時ファイルの掃除に失敗しました。")
 
     @app_commands.command(
         name="download_video",
@@ -722,13 +938,23 @@ class YtdlpGdriveCog(commands.Cog):
             )
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = await asyncio.to_thread(ydl.extract_info, query, download=False)
-                # 検索結果なら先頭エントリ
-                if "entries" in info and info["entries"]:
-                    info = info["entries"][0]
+                # 検索結果から None でない最初のメディア情報を選ぶ
+                info = _select_download_info(info)
+                # 有効なメディア情報が無ければ選択 UI を表示しない
+                if not info:
+                    raise yt_dlp.utils.DownloadError(
+                        "ダウンロード可能なメディア情報が見つかりませんでした。"
+                    )
             # 元ページ URL
             video_url = info.get("webpage_url", query)
             # Components V2 の選択 UI
-            view = VideoSelectLayoutView(self, info, video_url, lang=lang)
+            view = VideoSelectLayoutView(
+                self,
+                info,
+                video_url,
+                requester_user_id=interaction.user.id,
+                lang=lang,
+            )
             await interaction.followup.send(view=view)
         except Exception as e:
             # エラー LayoutView

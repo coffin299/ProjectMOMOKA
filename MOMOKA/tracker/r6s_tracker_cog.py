@@ -186,8 +186,9 @@ class R6SiegeTrackerExtended(commands.Cog):
         if self.session:
             await self.session.close()
 
-    def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create HTTP session"""
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """非同期コンテキストで HTTP セッションを取得または作成する。"""
+        # Cog 読込後に閉じられたセッションだけを非同期処理内で作り直す
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession()
         return self.session
@@ -199,7 +200,8 @@ class R6SiegeTrackerExtended(commands.Cog):
         if cached is not None:
             return cached
 
-        session = self._get_session()
+        # ClientSession は実行中の非同期コンテキストから取得する
+        session = await self._get_session()
 
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:

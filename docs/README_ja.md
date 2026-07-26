@@ -104,9 +104,9 @@ Rainbow Six Siege / VALORANT の統計表示。
 
 ### 8. ユーティリティ
 
-ダイス、タイマー、サーバー/ユーザー情報、ガチャなど。`/help` は Components V2 で **🇯🇵/🇺🇸 言語切替とページング**（LLM / Music+Download / Link Fix / Twitch を先頭に案内）。`/invite` も Components V2 で両ボットの招待を案内します。
+ダイス、サーバー/ユーザー情報、ガチャなど。`/help` は Components V2 で **🇯🇵/🇺🇸 言語切替とページング**（LLM / Music+Download / Link Fix / Twitch を先頭に案内）。`/invite` も Components V2 で両ボットの招待を案内します。
 
-**UI 言語（Components V2 / Modal）:** Discord クライアント言語（app locale）→ サーバーの `preferred_locale`（guild）→ English の順で決定します（音楽 Now Playing 等は対象外）。`/help` `/invite` `/linkfix`、LLM 待機・討論パネル、メディア DL、`/feedback` Modal、`/match_time` Modal、画像生成 Modal などが対象です。
+**UI 言語（Components V2 / Modal）:** Discord クライアント言語（app locale）→ サーバーの `preferred_locale`（guild）→ English の順で決定します（音楽 Now Playing 等は対象外）。`/help` `/invite` `/linkfix`、LLM 待機・討論パネル、メディア DL、`/feedback` Modal、画像生成 Modal などが対象です。
 
 **スラッシュコマンドの説明文:** Discord クライアント言語（日本語 / 英語 / 韓国語 / ベトナム語 / 中国語簡体・繁体 / スペイン語 / フランス語 / ドイツ語 / ポルトガル語 / ロシア語 / タイ語 / インドネシア語）に応じて表示します（`configs/commands_i18n_config.default.yaml` を直接読み込み）。翻訳が無い言語や未対応 locale は英語にフォールバックします。コマンド名自体は英語のままです。
 
@@ -262,6 +262,8 @@ tts:
 music:
   default_volume: 20
   max_queue_size: 10000
+  # メモリに保持するギルド再生状態の上限（上限到達時は非再生の最古状態を削除）
+  max_guilds: 50
   auto_leave_timeout: 3
 ```
 
@@ -291,6 +293,7 @@ music:
 
 Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
 プレイリスト取得上限は `music.max_playlist_items`（既定 10000）。
+保持するギルド再生状態の上限は `music.max_guilds`（既定 50）。上限到達時は非再生の最古状態を削除し、削除完了後に新規状態を受け付けます。
 音楽メッセージは既定で `@silent`（通知抑制）送信。
 
 ### 画像生成（PLANA）
@@ -335,7 +338,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | `/invite` | PLANA / ARONA 招待（Components V2・app→guild→en） |
 | `/download_video` `/download_audio` | メディアダウンロード（Components V2・Google Drive 共有） |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系 |
-| `/roll` `/diceroll` `/check` `/gacha` `/timer` `/meow` `/support` `/feedback` | その他 |
+| `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | その他 |
 
 ---
 
@@ -361,11 +364,14 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 地震速報（PLANA）
 
-気象庁由来の情報を [P2P地震情報 JSON API v2 / WebSocket](https://www.p2pquake.net/develop/json_api_v2/#/) 経由で受信し、緊急地震速報・地震情報・津波予報を通知します。
+気象庁由来の情報を [P2P地震情報 JSON API v2 / WebSocket](https://www.p2pquake.net/develop/json_api_v2/#/) 経由で受信し、緊急地震速報（警報・code 556）・地震情報（code 551）・津波予報（code 552）を通知します。
 
-- `/earthquake_settings` … 通知チャンネル（簡易で3種統一 / 詳細で個別）、震度レベル別フィルタ（震度不明含む）、津波通知 ON/OFF（Components V2）
-- `/earthquake_channel` … 通知チャンネルの従来コマンド（互換）
+- `/earthquake_settings` … 通知チャンネル（簡易で3種統一 / 詳細で個別）、震度レベル別フィルタ（震度不明含む）、津波通知 ON/OFF（Components V2・サーバー管理権限が必要）
+- `/earthquake_channel` `/earthquake_remove` `/earthquake_test` … 通知先の設定・削除・テスト（サーバー管理権限が必要）
 - 配信 embed フッターに `/earthquake_settings` への案内を表示
+- EEW は予測地域・予測震度・発生時刻・主要動到達予測時刻を表示し、取消情報も通知します。API のテスト情報は本番チャンネルへ配信しません
+- 発表検出のみの code 554 は通知しません。code 対応: 556=緊急地震速報（警報）、551=地震情報、552=津波予報
+- P2P API 仕様上、EEW（556）の内容・配信品質は無保証であり、緊急地震速報（警報）としての公的利活用は非推奨です（[仕様](https://www.p2pquake.net/develop/json_api_v2/#/) 参照）
 - 海外サーバーでも設定可能。取得・配信されるのは日本の地震・津波情報のみ
 
 ### Link Fix（PLANA）

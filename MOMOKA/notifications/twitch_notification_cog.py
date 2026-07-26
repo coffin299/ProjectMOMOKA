@@ -2,6 +2,8 @@
 import asyncio
 import json
 import logging
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -26,6 +28,15 @@ TWITCH_API_BASE_URL = "https://api.twitch.tv/helix"
 TWITCH_AUTH_URL = "https://id.twitch.tv/oauth2/token"
 
 
+def _is_valid_twitch_credential(value: Any) -> bool:
+    """Twitch 認証情報が実運用可能な値かを判定する。"""
+    # 文字列以外は認証情報として使えないため無効にする
+    if not isinstance(value, str):
+        return False
+    # 空白だけの値とテンプレート用プレースホルダーを拒否する
+    return bool(value.strip()) and not value.strip().upper().startswith("YOUR_")
+
+
 class TwitchNotification(commands.Cog):
     """Twitchの配信開始を通知するCog"""
 
@@ -33,11 +44,24 @@ class TwitchNotification(commands.Cog):
         self.bot = bot
         self.handler = TwitchExceptionHandler(self)
         self.session: aiohttp.ClientSession = aiohttp.ClientSession()
+        # 設定ファイルの同時保存を直列化する
+        self._settings_lock = asyncio.Lock()
 
         # Twitch API認証情報をconfigから取得
         twitch_config = bot.config.get('twitch', {})
-        self.client_id = twitch_config.get('client_id')
-        self.client_secret = twitch_config.get('client_secret')
+        configured_client_id = twitch_config.get('client_id')
+        configured_client_secret = twitch_config.get('client_secret')
+        # YOUR_* を含む雛形値では Twitch API へ接続しない
+        self.client_id = (
+            configured_client_id
+            if _is_valid_twitch_credential(configured_client_id)
+            else None
+        )
+        self.client_secret = (
+            configured_client_secret
+            if _is_valid_twitch_credential(configured_client_secret)
+            else None
+        )
         self.access_token: Optional[str] = None
         self.token_expires_at: int = 0
 
@@ -72,14 +96,43 @@ class TwitchNotification(commands.Cog):
             logger.error(f"設定ファイル({SETTINGS_FILE})の読み込みに失敗しました: {e}")
             return {}
 
-    def _save_settings(self):
-        """設定ファイルに保存する"""
+    async def _save_settings(self) -> None:
+        """設定ファイルへ排他的かつ原子的に保存する。"""
         SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.settings, f, indent=4, ensure_ascii=False)
-        except IOError as e:
-            logger.error(f"設定ファイル({SETTINGS_FILE})の保存に失敗しました: {e}")
+        # 同時実行されるコマンドと定期チェックの保存競合を防ぐ
+        async with self._settings_lock:
+            temp_path: Optional[str] = None
+            try:
+                # 同一ディレクトリに一時ファイルを作り置換可能にする
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    dir=SETTINGS_FILE.parent,
+                    prefix=f"{SETTINGS_FILE.name}.",
+                    suffix=".tmp",
+                    delete=False,
+                ) as temp_file:
+                    # 完全な JSON を一時ファイルへ書き込む
+                    json.dump(self.settings, temp_file, indent=4, ensure_ascii=False)
+                    # OS バッファの内容をディスクへ反映する
+                    temp_file.flush()
+                    os.fsync(temp_file.fileno())
+                    # 後片付けと置換に使う一時ファイルのパスを保持する
+                    temp_path = temp_file.name
+                # 完成した一時ファイルだけを既存設定と原子的に置き換える
+                os.replace(temp_path, SETTINGS_FILE)
+            except OSError as exc:
+                logger.error("設定ファイル(%s)の保存に失敗しました: %s", SETTINGS_FILE, exc)
+            finally:
+                # 置換前に失敗した一時ファイルを残さない
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.unlink(temp_path)
+                    except OSError as exc:
+                        logger.warning(
+                            "設定ファイルの一時ファイルを削除できませんでした: %s",
+                            exc,
+                        )
 
     # --- Twitch API 関連 ---
     # (このセクションのコードは変更ありません)
@@ -162,9 +215,23 @@ class TwitchNotification(commands.Cog):
             return
 
         try:
-            # APIを一度に叩いて、現在配信中のストリーム情報を取得
-            response = await self._api_request("streams", params=[("user_id", uid) for uid in user_ids_to_check])
-            live_streams = {stream['user_id']: stream for stream in response.get('data', [])}
+            # Helix の user_id 指定上限である100件ごとに配信情報を取得する
+            live_streams = {}
+            user_ids = sorted(user_ids_to_check)
+            for start_index in range(0, len(user_ids), 100):
+                # 現在の100件だけを同じキーのクエリパラメータで渡す
+                user_id_chunk = user_ids[start_index:start_index + 100]
+                response = await self._api_request(
+                    "streams",
+                    params=[("user_id", user_id) for user_id in user_id_chunk],
+                )
+                # 取得済みの配信情報を全ギルドで再利用できるよう ID をキーにする
+                live_streams.update(
+                    {
+                        stream["user_id"]: stream
+                        for stream in response.get("data", [])
+                    }
+                )
 
             settings_changed = False
             # 全てのサーバー、全てのチャンネル設定をチェック
@@ -195,7 +262,7 @@ class TwitchNotification(commands.Cog):
 
             # 変更があった場合のみファイルに保存する
             if settings_changed:
-                self._save_settings()
+                await self._save_settings()
 
         except TwitchAPIError as e:
             logger.warning(f"配信チェック中にAPIエラーが発生しました: {e}")
@@ -280,7 +347,8 @@ class TwitchNotification(commands.Cog):
             parsed_url = urlparse(twitch_url)
             if parsed_url.netloc not in ("www.twitch.tv", "twitch.tv"):
                 raise ConfigError("無効なTwitchチャンネルURLです。")
-            login_name = parsed_url.path.strip('/')
+            # URL の後続パスを API のログイン名として誤用しない
+            login_name = parsed_url.path.strip("/").split("/", maxsplit=1)[0]
             if not login_name:
                 raise ConfigError("URLからチャンネル名を特定できませんでした。")
 
@@ -303,7 +371,7 @@ class TwitchNotification(commands.Cog):
                 new_setting["message"] = message
 
             self.settings[guild_id][user_data["id"]] = new_setting
-            self._save_settings()
+            await self._save_settings()
 
             embed = discord.Embed(
                 title="✅ Twitch通知設定完了",
@@ -339,7 +407,7 @@ class TwitchNotification(commands.Cog):
             if not self.settings[guild_id]:
                 del self.settings[guild_id]
 
-            self._save_settings()
+            await self._save_settings()
             await interaction.response.send_message(
                 f"✅ **{removed_channel_name}** のTwitch配信通知の設定を解除しました。")
         else:
@@ -415,9 +483,14 @@ async def setup(bot: commands.Bot):
         return
 
     twitch_config = bot.config.get('twitch', {})
-    if not twitch_config.get('client_id') or not twitch_config.get('client_secret'):
+    if not (
+        _is_valid_twitch_credential(twitch_config.get("client_id"))
+        and _is_valid_twitch_credential(twitch_config.get("client_secret"))
+    ):
         logger.critical(
-            "config.yamlにTwitchの認証情報(client_id, client_secret)が設定されていません。Cogをロードしません。")
+            "Twitch の認証情報(client_id, client_secret)が未設定または "
+            "YOUR_* プレースホルダーです。Cogをロードしません。"
+        )
         return
 
     await bot.add_cog(TwitchNotification(bot))

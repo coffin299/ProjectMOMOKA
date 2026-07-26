@@ -11,7 +11,7 @@ from MOMOKA.images.error import errors
 
 logger = logging.getLogger(__name__)
 
-# --- 設定キー (config.yaml から読み込むことを想定) ---
+# --- images_config の image_commands 配下で使う設定キー ---
 THECATAPI_API_KEY = "thecatapi_api_key"
 # User-Agent設定
 BOT_USER_AGENT = "PlanaDiscordBot/1.0"
@@ -25,7 +25,9 @@ class ImageCommandsCog(commands.Cog, name="画像検索"):
         headers = {"User-Agent": self.bot_user_agent}
         self.http_session = aiohttp.ClientSession(headers=headers)
 
-        self.thecatapi_key = self.bot.config.get(THECATAPI_API_KEY)
+        # images_config のネスト済み設定から TheCatAPI キーを取得する
+        image_config = self.bot.config.get("image_commands", {})
+        self.thecatapi_key = image_config.get(THECATAPI_API_KEY)
         if not self.thecatapi_key:
             logger.warning("TheCatAPIのAPIキーが設定されていません。レート制限が厳しくなる可能性があります。")
 
@@ -72,15 +74,16 @@ class ImageCommandsCog(commands.Cog, name="画像検索"):
     async def yandere_safe_command(self, interaction: discord.Interaction, query: str = ""):
         await interaction.response.defer(ephemeral=False)
         try:
-            # タグをスペース区切りで分割し、+で結合
-            # rating:safeを自動的に追加
-            base_tags = query.strip().replace(" ", "+") if query else ""
-            tags = f"{base_tags}+rating:safe" if base_tags else "rating:safe"
+            # ユーザー指定タグに安全評価タグを追加し、HTTP パラメータとしてエンコードする
+            tags = " ".join(filter(None, (query.strip(), "rating:safe")))
 
             # Yandere APIエンドポイント
-            url = f"https://yande.re/post.json?limit=100&tags={tags}"
+            url = "https://yande.re/post.json"
 
-            async with self.http_session.get(url) as response:
+            async with self.http_session.get(
+                url,
+                params={"limit": 100, "tags": tags},
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     if data and isinstance(data, list) and len(data) > 0:
@@ -131,15 +134,16 @@ class ImageCommandsCog(commands.Cog, name="画像検索"):
     async def danbooru_safe_command(self, interaction: discord.Interaction, query: str = ""):
         await interaction.response.defer(ephemeral=False)
         try:
-            # タグをスペース区切りで分割し、+で結合
-            # rating:generalを自動的に追加
-            base_tags = query.strip().replace(" ", "+") if query else ""
-            tags = f"{base_tags}+rating:general" if base_tags else "rating:general"
+            # ユーザー指定タグに一般向け評価タグを追加し、HTTP パラメータとしてエンコードする
+            tags = " ".join(filter(None, (query.strip(), "rating:general")))
 
             # Danbooru APIエンドポイント
-            url = f"https://danbooru.donmai.us/posts.json?limit=100&tags={tags}"
+            url = "https://danbooru.donmai.us/posts.json"
 
-            async with self.http_session.get(url) as response:
+            async with self.http_session.get(
+                url,
+                params={"limit": 100, "tags": tags},
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     if data and isinstance(data, list) and len(data) > 0:

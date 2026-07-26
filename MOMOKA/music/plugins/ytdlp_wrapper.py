@@ -1019,13 +1019,14 @@ async def ensure_stream(track: Track, ytdl_opts_override: Optional[dict] = None)
         used_clients = ((used_opts.get("extractor_args") or {}).get("youtube") or {}).get("player_client")
         # クッキーを使った抽出だったかどうかを判定する
         used_cookies = ("cookiefile" in used_opts) or ("cookiesfrombrowser" in used_opts)
-        # 再生に必要なストリームURL、HTTPヘッダー、サムネイル、アップローダー情報、パイプ用ヒントをタプルで返す
+        # 再生に必要なストリームURL、メタデータ、再生時間、パイプ用ヒントをタプルで返す
         return (
             temp_track.stream_url,
             temp_track.http_headers,
             temp_track.thumbnail,
             temp_track.uploader,
             temp_track.uploader_url,
+            temp_track.duration,
             used_format,
             used_clients,
             used_cookies,
@@ -1039,6 +1040,7 @@ async def ensure_stream(track: Track, ytdl_opts_override: Optional[dict] = None)
             new_thumbnail,
             new_uploader,
             new_uploader_url,
+            new_duration,
             new_pipe_format,
             new_pipe_clients,
             new_pipe_use_cookies,
@@ -1055,6 +1057,8 @@ async def ensure_stream(track: Track, ytdl_opts_override: Optional[dict] = None)
             track.uploader = new_uploader
             # チャンネルURLも更新する
             track.uploader_url = new_uploader_url
+            # 再取得したメタデータの再生時間を反映してシーク判定を正確にする
+            track.duration = new_duration
             # 成功した format 指定をパイプ再生用ヒントとして記録する
             track.pipe_format = new_pipe_format
             # 成功した player_client 列をヒントとして記録する（list へ複製）

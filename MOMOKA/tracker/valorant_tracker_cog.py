@@ -10,6 +10,7 @@ import aiohttp
 import asyncio
 from typing import Optional, Literal
 from datetime import datetime
+import urllib.parse
 
 # Import custom errors (adjust path as needed)
 from MOMOKA.tracker.error.errors import (
@@ -81,7 +82,11 @@ class ValorantAPI:
 
     async def get_account(self, name: str, tag: str) -> dict:
         """Get account information"""
-        endpoint = f"/v2/account/{name}/{tag}"
+        # パス区切り文字として解釈されないよう Riot ID を完全にエンコードする
+        endpoint = (
+            f"/v2/account/{urllib.parse.quote(name, safe='')}/"
+            f"{urllib.parse.quote(tag, safe='')}"
+        )
         try:
             return await self._request(endpoint)
         except ValorantPlayerNotFoundError:
@@ -89,7 +94,11 @@ class ValorantAPI:
 
     async def get_mmr(self, region: str, name: str, tag: str) -> dict:
         """Get MMR/Rank information"""
-        endpoint = f"/v3/mmr/{region}/pc/{name}/{tag}"
+        # パス区切り文字として解釈されないよう Riot ID を完全にエンコードする
+        endpoint = (
+            f"/v3/mmr/{region}/pc/{urllib.parse.quote(name, safe='')}/"
+            f"{urllib.parse.quote(tag, safe='')}"
+        )
         try:
             return await self._request(endpoint)
         except ValorantPlayerNotFoundError:

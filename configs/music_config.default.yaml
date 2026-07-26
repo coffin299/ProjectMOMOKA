@@ -1,6 +1,8 @@
 music:
   default_volume: 20
   max_queue_size: 10000
+  # メモリに保持するギルド再生状態の上限。上限到達時は非再生の最古状態を削除してから新規受付する。
+  max_guilds: 50
   auto_leave_timeout: 3
   max_playlist_items: 10000
   inactive_timeout_minutes: 3

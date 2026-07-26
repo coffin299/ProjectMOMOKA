@@ -3,6 +3,8 @@ admin_user_ids:
 - 283551714966241281
 - 463985410473721856
 - 603714693193793558
+presence:
+  streaming_url: https://www.twitch.tv/coffinnoob299
 allowed_channel_ids: []
 music_cog_prefix: ''
 llm_cog_prefix: ''

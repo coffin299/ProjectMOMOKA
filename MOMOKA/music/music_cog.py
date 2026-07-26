@@ -1,4 +1,3 @@
-﻿# MOMOKA/music/music_cog.py
 import asyncio
 import collections
 import gc
@@ -122,6 +121,10 @@ class GuildState:
         self.paused_at: Optional[float] = None
         self.is_seeking: bool = False
         self.is_loading: bool = False
+        # /play の同時到着時に初回再生を一度だけ起動するためのギルド単位ロック
+        self.play_lock = asyncio.Lock()
+        # 意図的な停止中に古いミキサーの終了コールバックを無視するフラグ
+        self.stopping: bool = False
         self.mixer: Optional[AudioMixer] = None
         self._playing_next: bool = False  # 次の曲を再生中かどうかのフラグ
         # パイプ 403 による同一曲リトライ回数（最大 1）
@@ -239,7 +242,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         self.max_queue_size = self.music_config.get('max_queue_size', 9000)
         # プレイリスト展開の上限（未指定時は 10000。ラッパー既定 50 に依存しない）
         self.max_playlist_items = self.music_config.get('max_playlist_items', 10000)
-        self.max_guilds = self.music_config.get('max_guilds', 100000000)
+        self.max_guilds = self.music_config.get('max_guilds', 50)
         self.inactive_timeout_minutes = self.music_config.get('inactive_timeout_minutes', 30)
         self.global_connection_lock = asyncio.Lock()
         self.cleanup_task = None
@@ -326,7 +329,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         # ギルドごとに UI を再起動表示へ更新する
         for guild_id in target_guild_ids:
             # 最新のギルド状態を取得する
-            state = self._get_guild_state(guild_id)
+            state = self.get_existing_guild_state(guild_id)
             # 状態が消えていればスキップする
             if not state:
                 # 次のギルドへ
@@ -392,20 +395,45 @@ class MusicCog(commands.Cog, name="music_cog"):
         await self.bot.wait_until_ready()
 
     def _get_guild_state(self, guild_id: int) -> Optional[GuildState]:
+        """コマンド開始時に必要なギルド状態を取得または作成する。"""
+        # 既存状態が無い場合だけ、新しい状態の確保可否を判定する
         if guild_id not in self.guild_states:
+            # 保持上限に達している場合は、先に非再生状態の退避候補を探す
             if len(self.guild_states) >= self.max_guilds:
+                # 最古の非再生状態を保持する変数を初期化する
                 oldest_guild, oldest_time = None, datetime.now()
+                # 全状態から安全に削除できる最古の状態を探す
                 for gid, state in self.guild_states.items():
-                    if not state.is_playing and state.last_activity < oldest_time:
+                    # 再生・読み込み中でなく、かつ現在の候補より古い状態だけを選ぶ
+                    if (
+                        not state.is_playing
+                        and not state.is_loading
+                        and state.last_activity < oldest_time
+                    ):
+                        # 削除候補のIDと最終操作時刻を更新する
                         oldest_guild, oldest_time = gid, state.last_activity
-                if oldest_guild:
+                # 削除候補がある場合は非同期クリーンアップを予約する
+                if oldest_guild is not None:
+                    # 状態が実際に削除されるまで新規状態を作らない
                     asyncio.create_task(self._cleanup_guild_state(oldest_guild))
+                    # 削除予定のギルド名をログ用に解決する
                     guild = self.bot.get_guild(oldest_guild)
                     logger.info(
-                        f"Removed oldest inactive guild {oldest_guild} ({guild.name if guild else ''}) to make room")
+                        f"Evicting oldest inactive guild {oldest_guild} "
+                        f"({guild.name if guild else ''}) before accepting a new state")
+                # 削除を待たずに上限超過の状態を挿入しないため、呼び出し元へ拒否を返す
+                return None
+            # 上限内であるため、新しいギルド状態を登録する
             self.guild_states[guild_id] = GuildState(self.bot, guild_id, self.config)
+        # コマンド操作を受けた状態の最終操作時刻を更新する
         self.guild_states[guild_id].update_activity()
+        # 既存または新規状態を返す
         return self.guild_states[guild_id]
+
+    def get_existing_guild_state(self, guild_id: int) -> Optional[GuildState]:
+        """既存のギルド状態だけを返し、存在しなければ作成しない。"""
+        # コールバック・クリーンアップから状態を復活させないため辞書を直接参照する
+        return self.guild_states.get(guild_id)
 
     def get_active_vc_guild_count(self) -> int:
         """VC に接続中のギルド数を返す（GUI 稼働モニタ用）。"""
@@ -581,7 +609,8 @@ class MusicCog(commands.Cog, name="music_cog"):
 
     async def _ensure_voice(self, ctx: commands.Context, connect_if_not_in: bool = True) -> Optional[
         discord.VoiceClient]:
-        state = self._get_guild_state(ctx.guild.id)
+        # コマンド入口で確保済みの状態だけを利用し、補助処理では状態を作成しない
+        state = self.get_existing_guild_state(ctx.guild.id)
         if not state:
             await self._send_ctx_message(ctx, content="サーバーの上限に達しています。", ephemeral=True)
             return None
@@ -616,7 +645,11 @@ class MusicCog(commands.Cog, name="music_cog"):
                 if voice_client.guild.id == ctx.guild.id and voice_client != state.voice_client:
                     try:
                         await asyncio.wait_for(voice_client.disconnect(force=True), timeout=3.0)
-                    except:
+                    except asyncio.CancelledError:
+                        # タスク停止要求は上位へ伝播して正常にキャンセルする
+                        raise
+                    except Exception:
+                        # 残存 VoiceClient の切断失敗は新規接続を妨げない
                         pass
 
             if not vc and connect_if_not_in:
@@ -665,8 +698,10 @@ class MusicCog(commands.Cog, name="music_cog"):
         if error:
             logger.error(f"Guild {guild_id}: Mixer unexpectedly finished with error: {error}")
         logger.info(f"Guild {guild_id}: Mixer has finished.")
-        state = self._get_guild_state(guild_id)
-        if not state or state._playing_next:
+        # 終了コールバックでは削除済み状態を復活させない
+        state = self.get_existing_guild_state(guild_id)
+        # 意図的な停止中・次曲処理中・状態削除済みなら再生遷移を行わない
+        if not state or state.stopping or state._playing_next:
             return
 
         # 旧ミキサーのコールバックが新ミキサーのstateを破壊するのを防止
@@ -729,9 +764,10 @@ class MusicCog(commands.Cog, name="music_cog"):
         ループモードやキューを考慮して次の曲を再生する。
         AudioMixerのon_source_removed_callbackから各ソース削除ごとに発火される。
         """
-        state = self._get_guild_state(guild_id)
+        # 音源削除コールバックでは削除済み状態を復活させない
+        state = self.get_existing_guild_state(guild_id)
         # シーク中や既に次曲処理中の場合はスキップ
-        if not state or state.is_seeking or state._playing_next:
+        if not state or state.stopping or state.is_seeking or state._playing_next:
             return
 
         state._playing_next = True
@@ -858,7 +894,8 @@ class MusicCog(commands.Cog, name="music_cog"):
         retry_track: Optional[Track] = None,
         use_fallback_clients: bool = False,
     ):
-        state = self._get_guild_state(guild_id)
+        # 内部再生処理では状態を新規作成しない
+        state = self.get_existing_guild_state(guild_id)
         if not state:
             return
 
@@ -880,7 +917,11 @@ class MusicCog(commands.Cog, name="music_cog"):
             try:
                 track_to_play = await state.queue.get()
                 state.queue.task_done()
-            except:
+            except asyncio.CancelledError:
+                # タスク停止要求は上位へ伝播して正常にキャンセルする
+                raise
+            except Exception:
+                # キュー取得時の予期しない失敗は再生対象なしとして処理する
                 pass
 
         if not track_to_play:
@@ -1242,7 +1283,7 @@ class MusicCog(commands.Cog, name="music_cog"):
 
     def _schedule_auto_leave(self, guild_id: int):
         # 対象ギルドの再生状態を取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 状態が無ければスケジュールできない
         if not state:
             # 早期リターン
@@ -1264,7 +1305,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 人間が戻った等でキャンセルされた場合はそのまま終了
             raise
         # 待機後に最新のギルド状態を再取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 状態または接続が無い場合は何もしない
         if not state or not state.voice_client or not state.voice_client.is_connected():
             # 既に切断済み
@@ -1282,9 +1323,11 @@ class MusicCog(commands.Cog, name="music_cog"):
 
     async def _cleanup_guild_state(self, guild_id: int):
         # 破棄前に状態を取得する（UI 更新に必要）
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 状態が存在するか判定する
         if state:
+            # 破棄中に到着した終了コールバックが次曲再生を始めないよう停止状態へ移行する
+            state.stopping = True
             # ギルド破棄前にプログレスバー更新を停止する
             state.stop_progress_updater()
             # 切断前に再生中トラックをクリアしてグレーアウト表示できるようにする
@@ -1324,7 +1367,7 @@ class MusicCog(commands.Cog, name="music_cog"):
 
     def _start_progress_updater(self, guild_id: int):
         # 対象ギルドの再生状態を取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 状態が無ければ開始できないので終了する
         if not state:
             # 早期リターン
@@ -1344,7 +1387,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # Discord rate limit を避けるため更新間隔だけ待機する
                 await asyncio.sleep(PROGRESS_UPDATE_INTERVAL)
                 # 待機後に最新のギルド状態を再取得する
-                state = self._get_guild_state(guild_id)
+                state = self.get_existing_guild_state(guild_id)
                 # 状態・再生・メッセージのいずれかが無効ならループを終了する
                 if (
                     not state
@@ -1372,7 +1415,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             logger.error(f"Guild {guild_id}: Progress updater error: {e}", exc_info=True)
         finally:
             # ループ終了時にタスク参照をクリアする（生存中の state がある場合のみ）
-            state = self._get_guild_state(guild_id)
+            state = self.get_existing_guild_state(guild_id)
             # 状態が残っており、かつ自分自身のタスク参照ならクリアする
             if state and state.progress_update_task is asyncio.current_task():
                 # 参照を None にして再利用可能にする
@@ -1400,7 +1443,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             return
 
         # ギルド再生状態を取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 未接続なら自動退出判定の対象外
         if not state or not state.voice_client or not state.voice_client.is_connected():
             # 早期リターン
@@ -1453,8 +1496,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             # コマンドの実行を終了する
             return
 
-        # コマンド開始時点での再生状態、または読み込み状態を取得してフラグに保持する
-        was_playing = state.is_playing or state.is_loading
+        # コマンド開始時点で実際に再生中かだけを保持し、並行する検索中は再生中と扱わない
+        was_playing = state.is_playing
         # 読み込み状態フラグをTrueにする
         state.is_loading = True
 
@@ -1557,10 +1600,14 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # キュー追加後に Now Playing のキュー一覧を更新する
                 await self._update_now_playing_message_ui(ctx.guild.id)
 
-            # 再生中ではない（この play コマンドで新規再生を開始する）か判定する
-            if not was_playing:
-                # _play_next_songを実行し、searching_msgを再生メッセージとして流用・編集する
-                await self._play_next_song(ctx.guild.id, play_msg=searching_msg)
+            # 同時 /play でも初回再生を一度だけ開始できるよう、ギルド単位で判定する
+            async with state.play_lock:
+                # キュー追加後も再生が始まっていない場合だけ先頭曲を開始する
+                if not state.is_playing:
+                    # 以前の停止状態を解除して新しい再生を許可する
+                    state.stopping = False
+                    # _play_next_songを実行し、searching_msgを再生メッセージとして流用・編集する
+                    await self._play_next_song(ctx.guild.id, play_msg=searching_msg)
 
         # 検索または追加処理中に例外が発生した場合のハンドリングを行う
         except Exception as e:
@@ -1623,7 +1670,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             await self._send_response(ctx, "invalid_time_format", ephemeral=True)
             return
 
-        if seek_seconds >= state.current_track.duration:
+        # 再生時間が判明している曲だけ、終端以降へのシークを拒否する
+        if state.current_track.duration > 0 and seek_seconds >= state.current_track.duration:
             await self._send_response(ctx, "seek_beyond_duration", ephemeral=True,
                                       duration=format_duration(state.current_track.duration))
             return
@@ -1716,13 +1764,19 @@ class MusicCog(commands.Cog, name="music_cog"):
 
         state.loop_mode = LoopMode.OFF
         await state.clear_queue()
+        # 停止起因の終了コールバックが次曲再生を始めないよう先に停止状態へ移行する
+        state.stopping = True
         # Stop 確認ダイアログが残っていれば解除する
         state.confirming_stop = False
         # キューページを先頭に戻す
         state.queue_page = 0
-        if state.mixer:
-            state.mixer.stop()
-            state.mixer = None
+        # コールバックより先にミキサー参照を切り離して古い終了通知を無効化する
+        mixer = state.mixer
+        state.mixer = None
+        # 切り離したミキサーが存在する場合だけ停止する
+        if mixer:
+            # 音源と子プロセスを停止する
+            mixer.stop()
         if state.voice_client and state.voice_client.is_playing():
             state.voice_client.stop()
         state.is_playing = False
@@ -1999,7 +2053,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         次曲なし: 専用パネルを出し False（次曲再生しない）を返す。
         """
         # ギルド状態を取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 状態が無ければ次曲再生もしない
         if not state:
             # 継続不可
@@ -2041,7 +2095,7 @@ class MusicCog(commands.Cog, name="music_cog"):
     ) -> None:
         """単発再生のロード失敗時、エラー専用 Components V2 パネルを出す。"""
         # ギルド状態を取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 状態が無ければ何もしない
         if not state:
             # 早期リターン
@@ -2110,7 +2164,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         finished_message: Optional[str] = None,
     ):
         # ギルドの再生状態オブジェクトを取得する
-        state = self._get_guild_state(guild_id)
+        state = self.get_existing_guild_state(guild_id)
         # 再生状態、または直前の再生中メッセージが存在しない場合は処理を中断する
         if not state or not state.last_now_playing_message:
             # 早期リターン
@@ -2352,6 +2406,14 @@ class MusicCog(commands.Cog, name="music_cog"):
     @commands.hybrid_command(name="join", description="Join your voice channel.")
     async def join(self, ctx: commands.Context):
         await ctx.defer(ephemeral=True)
+        # コマンド入口でギルド状態を確保し、接続補助処理は既存状態だけを使えるようにする
+        state = self._get_guild_state(ctx.guild.id)
+        # 保持上限で状態を確保できない場合は接続処理を行わない
+        if not state:
+            # 上限到達をエフェメラルで通知する
+            await self._send_ctx_message(ctx, content="サーバーの上限に達しています。", ephemeral=True)
+            # コマンド処理を終了する
+            return
         if await self._ensure_voice(ctx, connect_if_not_in=True):
             await self._send_ctx_message(
                 ctx,
@@ -2455,7 +2517,7 @@ class MusicControllerView(discord.ui.LayoutView):
         self.clear_items()
 
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # 再生状態、または再生中のトラックが存在しないか判定する
         if not state or not state.current_track:
             # 停止確認フラグをクリアする
@@ -2824,7 +2886,7 @@ class MusicControllerView(discord.ui.LayoutView):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # 再生状態、またはボイス接続が存在しないか判定する
         if not state or not state.voice_client:
             # エフェメラルエラーを送信する
@@ -2847,7 +2909,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了
@@ -2892,7 +2954,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # 再生状態、または再生中のトラックが存在しない場合は終了する
         if not state or not state.current_track:
             # 処理終了
@@ -2913,7 +2975,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了
@@ -2930,7 +2992,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了
@@ -2944,18 +3006,21 @@ class MusicControllerView(discord.ui.LayoutView):
         state.loop_mode = LoopMode.OFF
         # キューの内容をすべて消去する
         await state.clear_queue()
+        # 停止起因の終了コールバックが次曲再生を始めないよう先に停止状態へ移行する
+        state.stopping = True
         # キューページをリセットする
         state.queue_page = 0
         # ロード失敗バナーも消す
         state.ui_load_error = None
         # 表示済みフラグも戻す
         state.ui_load_error_seen = False
-        # オーディオミキサーが存在するか判定する
-        if state.mixer:
+        # コールバックより先にミキサー参照を切り離して古い終了通知を無効化する
+        mixer = state.mixer
+        state.mixer = None
+        # 切り離したミキサーが存在するか判定する
+        if mixer:
             # ミキサーを完全に停止する
-            state.mixer.stop()
-            # ミキサーオブジェクトを破棄する
-            state.mixer = None
+            mixer.stop()
         # ボイスクライアントが直接再生中であるか判定する
         if state.voice_client and state.voice_client.is_playing():
             # 再生を停止する
@@ -2987,7 +3052,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了
@@ -3004,7 +3069,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了
@@ -3030,7 +3095,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了
@@ -3058,7 +3123,7 @@ class MusicControllerView(discord.ui.LayoutView):
 
     async def queue_prev_callback(self, interaction: discord.Interaction):
         # ギルド状態を取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # 状態が無ければ終了する
         if not state:
             # interaction を消費する
@@ -3070,7 +3135,7 @@ class MusicControllerView(discord.ui.LayoutView):
 
     async def queue_next_callback(self, interaction: discord.Interaction):
         # ギルド状態を取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # 状態が無ければ終了する
         if not state:
             # interaction を消費する
@@ -3084,7 +3149,7 @@ class MusicControllerView(discord.ui.LayoutView):
 
     async def queue_last_callback(self, interaction: discord.Interaction):
         # ギルド状態を取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # 状態が無ければ終了する
         if not state:
             # interaction を消費する
@@ -3100,7 +3165,7 @@ class MusicControllerView(discord.ui.LayoutView):
         # インタラクションへの遅延応答を開始する
         await interaction.response.defer()
         # ギルドの再生状態オブジェクトを取得する
-        state = self.cog._get_guild_state(self.guild_id)
+        state = self.cog.get_existing_guild_state(self.guild_id)
         # オブジェクトが存在しない場合は終了する
         if not state:
             # 処理終了

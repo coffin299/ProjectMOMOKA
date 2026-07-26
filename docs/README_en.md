@@ -37,7 +37,7 @@
 - 🎵 **Music playback** — YouTube, Spotify, Google Drive, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
 - 🔗 **Link Fix** — Suppress original social embeds and quote-replace via fixer proxies (`/linkfix`, **PLANA only**)
-- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en) and `/invite` (Components V2), timers, media download (`/download_video` / `/download_audio`, Components V2), and more
+- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en) and `/invite` (Components V2), media download (`/download_video` / `/download_audio`, Components V2), and more
 
 ---
 
@@ -104,9 +104,9 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 
 ### 8. Utilities
 
-Dice, timers, server/user info, gacha, etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
+Dice, server/user info, gacha, etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
 
-**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting/debate panels, media download, `/feedback` Modal, `/match_time` Modal, image-generation Modal, and related surfaces.
+**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting/debate panels, media download, `/feedback` Modal, image-generation Modal, and related surfaces.
 
 **Slash command descriptions:** Shown according to the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian) via `configs/commands_i18n_config.default.yaml` (loaded directly; no runtime copy). Missing translations and unsupported locales fall back to English. Command names stay in English.
 
@@ -245,7 +245,7 @@ llm:
 
 - Images: place models at `models/image-models/<name>/<name>.safetensors`; configure via images/LLM image settings (`local` or `forge`)
 - TTS: `models/tts-models/` + `tts_config.yaml`
-- Music: `music_config.yaml` (`default_volume`, `max_queue_size`, cookie path, etc.)
+- Music: `music_config.yaml` (`default_volume`, `max_queue_size`, `max_guilds`, cookie path, etc.)
 
 ---
 
@@ -273,6 +273,7 @@ llm:
 
 Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop. Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
 Playlist fetch limit is `music.max_playlist_items` (default 10000).
+The maximum number of retained guild playback states is `music.max_guilds` (default 50). When full, the oldest inactive state is evicted before a new state can be accepted.
 Music messages are sent `@silent` (suppress notifications) by default.
 
 ### Image Generation (PLANA)
@@ -317,7 +318,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
 | `/download_video` `/download_audio` | Media download (Components V2, Google Drive share) |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | Info |
-| `/roll` `/diceroll` `/check` `/gacha` `/timer` `/meow` `/support` `/feedback` | Misc |
+| `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | Misc |
 
 ---
 
@@ -343,9 +344,13 @@ Place models under `models/image-models/`, use `provider: "local"` (default). Fo
 
 ### Earthquake alerts (PLANA)
 
-Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.p2pquake.net/develop/json_api_v2/#/) (EEW, quake info, tsunami).
+Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.p2pquake.net/develop/json_api_v2/#/) (EEW warning code 556, quake info code 551, tsunami code 552).
 
-- `/earthquake_settings` — channels (simple unified / detailed per-type), per-intensity filters (including unknown), tsunami on/off (Components V2)
+- `/earthquake_settings` — channels (simple unified / detailed per-type), per-intensity filters (including unknown), tsunami on/off (Components V2; requires Manage Server)
+- `/earthquake_channel` `/earthquake_remove` `/earthquake_test` — configure, remove, or test notification destinations (requires Manage Server)
+- EEW displays forecast areas/intensities, origin time, and estimated main-shock arrival time; cancellation notices are delivered, while API test alerts are never sent to production channels
+- Code 554 (detection-only) is not notified. Code map: 556 = EEW (warning), 551 = quake info, 552 = tsunami
+- Per the P2P API, EEW (556) content/delivery quality is unguaranteed and is not recommended for official emergency-alert use ([spec](https://www.p2pquake.net/develop/json_api_v2/#/))
 - Usable on any Discord server; **Japan earthquake/tsunami data only**
 
 ### Link Fix (PLANA)

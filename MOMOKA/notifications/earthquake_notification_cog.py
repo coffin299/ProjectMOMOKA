@@ -5,9 +5,10 @@ import io
 import json
 import logging
 import os
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Literal, Optional, Dict, Set, Any
+from typing import Any, Dict, Literal, Optional
 
 import aiohttp
 import discord
@@ -89,12 +90,13 @@ from MOMOKA.notifications.error.earthquake_errors import (
 DATA_DIR = 'data'
 CONFIG_FILE = os.path.join(DATA_DIR, 'earthquake_tsunami_notification_config.json')
 
-# 通知対象になり得る震度コード（P2P API v2 / maxScale。-1 は震度不明）
-ALL_NOTIFY_SCALES = [-1, 10, 20, 30, 40, 45, 50, 55, 60, 70]
+# 通知対象になり得る震度コード（P2P API v2。-1 は不明、99 は震度7程度以上）
+ALL_NOTIFY_SCALES = [-1, 0, 10, 20, 30, 40, 45, 50, 55, 60, 70, 99]
 
 # 設定 UI 用の震度ラベル（日本語固定）
 NOTIFY_SCALE_LABELS = {
     -1: "震度不明",
+    0: "震度0",
     10: "震度1",
     20: "震度2",
     30: "震度3",
@@ -104,7 +106,11 @@ NOTIFY_SCALE_LABELS = {
     55: "震度6弱",
     60: "震度6強",
     70: "震度7",
+    99: "震度7程度以上",
 }
+
+# 削除済みチャンネルと断定するまでに許容する NotFound 連続回数
+NOT_FOUND_DELETE_THRESHOLD = 3
 
 
 class InfoType(Enum):
@@ -140,10 +146,16 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         self.last_ids: Dict[str, Optional[str]] = {
             InfoType.EEW.value: None, InfoType.QUAKE.value: None, InfoType.TSUNAMI.value: None
         }
-        self.processed_ids: Dict[str, Set[str]] = {
-            InfoType.EEW.value: set(), InfoType.QUAKE.value: set(), InfoType.TSUNAMI.value: set()
+        self.processed_ids: Dict[str, OrderedDict[str, None]] = {
+            InfoType.EEW.value: OrderedDict(),
+            InfoType.QUAKE.value: OrderedDict(),
+            InfoType.TSUNAMI.value: OrderedDict(),
         }
         self.max_processed_ids = 1000
+        # 設定ファイルの同時書き込みを直列化する
+        self.config_save_lock = asyncio.Lock()
+        # Discord API が返す NotFound の連続回数を通知先ごとに保持する
+        self.not_found_counts: Dict[tuple[str, str], int] = {}
 
         self.ws_session = None
         self.ws_connection = None
@@ -327,7 +339,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
             code = data.get('code', 0)
 
-            if code not in [551, 552]:
+            if code not in [551, 552, 556]:
                 logger.debug(f"処理対象外のcode: {code}")
                 return
 
@@ -364,9 +376,8 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                     logger.debug(f"津波データなし: ID {info_id}")
                     return
 
-            self.processed_ids[info_type.value].add(info_id)
+            self.add_processed_id(info_type.value, info_id)
             self.last_ids[info_type.value] = info_id
-            self.manage_processed_ids(info_type.value)
 
         except NotificationError as e:
             logger.error(f"通知エラー: {e}", exc_info=True)
@@ -404,89 +415,87 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             raise self.exception_handler.handle_api_error(e, url)
 
     def manage_processed_ids(self, info_type: str):
-        if len(self.processed_ids[info_type]) > self.max_processed_ids:
-            self.processed_ids[info_type] = set(list(self.processed_ids[info_type])[-self.max_processed_ids:])
+        """処理済み ID を受信順のまま上限件数へ切り詰める。"""
+        # 対象種別の順序付き ID 集合を取得する
+        processed_ids = self.processed_ids[info_type]
+        # 最も古い ID から上限超過分だけ削除する
+        while len(processed_ids) > self.max_processed_ids:
+            # 先頭は最も古い受信済み ID
+            processed_ids.popitem(last=False)
             logger.info(f"{info_type}: 処理済みID数を{self.max_processed_ids}に制限")
+
+    def add_processed_id(self, info_type: str, info_id: str) -> None:
+        """処理済み ID を受信順で記録する。"""
+        # 対象種別の順序付き ID 集合を取得する
+        processed_ids = self.processed_ids[info_type]
+        # 重複 ID は末尾へ移動できるよう、既存値を取り除く
+        processed_ids.pop(info_id, None)
+        # 最新の ID を末尾へ記録する
+        processed_ids[info_id] = None
+        # 古い ID を上限まで削除する
+        self.manage_processed_ids(info_type)
 
     async def initialize_processed_ids(self):
         logger.info("🔍 最新情報のIDを初期化中...")
 
-        # code 551 (地震情報・緊急地震速報)
-        try:
-            url = f"{self.api_base_url}/history?codes=551&limit=100"
-            logger.info(f"📡 地震情報取得: {url}")
-            data = await self.safe_api_request(url)
-
-            if data and isinstance(data, list):
-                logger.info(f"✅ 地震情報を{len(data)}件取得")
-                latest_eew_id = None
-                latest_quake_id = None
-
+        # API コードと内部種別を対応付けて、各履歴を別々に初期化する
+        history_sources = (
+            (551, InfoType.QUAKE, "地震情報"),
+            (552, InfoType.TSUNAMI, "津波情報"),
+            (556, InfoType.EEW, "緊急地震速報"),
+        )
+        # 各 API コードの履歴を順に取得する
+        for code, info_type, label in history_sources:
+            # 当該コードだけを指定して最新 100 件を取得する
+            url = f"{self.api_base_url}/history?codes={code}&limit=100"
+            try:
+                # 取得先をログへ残す
+                logger.info(f"📡 {label}取得: {url}")
+                # API 応答を取得する
+                data = await self.safe_api_request(url)
+                # 配列以外または空の応答は記録対象にしない
+                if not data or not isinstance(data, list):
+                    logger.warning(f"⚠️ {label}(code {code})の取得結果が空です")
+                    continue
+                # 取得件数をログへ残す
+                logger.info(f"✅ {label}を{len(data)}件取得")
+                # 履歴は API コードと一致する項目だけを処理する
+                for item in reversed(data):
+                    # 不正な項目は無視する
+                    if not isinstance(item, dict) or item.get("code") != code:
+                        continue
+                    # ID を安全に取得する
+                    item_id = self.extract_id_safe(item)
+                    # ID がなければ重複排除できないため無視する
+                    if item_id is None:
+                        continue
+                    # 古い履歴から順に記録して受信順を維持する
+                    self.add_processed_id(info_type.value, item_id)
+                # API は新しい順なので、最初の有効 ID を最後の ID として記録する
+                latest_id = None
+                # 新しい履歴から順に有効な ID を探す
                 for item in data:
-                    item_id = self.extract_id_safe(item)
-                    if not item_id:
+                    # 対象コード以外と不正な項目は無視する
+                    if not isinstance(item, dict) or item.get("code") != code:
                         continue
-
-                    info_type = self.classify_info_type(item)
-
-                    if info_type == InfoType.EEW:
-                        self.processed_ids[InfoType.EEW.value].add(item_id)
-                        if latest_eew_id is None:
-                            latest_eew_id = item_id
-                            logger.info(f"  EEW最新ID: {item_id[:12]}...")
-                    elif info_type == InfoType.QUAKE:
-                        self.processed_ids[InfoType.QUAKE.value].add(item_id)
-                        if latest_quake_id is None:
-                            latest_quake_id = item_id
-                            logger.info(f"  QUAKE最新ID: {item_id[:12]}...")
-
-                if latest_eew_id:
-                    self.last_ids[InfoType.EEW.value] = latest_eew_id
-                if latest_quake_id:
-                    self.last_ids[InfoType.QUAKE.value] = latest_quake_id
-            else:
-                logger.warning("⚠️ 地震情報の取得結果が空です")
-
-        except (APIError, DataParsingError) as e:
-            logger.error(f"❌ 地震情報(code 551)のID初期化に失敗: {e}")
-        except Exception as e:
-            self.exception_handler.log_generic_error(e, "地震情報(code 551)のID初期化")
-
-        # code 552 (津波情報)
-        try:
-            url = f"{self.api_base_url}/history?codes=552&limit=100"
-            logger.info(f"📡 津波情報取得: {url}")
-            data = await self.safe_api_request(url)
-
-            if data and isinstance(data, list):
-                logger.info(f"✅ 津波情報を{len(data)}件取得")
-
-                latest_tsunami_id = None
-
-                for idx, item in enumerate(data):
-                    item_id = self.extract_id_safe(item)
-                    if not item_id:
-                        if idx < 3:
-                            logger.warning(f"  津波情報[{idx}]のID抽出失敗: keys={list(item.keys())}")
-                        continue
-
-                    if item.get('code') == 552:
-                        self.processed_ids[InfoType.TSUNAMI.value].add(item_id)
-                        if latest_tsunami_id is None:
-                            latest_tsunami_id = item_id
-                            logger.info(f"  TSUNAMI最新ID: {item_id[:12]}...")
-
-                if latest_tsunami_id:
-                    self.last_ids[InfoType.TSUNAMI.value] = latest_tsunami_id
-                else:
-                    logger.warning("⚠️ 津波情報のIDが1件も取得できませんでした（過去に津波予報がない可能性があります）")
-            else:
-                logger.warning("⚠️ 津波情報の取得結果が空です（過去に津波予報がない可能性があります）")
-
-        except (APIError, DataParsingError) as e:
-            logger.error(f"❌ 津波情報(code 552)のID初期化に失敗: {e}")
-        except Exception as e:
-            self.exception_handler.log_generic_error(e, "津波情報(code 552)のID初期化")
+                    # ID を安全に取得する
+                    latest_id = self.extract_id_safe(item)
+                    # 有効な ID が取れた時点で探索を終える
+                    if latest_id is not None:
+                        break
+                # 有効な最新 ID が取得できたときだけ状態を更新する
+                if latest_id is not None:
+                    self.last_ids[info_type.value] = latest_id
+                    logger.info(f"  {info_type.value.upper()}最新ID: {latest_id[:12]}...")
+            except (APIError, DataParsingError) as error:
+                # 既知の API エラーは種別とコードを付けて記録する
+                logger.error(f"❌ {label}(code {code})のID初期化に失敗: {error}")
+            except Exception as error:
+                # 想定外の初期化失敗は共通ハンドラへ渡す
+                self.exception_handler.log_generic_error(
+                    error,
+                    f"{label}(code {code})のID初期化",
+                )
 
         logger.info("🔍 ID初期化結果:")
         for it, lid in self.last_ids.items():
@@ -523,25 +532,14 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             code = item.get('code', 0)
             issue_type = item.get('issue', {}).get('type', '').lower()
 
+            if code == 556:
+                return InfoType.EEW
+
             if code == 552:
                 return InfoType.TSUNAMI
 
             if code == 551:
-                earthquake_data = item.get('earthquake', {})
-
-                if 'eew' in issue_type or issue_type == 'foreign':
-                    return InfoType.EEW
-
-                if issue_type == 'scaleprompt':
-                    domestic_tsunami = earthquake_data.get('domesticTsunami', '')
-                    if domestic_tsunami in ['Unknown', '', None]:
-                        return InfoType.EEW
-
-                if issue_type in ['detailscale', 'destination', 'scaleanddetail', 'scaleprompt']:
-                    return InfoType.QUAKE
-
-                if earthquake_data and issue_type:
-                    return InfoType.QUAKE
+                return InfoType.QUAKE
 
             logger.debug(f"UNKNOWN情報: code={code}, issue.type={issue_type}")
             return InfoType.UNKNOWN
@@ -574,12 +572,34 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             logger.warning(f"設定ファイル読み込みエラー: {e}")
         return {}
 
-    def save_config(self):
-        try:
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            raise ConfigError(f"設定ファイルの保存に失敗: {e}")
+    async def save_config(self) -> None:
+        """設定を排他制御付きの原子的置換で保存する。"""
+        # 同時実行される設定変更を直列化する
+        async with self.config_save_lock:
+            # 同一ディレクトリへ一時ファイルを作り、置換時の原子性を確保する
+            temp_file = f"{CONFIG_FILE}.tmp"
+            try:
+                # 一時ファイルへ完全な JSON を書き出す
+                with open(temp_file, "w", encoding="utf-8") as file:
+                    # 可読性を保った JSON として設定全体を保存する
+                    json.dump(self.config, file, indent=4, ensure_ascii=False)
+                    # Python のバッファを OS へ渡す
+                    file.flush()
+                    # 電源断時の破損を抑えるためディスク同期する
+                    os.fsync(file.fileno())
+                # 完全に書き込まれた一時ファイルで既存設定を置き換える
+                os.replace(temp_file, CONFIG_FILE)
+            except Exception as error:
+                # 失敗時に残った一時ファイルを可能な限り削除する
+                if os.path.exists(temp_file):
+                    try:
+                        # 次回保存を妨げないよう不要な一時ファイルを消す
+                        os.remove(temp_file)
+                    except OSError:
+                        # クリーンアップ失敗は元の保存エラーを優先する
+                        pass
+                # 呼び出し元が扱える設定エラーとして送出する
+                raise ConfigError(f"設定ファイルの保存に失敗しました: {error}") from error
 
     def _normalize_guild_config(self, guild_config: Dict[str, Any]) -> None:
         """ギルド設定にフィルタ用キーのデフォルトを補完する。"""
@@ -627,7 +647,12 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 continue
         return result
 
-    def set_notify_scales(self, guild_id: str, info_type: str, scales: list) -> None:
+    async def set_notify_scales(
+        self,
+        guild_id: str,
+        info_type: str,
+        scales: list,
+    ) -> None:
         """通知する震度コード一覧を保存する。"""
         # ギルド枠を確保
         guild_config = self.ensure_guild_config(guild_id)
@@ -646,7 +671,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         # 書き込む
         guild_config[f"notify_scales_{info_type}"] = cleaned
         # 永続化
-        self.save_config()
+        await self.save_config()
 
     def get_notify_tsunami(self, guild_id: str) -> bool:
         """津波通知が有効かどうかを返す。"""
@@ -655,16 +680,16 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         # デフォルト true
         return bool(guild_config.get("notify_tsunami", True))
 
-    def set_notify_tsunami(self, guild_id: str, enabled: bool) -> None:
+    async def set_notify_tsunami(self, guild_id: str, enabled: bool) -> None:
         """津波通知の有効/無効を保存する。"""
         # ギルド枠を確保
         guild_config = self.ensure_guild_config(guild_id)
         # フラグを書く
         guild_config["notify_tsunami"] = bool(enabled)
         # 永続化
-        self.save_config()
+        await self.save_config()
 
-    def set_channels_unified(self, guild_id: str, channel_id: int) -> None:
+    async def set_channels_unified(self, guild_id: str, channel_id: int) -> None:
         """EEW / 地震 / 津波の通知先を同一チャンネルに揃える。"""
         # ギルド枠を確保
         guild_config = self.ensure_guild_config(guild_id)
@@ -672,16 +697,21 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         for key in (InfoType.EEW.value, InfoType.QUAKE.value, InfoType.TSUNAMI.value):
             guild_config[key] = int(channel_id)
         # 永続化
-        self.save_config()
+        await self.save_config()
 
-    def set_channel_for_type(self, guild_id: str, info_type: str, channel_id: int) -> None:
+    async def set_channel_for_type(
+        self,
+        guild_id: str,
+        info_type: str,
+        channel_id: int,
+    ) -> None:
         """指定種別の通知チャンネルを保存する。"""
         # ギルド枠を確保
         guild_config = self.ensure_guild_config(guild_id)
         # チャンネル ID を書く
         guild_config[info_type] = int(channel_id)
         # 永続化
-        self.save_config()
+        await self.save_config()
 
     def normalize_max_scale(self, max_scale: Any) -> int:
         """maxScale を比較用 int に正規化する（欠落は -1）。"""
@@ -717,8 +747,10 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         if scale_code is None or scale_code == -1:
             return "震度情報なし"
         scale_map = {
-            10: "震度1", 20: "震度2", 30: "震度3", 40: "震度4",
-            45: "震度5弱", 50: "震度5強", 55: "震度6弱", 60: "震度6強", 70: "震度7"
+            0: "震度0", 10: "震度1", 20: "震度2", 30: "震度3",
+            40: "震度4", 45: "震度5弱", 50: "震度5強",
+            55: "震度6弱", 60: "震度6強", 70: "震度7",
+            99: "震度7程度以上",
         }
         return scale_map.get(scale_code, f"不明({scale_code})")
 
@@ -831,8 +863,211 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
         return info
 
-    async def send_eew_notification(self, data):
-        await self.send_notification(data, InfoType.EEW.value, "🚨 緊急地震速報")
+    def get_eew_max_scale(self, data: Dict[str, Any]) -> int:
+        """EEW の地域予測震度から最大値を取得する。"""
+        # 比較可能な地域別予測震度を格納する
+        scales = []
+        # EEW 専用の areas 配列を取得する
+        areas = data.get("areas", [])
+        # 配列でない値は空の地域一覧として扱う
+        if not isinstance(areas, list):
+            return -1
+        # 各地域の予測震度を確認する
+        for area in areas:
+            # 辞書以外の地域データは無視する
+            if not isinstance(area, dict):
+                continue
+            # 上限値を優先し、未設定の場合だけ下限値へフォールバックする
+            scale = area.get("scaleTo", area.get("scaleFrom"))
+            # 数値として解釈できる予測震度だけを追加する
+            if scale is not None:
+                scales.append(self.normalize_max_scale(scale))
+        # 地域が無い場合は震度不明、それ以外は最大予測震度を返す
+        return max(scales, default=-1)
+
+    def format_eew_areas(self, data: Dict[str, Any]) -> str:
+        """EEW の予測地域を Discord embed 用の文字列へ整形する。"""
+        # EEW 専用の areas 配列を取得する
+        areas = data.get("areas", [])
+        # 表示可能な地域情報を格納する
+        formatted_areas = []
+        # 配列以外は表示できないため空文字を返す
+        if not isinstance(areas, list):
+            return ""
+        # 各地域を embed の1行へ変換する
+        for area in areas:
+            # 辞書以外の地域データは表示しない
+            if not isinstance(area, dict):
+                continue
+            # 上限値を優先し、未設定の場合だけ下限値へフォールバックする
+            scale_to = self.normalize_max_scale(
+                area.get("scaleTo", area.get("scaleFrom"))
+            )
+            # 下限値は上限値が無い場合に上限値と同じ値として扱う
+            scale_from = self.normalize_max_scale(
+                area.get("scaleFrom", area.get("scaleTo"))
+            )
+            # 高い震度ほど目立つ絵文字を選ぶ
+            emoji = (
+                "🔴" if scale_to >= 55 else "🟠" if scale_to >= 50
+                else "🟡" if scale_to >= 40 else "🟢" if scale_to >= 30
+                else "🔵"
+            )
+            # 予測範囲がある場合は下限から上限までを表示する
+            scale_text = (
+                f"{self.scale_to_japanese(scale_from)}〜"
+                f"{self.scale_to_japanese(scale_to)}"
+                if scale_from != scale_to
+                else self.scale_to_japanese(scale_to)
+            )
+            # 地域名を優先し、欠落時は府県予報区名を使う
+            area_name = area.get("name") or area.get("pref") or "地域不明"
+            # 地域別の到達予測時刻を取得する
+            arrival_time = area.get("arrivalTime")
+            # 到達予測時刻があれば表示へ付加する
+            arrival_suffix = f"（到達予測: {arrival_time}）" if arrival_time else ""
+            # 並び替え用の震度と表示行を記録する
+            formatted_areas.append(
+                (scale_to, f"{emoji} **{scale_text}** - {area_name}{arrival_suffix}")
+            )
+        # 高い予測震度順に最大 8 地域を表示する
+        return "\n".join(
+            text
+            for _, text in sorted(
+                formatted_areas,
+                key=lambda item: item[0],
+                reverse=True,
+            )[:8]
+        )
+
+    async def send_eew_notification(self, data: Dict[str, Any]) -> None:
+        """code 556 の EEW スキーマを専用 embed として配信する。"""
+        # API のテスト情報は本番通知チャンネルへ送信しない
+        if data.get("test") is True:
+            logger.info("EEW テスト情報を本番チャンネルへ送信せずスキップしました")
+            return
+        # 取消フラグを取得する
+        cancelled = data.get("cancelled") is True
+        # 取消情報では earthquake が欠落し得るため、安全な辞書だけを使う
+        earthquake = data.get("earthquake")
+        earthquake = earthquake if isinstance(earthquake, dict) else {}
+        # issue は API 情報番号と発表時刻の取得に使う
+        issue = data.get("issue")
+        issue = issue if isinstance(issue, dict) else {}
+        # 地域予測から EEW 専用の最大予測震度を計算する
+        max_scale = self.get_eew_max_scale(data)
+        # 発生時刻を優先し、取消時などは発表時刻を使う
+        event_time = earthquake.get("originTime") or issue.get("time")
+        # Discord embed の時刻を JST で生成する
+        timestamp = self.parse_earthquake_time(event_time, issue.get("time"))
+        # 取消と通常通知でタイトルを切り替える
+        title = "🚨 緊急地震速報（取消）" if cancelled else "🚨 緊急地震速報（警報）"
+        # 取消では誤った震度を示さない専用の本文を使う
+        description = (
+            "発表されていた緊急地震速報は**取り消されました**。"
+            if cancelled
+            else (
+                "強い揺れに警戒してください。"
+                if max_scale == -1
+                else (
+                    f"**最大予測震度 {self.scale_to_japanese(max_scale)}** "
+                    "程度の揺れが予想されます。"
+                )
+            )
+        )
+        # 取消は灰色、通常情報は予測震度に対応する色で embed を作る
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=(
+                discord.Color.light_grey()
+                if cancelled
+                else self.get_embed_color(max_scale, InfoType.EEW.value)
+            ),
+            timestamp=timestamp,
+        )
+        # 取消でない場合だけ earthquake の詳細を表示する
+        if not cancelled:
+            # 震源情報は EEW スキーマの earthquake 配下にある
+            hypocenter = earthquake.get("hypocenter")
+            hypocenter = hypocenter if isinstance(hypocenter, dict) else {}
+            # 震源地名を欠落時も安全に表示する
+            hypocenter_name = hypocenter.get("name") or "調査中"
+            # 震源地を embed へ追加する
+            embed.add_field(
+                name="🌏 震源地",
+                value=f"```{hypocenter_name}```",
+                inline=True,
+            )
+            # 推定マグニチュードを embed へ追加する
+            embed.add_field(
+                name="📊 マグニチュード",
+                value=f"```推定 {self.format_magnitude(hypocenter.get('magnitude'))}```",
+                inline=True,
+            )
+            # 推定深さを embed へ追加する
+            embed.add_field(
+                name="📏 深さ",
+                value=f"```{self.format_depth(hypocenter.get('depth'))}```",
+                inline=True,
+            )
+            # EEW の地震発生時刻を表示する
+            if earthquake.get("originTime"):
+                embed.add_field(
+                    name="🕐 発生時刻",
+                    value=f"```{earthquake['originTime']}```",
+                    inline=True,
+                )
+            # EEW の主要動到達予測時刻を表示する
+            if earthquake.get("arrivalTime"):
+                embed.add_field(
+                    name="⏱️ 主要動到達予測",
+                    value=f"```{earthquake['arrivalTime']}```",
+                    inline=True,
+                )
+            # EEW 専用地域配列を表示用文字列へ変換する
+            areas_text = self.format_eew_areas(data)
+            # 地域情報があるときだけ予測地域として表示する
+            if areas_text:
+                embed.add_field(
+                    name="📍 予測地域・予測震度",
+                    value=areas_text[:1024],
+                    inline=False,
+                )
+            # 地域情報が無い場合は不足を明示する
+            else:
+                embed.add_field(
+                    name="📍 予測地域・予測震度",
+                    value="予測地域の詳細は現在取得できていません。",
+                    inline=False,
+                )
+            # 速報の安全行動を案内する
+            embed.add_field(
+                name="⚠️ 注意",
+                value="この情報は速報です。揺れが予想される地域では身の安全を確保してください。",
+                inline=False,
+            )
+        # 情報番号があれば取消を含む通知の識別に使う
+        if issue.get("eventId") or issue.get("serial"):
+            # 空値を除外して情報番号を連結する
+            identifier = " / ".join(
+                str(value)
+                for value in (issue.get("eventId"), issue.get("serial"))
+                if value
+            )
+            # 情報番号を embed へ追加する
+            embed.add_field(name="ℹ️ 情報番号", value=f"`{identifier}`", inline=False)
+        # 共通の情報元フッターを設定する
+        embed.set_footer(text=notification_embed_footer())
+        # P2Pquake のロゴを表示する
+        embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
+        # 取消は震度フィルタに関わらず、設定済み EEW チャンネルへ通知する
+        await self.send_embed_to_channels(
+            embed,
+            InfoType.EEW.value,
+            max_scale=max_scale,
+            apply_scale_filter=not cancelled,
+        )
 
     async def send_quake_notification(self, data):
         await self.send_notification(data, InfoType.QUAKE.value, "📊 地震情報")
@@ -1297,128 +1532,200 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
         return buffer
 
-    async def send_embed_to_channels(self, embed, info_type, map_file=None, max_scale=None):
+    def reset_not_found_count(self, guild_id: str, info_type: str) -> None:
+        """NotFound 以外の結果を受けた通知先の連続回数をリセットする。"""
+        # 通知先を表すキーを作る
+        count_key = (guild_id, info_type)
+        # 成功または別種別の失敗で連続 NotFound を途切れさせる
+        self.not_found_counts.pop(count_key, None)
+
+    async def send_embed_to_channels(
+        self,
+        embed: discord.Embed,
+        info_type: str,
+        map_file: Optional[discord.File] = None,
+        max_scale: Optional[int] = None,
+        apply_scale_filter: bool = True,
+    ) -> None:
+        """設定済みチャンネルへ embed を配信する。"""
+        # 設定が無い場合は配信先が無いため終了する
         if not self.config:
             logger.warning(f"通知送信スキップ ({info_type}): config が空です")
             return
 
+        # 配信開始をログへ残す
         logger.info(f"📤 {info_type}通知送信開始 - 設定ギルド数: {len(self.config)}")
+        # 配信結果の集計値を初期化する
         sent_count, failed_count, skipped_count = 0, 0, 0
+        # 保存が必要な設定変更があったかを記録する
         config_modified = False
 
+        # 設定の走査中に辞書が変わっても安全なようにコピーを使う
         for guild_id, guild_config in self.config.copy().items():
             try:
+                # 辞書でない壊れた設定は通知対象にしない
                 if not isinstance(guild_config, dict):
-                    logger.warning(f"送信スキップ ({info_type}): ギルド {guild_id} の設定が辞書型ではありません")
+                    logger.warning(
+                        f"送信スキップ ({info_type}): ギルド {guild_id} の設定が辞書型ではありません"
+                    )
                     skipped_count += 1
                     continue
-
+                # 種別別の通知チャンネル ID を取得する
                 channel_id = guild_config.get(info_type)
+                # 通知先が未設定なら配信しない
                 if not channel_id:
                     skipped_count += 1
                     continue
-
-                # 津波通知オフなら送らない（チャンネル設定は残す）
-                if info_type == InfoType.TSUNAMI.value and not self.get_notify_tsunami(guild_id):
+                # 津波通知オフ時は設定を保持したまま配信しない
+                if (
+                    info_type == InfoType.TSUNAMI.value
+                    and not self.get_notify_tsunami(guild_id)
+                ):
                     logger.info(f"津波通知オフでスキップ: ギルド {guild_id}")
                     skipped_count += 1
                     continue
-
-                # EEW / 通常は震度フィルタを適用する
-                if info_type in (InfoType.EEW.value, InfoType.QUAKE.value):
-                    # 許可されていなければスキップ
-                    if not self.should_notify_by_scale(guild_id, info_type, max_scale):
-                        logger.info(
-                            f"震度フィルタでスキップ ({info_type}): ギルド {guild_id}, "
-                            f"maxScale={self.normalize_max_scale(max_scale)}"
-                        )
-                        skipped_count += 1
-                        continue
-
-                guild = self.bot.get_guild(int(guild_id))
-                if not guild:
-                    logger.warning(f"送信スキップ ({info_type}): ギルド {guild_id} が見つかりません (Bot退出済みの可能性)")
-                    # ギルド自体が見つからない場合は設定全体を削除
-                    del self.config[guild_id]
-                    config_modified = True
-                    logger.info(f"🗑️ ギルド {guild_id} の設定を削除しました")
-                    failed_count += 1
-                    continue
-
-                channel = guild.get_channel(channel_id)
-                if not channel:
-                    logger.warning(f"送信スキップ ({info_type}): チャンネル {channel_id} が見つかりません (削除済み)")
-                    # チャンネルが見つからない場合は該当の通知設定のみを削除
-                    del self.config[guild_id][info_type]
-                    config_modified = True
-                    logger.info(f"🗑️ ギルド '{guild.name}' の {info_type} チャンネル設定を削除しました")
-                    # 設定が空になった場合はギルド設定自体も削除
-                    if not self.config[guild_id]:
-                        del self.config[guild_id]
-                        logger.info(f"🗑️ ギルド '{guild.name}' の設定が空になったため削除しました")
-                    failed_count += 1
-                    continue
-
-                permissions = channel.permissions_for(guild.me)
-                if not permissions.send_messages or not permissions.embed_links:
-                    logger.info(f"送信失敗 ({info_type}): チャンネル '{channel.name}' への権限が不足")
-                    # 再送しても失敗するため当該通知設定を削除する
-                    del self.config[guild_id][info_type]
-                    config_modified = True
+                # 通常の EEW と地震情報には震度フィルタを適用する
+                if (
+                    apply_scale_filter
+                    and info_type in (InfoType.EEW.value, InfoType.QUAKE.value)
+                    and not self.should_notify_by_scale(guild_id, info_type, max_scale)
+                ):
                     logger.info(
-                        f"🗑️ ギルド '{guild.name}' の {info_type} チャンネル設定を削除しました（権限不足）"
+                        f"震度フィルタでスキップ ({info_type}): ギルド {guild_id}, "
+                        f"maxScale={self.normalize_max_scale(max_scale)}"
                     )
-                    # 設定が空になった場合はギルド設定自体も削除する
-                    if not self.config[guild_id]:
-                        del self.config[guild_id]
-                        logger.info(f"🗑️ ギルド '{guild.name}' の設定が空になったため削除しました")
+                    skipped_count += 1
+                    continue
+                # キャッシュ上のギルドを取得する
+                guild = self.bot.get_guild(int(guild_id))
+                # キャッシュに無いだけでは退出を断定できないため設定は残す
+                if guild is None:
+                    logger.warning(
+                        f"送信スキップ ({info_type}): ギルド {guild_id} を確認できません。"
+                        "設定は削除しません。"
+                    )
+                    # NotFound ではないため連続回数をリセットする
+                    self.reset_not_found_count(guild_id, info_type)
                     failed_count += 1
                     continue
-
+                # キャッシュ上の通知チャンネルを取得する
+                channel = guild.get_channel(int(channel_id))
+                # キャッシュに無い場合は Discord API へ照会して削除済みか確認する
+                if channel is None:
+                    # API が返す NotFound だけを削除判定の対象にする
+                    channel = await self.bot.fetch_channel(int(channel_id))
+                # 別ギルドのチャンネルは安全のため配信しない
+                if getattr(channel, "guild", None) != guild:
+                    logger.warning(
+                        f"送信スキップ ({info_type}): チャンネル {channel_id} は"
+                        f"ギルド {guild_id} に属していません。設定は削除しません。"
+                    )
+                    # NotFound ではないため連続回数をリセットする
+                    self.reset_not_found_count(guild_id, info_type)
+                    failed_count += 1
+                    continue
+                # Bot 自身の当該チャンネル権限を確認する
+                permissions = channel.permissions_for(guild.me)
+                # 権限不足は一時的に解消し得るため設定を残して警告する
+                if not permissions.send_messages or not permissions.embed_links:
+                    logger.warning(
+                        f"送信失敗 ({info_type}): チャンネル '{channel.name}' への権限が不足しています。"
+                        "設定は削除しません。"
+                    )
+                    # NotFound ではないため連続回数をリセットする
+                    self.reset_not_found_count(guild_id, info_type)
+                    failed_count += 1
+                    continue
+                # 添付地図がある場合はチャンネルごとに独立したファイルを作る
                 if map_file:
+                    # 元ファイルの先頭から読み込む
                     map_file.fp.seek(0)
-                    file_copy = discord.File(fp=io.BytesIO(map_file.fp.read()), filename=map_file.filename)
+                    # 同じストリームを複数回送る競合を防ぐ
+                    file_copy = discord.File(
+                        fp=io.BytesIO(map_file.fp.read()),
+                        filename=map_file.filename,
+                    )
+                    # embed と地図を送信する
                     await channel.send(embed=embed, file=file_copy)
                 else:
+                    # embed のみを送信する
                     await channel.send(embed=embed)
-
+                # 送信成功時は連続 NotFound 回数をリセットする
+                self.reset_not_found_count(guild_id, info_type)
+                # 成功件数を加算する
                 sent_count += 1
+                # 成功先をログへ残す
                 logger.info(f"✅ 送信成功: '{guild.name}' の '{channel.name}'")
 
-            except discord.Forbidden:
-                logger.info(f"送信失敗 ({info_type}): 権限不足 - ギルド {guild_id}")
-                # 送信直前に権限が落ちた場合も設定を削除する
-                try:
-                    # ギルド設定が残っているか確認する
-                    if guild_id in self.config and info_type in self.config[guild_id]:
-                        # 該当通知キーを削除する
-                        del self.config[guild_id][info_type]
+            except discord.NotFound:
+                # 実際に Discord API が NotFound を返した回数だけを記録する
+                count_key = (guild_id, info_type)
+                # 直前の連続失敗回数へ 1 を加える
+                not_found_count = self.not_found_counts.get(count_key, 0) + 1
+                # 更新後の連続失敗回数を保存する
+                self.not_found_counts[count_key] = not_found_count
+                # 閾値未満では設定を削除せず警告だけを残す
+                if not_found_count < NOT_FOUND_DELETE_THRESHOLD:
+                    logger.warning(
+                        f"送信失敗 ({info_type}): NotFound {not_found_count}/"
+                        f"{NOT_FOUND_DELETE_THRESHOLD} - ギルド {guild_id}。設定は保持します。"
+                    )
+                else:
+                    # 連続 NotFound が閾値に達した場合だけ対象チャンネル設定を削除する
+                    guild_settings = self.config.get(guild_id)
+                    # 削除対象の設定が現在も存在するか確認する
+                    if isinstance(guild_settings, dict) and info_type in guild_settings:
+                        # 当該通知種別のチャンネル設定だけを削除する
+                        del guild_settings[info_type]
+                        # 設定変更を保存対象として記録する
                         config_modified = True
-                        logger.info(
-                            f"🗑️ ギルド {guild_id} の {info_type} チャンネル設定を削除しました（Forbidden）"
+                        # 次の設定先では新たに連続回数を数える
+                        self.not_found_counts.pop(count_key, None)
+                        logger.warning(
+                            f"🗑️ 連続 {NOT_FOUND_DELETE_THRESHOLD} 回の NotFound により、"
+                            f"ギルド {guild_id} の {info_type} 通知先設定を削除しました。"
                         )
-                        # 空になったらギルドキーも削除する
-                        if not self.config[guild_id]:
-                            del self.config[guild_id]
-                            logger.info(f"🗑️ ギルド {guild_id} の設定が空になったため削除しました")
-                except Exception:
-                    # 削除処理自体の失敗は送信失敗カウントのみに留める
-                    pass
+                # 送信失敗を集計する
                 failed_count += 1
-            except discord.HTTPException as e:
-                logger.error(f"送信失敗 ({info_type}): Discord APIエラー - {e.status}")
+            except discord.Forbidden:
+                # 権限エラーは回復し得るため設定を削除しない
+                logger.warning(
+                    f"送信失敗 ({info_type}): 権限不足 - ギルド {guild_id}。"
+                    "設定は削除しません。"
+                )
+                # NotFound ではないため連続回数をリセットする
+                self.reset_not_found_count(guild_id, info_type)
+                # 送信失敗を集計する
                 failed_count += 1
-            except Exception as e:
-                logger.error(f"予期せぬ送信失敗 ({info_type}): ギルド {guild_id}", exc_info=True)
+            except discord.HTTPException as error:
+                # その他の Discord API エラーは設定を削除せず記録する
+                logger.error(
+                    f"送信失敗 ({info_type}): Discord APIエラー - {error.status}"
+                )
+                # NotFound ではないため連続回数をリセットする
+                self.reset_not_found_count(guild_id, info_type)
+                # 送信失敗を集計する
+                failed_count += 1
+            except Exception as error:
+                # 想定外の失敗は設定を削除せず詳細をログへ残す
+                logger.error(
+                    f"予期せぬ送信失敗 ({info_type}): ギルド {guild_id}",
+                    exc_info=True,
+                )
+                # NotFound ではないため連続回数をリセットする
+                self.reset_not_found_count(guild_id, info_type)
+                # 送信失敗を集計する
                 failed_count += 1
 
-        # 設定が変更された場合は保存
+        # 連続 NotFound により設定を削除した場合だけ原子的に保存する
         if config_modified:
             try:
-                self.save_config()
-                logger.info("💾 無効なチャンネル設定を削除し、設定ファイルを更新しました")
-            except Exception as e:
-                logger.error(f"設定ファイルの保存に失敗: {e}")
+                # 非同期ロック付きの保存処理を完了まで待つ
+                await self.save_config()
+                logger.info("💾 NotFound が連続した通知先設定を削除して保存しました")
+            except Exception as error:
+                # 保存失敗は配信ループを妨げずログへ残す
+                logger.error(f"設定ファイルの保存に失敗: {error}")
 
         logger.info(
             f"📊 {info_type}通知送信完了: 成功 {sent_count}件, 失敗 {failed_count}件, スキップ {skipped_count}件")
@@ -1428,24 +1735,27 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
     @app_commands.command(name="earthquake_channel", description="Set the notification channel for earthquake/tsunami alerts.")
     @app_commands.describe(channel="Channel to send notifications to.", info_type="Type of alert to notify.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def set_channel(self, interaction: discord.Interaction, channel: discord.TextChannel,
                           info_type: Literal["緊急地震速報", "地震情報", "津波予報", "すべて"]):
         try:
             guild_id = str(interaction.guild.id)
-            # ギルド枠を確保する
-            guild_config = self.ensure_guild_config(guild_id)
-
-            types_to_set = (
-                [InfoType.EEW.value, InfoType.QUAKE.value, InfoType.TSUNAMI.value]
-                if info_type == "すべて"
-                else [{"緊急地震速報": InfoType.EEW.value, "地震情報": InfoType.QUAKE.value,
-                       "津波予報": InfoType.TSUNAMI.value}[info_type]]
-            )
-
-            for t in types_to_set:
-                guild_config[t] = channel.id
-
-            self.save_config()
+            # 全種別指定は共通の設定保存処理へ委譲する
+            if info_type == "すべて":
+                await self.set_channels_unified(guild_id, channel.id)
+            else:
+                # 日本語の選択値を内部種別へ変換する
+                type_map = {
+                    "緊急地震速報": InfoType.EEW.value,
+                    "地震情報": InfoType.QUAKE.value,
+                    "津波予報": InfoType.TSUNAMI.value,
+                }
+                # 選択された1種別だけを保存する
+                await self.set_channel_for_type(
+                    guild_id,
+                    type_map[info_type],
+                    channel.id,
+                )
             await interaction.response.send_message(
                 f"✅ **{info_type}** の通知チャンネルを {channel.mention} に設定しました。\n"
                 f"ℹ️ 震度フィルタ等は `/earthquake_settings` でも変更できます。"
@@ -1559,6 +1869,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         max_scale="Maximum intensity for the test.",
         tsunami_level="Tsunami warning level for the test."
     )
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def test_notification(
             self,
             interaction: discord.Interaction,
@@ -1676,6 +1987,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
     @app_commands.command(name="earthquake_remove", description="Remove earthquake/tsunami notification settings.")
     @app_commands.describe(info_type="Notification setting to remove.")
+    @app_commands.checks.has_permissions(manage_guild=True)
     async def remove_channel(
             self,
             interaction: discord.Interaction,
@@ -1701,7 +2013,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 if guild_id in self.config:
                     del self.config[guild_id]
                     removed_types = ["緊急地震速報", "地震情報", "津波予報"]
-                    self.save_config()
+                    await self.save_config()
                     await interaction.response.send_message(
                         "✅ **すべての通知設定** を削除しました。",
                         ephemeral=False
@@ -1724,7 +2036,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                         del self.config[guild_id]
                         logger.info(f"ギルド '{interaction.guild.name}' の設定が空になったため削除しました")
 
-                    self.save_config()
+                    await self.save_config()
                     await interaction.response.send_message(
                         f"✅ **{info_type}** の通知設定を削除しました。",
                         ephemeral=False

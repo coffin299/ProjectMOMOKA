@@ -65,6 +65,10 @@ class AudioMixer(discord.AudioSource):
         with self._thread_lock:
             sources_to_process = list(self.sources.items())
 
+        # 音楽・TTSを含めて再生可能な音源が無い場合はプレイヤーを終了する
+        if not sources_to_process:
+            return b''
+
         # 各ソースからフレームを読み取り、ミキシング
         for name, source in sources_to_process:
             try:
@@ -142,6 +146,10 @@ class AudioMixer(discord.AudioSource):
                             logger.error(f"Error in on_source_removed_callback for '{name}': {e}")
                     except Exception as e:
                         logger.error(f"Error in on_source_removed_callback for '{name}': {e}")
+
+        # 音源削除後に音楽・TTSとも残っていない場合だけプレイヤーを終了する
+        if not self.has_sources():
+            return b''
 
         return bytes(final_frame)
 
@@ -339,43 +347,45 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 stderr=subprocess.PIPE,
                 stdin=subprocess.DEVNULL,
             )
-            # stderrを常時排出してパイプ満杯とread()ブロックを防ぐ。
-            self._ytdlp_stderr_pump = ChildProcessLogPump(
-                self._ytdlp_proc.stderr,
-                logger=logger,
-                level=logging.WARNING,
-                label="yt-dlp",
-                # FFmpegが先に閉じるskip/停止時の二次エラーはDEBUGへ下げる。
-                debug_markers=("broken pipe",),
-            )
-            # 子プロセスが出力を始める前に読み取りを開始する。
-            self._ytdlp_stderr_pump.start()
-            # パイプ再生であることをログする
-            logger.info(
-                "Guild %s: Using yt-dlp pipe for '%s' (avoids googlevideo 403)",
-                guild_id,
-                title,
-            )
-            # シーク等の before_options はパイプ入力では限定的にしか効かないが、
-            # -ss が含まれる場合は出力側オプションへ回すためここでは入力前のみ使用しない
-            ffmpeg_args: list = ["-i", "pipe:0", *out_args]
-            # FFmpegAudio を pipe:0 / stdin=ytdlp.stdout で初期化する
-            discord.FFmpegAudio.__init__(
-                self,
-                "pipe:0",
-                executable=executable,
-                args=ffmpeg_args,
-                stdin=self._ytdlp_proc.stdout,
-                stderr=self._stderr_file,
-            )
-            # 親プロセス側の stdout ハンドルを閉じ、FFmpeg 側だけが読めるようにする
             try:
+                # stderrを常時排出してパイプ満杯とread()ブロックを防ぐ。
+                self._ytdlp_stderr_pump = ChildProcessLogPump(
+                    self._ytdlp_proc.stderr,
+                    logger=logger,
+                    level=logging.WARNING,
+                    label="yt-dlp",
+                    # FFmpegが先に閉じるskip/停止時の二次エラーはDEBUGへ下げる。
+                    debug_markers=("broken pipe",),
+                )
+                # 子プロセスが出力を始める前に読み取りを開始する。
+                self._ytdlp_stderr_pump.start()
+                # パイプ再生であることをログする
+                logger.info(
+                    "Guild %s: Using yt-dlp pipe for '%s' (avoids googlevideo 403)",
+                    guild_id,
+                    title,
+                )
+                # シーク等の before_options はパイプ入力では限定的にしか効かないが、
+                # -ss が含まれる場合は出力側オプションへ回すためここでは入力前のみ使用しない
+                ffmpeg_args: list = ["-i", "pipe:0", *out_args]
+                # FFmpegAudio を pipe:0 / stdin=ytdlp.stdout で初期化する
+                discord.FFmpegAudio.__init__(
+                    self,
+                    "pipe:0",
+                    executable=executable,
+                    args=ffmpeg_args,
+                    stdin=self._ytdlp_proc.stdout,
+                    stderr=self._stderr_file,
+                )
+                # 親プロセス側の stdout ハンドルを閉じ、FFmpeg 側だけが読めるようにする
                 if self._ytdlp_proc.stdout:
                     # 親の複製 FD を閉じる
                     self._ytdlp_proc.stdout.close()
             except Exception:
-                # クローズ失敗は致命的ではない
-                pass
+                # 初期化途中の子プロセス・ログポンプ・stderrを確実に解放する
+                self._cleanup_failed_pipe_initialization()
+                # 呼び出し元が再生開始失敗を処理できるよう元の例外を再送出する
+                raise
         else:
             # ローカルファイルや非 YouTube: 従来どおり直接 -i source
             ffmpeg_args = []
@@ -418,6 +428,75 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             f"Guild {guild_id}: FFmpeg PID={pid} yt-dlp PID={ytdlp_pid} started for '{title}' "
             f"url={self._safe_stream_url[:150]}..."
         )
+
+    def _cleanup_failed_pipe_initialization(self):
+        """yt-dlp パイプ初期化の途中失敗で確保済みリソースを解放する。"""
+        # 作成済みのyt-dlpプロセスをローカル変数で保持する
+        ytdlp_proc = self._ytdlp_proc
+        # 再利用されないよう先に状態参照をクリアする
+        self._ytdlp_proc = None
+        # プロセスが存在する場合だけ終了処理を行う
+        if ytdlp_proc is not None:
+            try:
+                # 実行中のyt-dlpを強制終了してパイプ待機を防ぐ
+                if ytdlp_proc.poll() is None:
+                    ytdlp_proc.kill()
+                # 子プロセス終了を短時間待機してゾンビ化を防ぐ
+                ytdlp_proc.wait(timeout=2)
+            except Exception:
+                # 終了待機の失敗は後続リソース解放を妨げない
+                pass
+        # 起動済みのstderrログポンプを停止する
+        if self._ytdlp_stderr_pump is not None:
+            try:
+                # EOF待機スレッドを回収する
+                self._ytdlp_stderr_pump.stop()
+            except Exception:
+                # ログポンプ停止の失敗はパイプハンドル解放を妨げない
+                pass
+            finally:
+                # 再利用されないようログポンプ参照をクリアする
+                self._ytdlp_stderr_pump = None
+        # 子プロセスの停止後に親側パイプハンドルを解放する
+        if ytdlp_proc is not None:
+            try:
+                # 親側に残ったstdoutハンドルを閉じる
+                if ytdlp_proc.stdout is not None:
+                    ytdlp_proc.stdout.close()
+            except Exception:
+                # stdoutが既に閉じられていてもstderr解放を続行する
+                pass
+            try:
+                # 親側に残ったstderrハンドルを閉じる
+                if ytdlp_proc.stderr is not None:
+                    ytdlp_proc.stderr.close()
+            except Exception:
+                # stderrが既に閉じられていても一時ファイル解放を続行する
+                pass
+        # 初期化途中に起動したFFmpegプロセスも残さない
+        ffmpeg_proc = getattr(self, "_process", None)
+        # FFmpegプロセスが存在する場合だけ終了処理を行う
+        if ffmpeg_proc is not None:
+            try:
+                # 実行中のFFmpegを強制終了して子プロセスを残さない
+                if ffmpeg_proc.poll() is None:
+                    ffmpeg_proc.kill()
+                # 子プロセス終了を短時間待機してゾンビ化を防ぐ
+                ffmpeg_proc.wait(timeout=2)
+            except Exception:
+                # 終了待機の失敗はstderr解放を妨げない
+                pass
+        # 初期化時に作成したFFmpeg stderr一時ファイルを閉じる
+        if self._stderr_file is not None:
+            try:
+                # TemporaryFileを閉じてハンドルを解放する
+                self._stderr_file.close()
+            except Exception:
+                # 既に閉じられていても初期化失敗を隠さない
+                pass
+            finally:
+                # 以後の二重クローズを避けるため参照を消す
+                self._stderr_file = None
 
     def read(self) -> bytes:
         """

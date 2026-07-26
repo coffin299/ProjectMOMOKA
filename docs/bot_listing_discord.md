@@ -112,7 +112,7 @@ Fetch video or audio and share via Google Drive.
 - Link Fix for social embeds
 - Earthquake / Twitch notifications
 - Game trackers (VALORANT, Rainbow Six Siege)
-- Utilities: `/help`, `/invite`, `/support`, timers, and more
+- Utilities: `/help`, `/invite`, `/support`, and more
 
 ---
 

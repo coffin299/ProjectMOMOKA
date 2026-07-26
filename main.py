@@ -6,6 +6,7 @@ import sys
 
 import aiohttp
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 
 from MOMOKA.GUI import attach_gui_logging, run_log_viewer_thread, set_bot_ref, set_dark_mode
@@ -82,55 +83,6 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 log_queue, queue_handler, stdout_capture = attach_gui_logging(root_logger)
 
 from MOMOKA.services.discord_handler import DiscordLogHandler, DiscordLogFormatter
-from MOMOKA.utilities.error.errors import InvalidDiceNotationError, DiceValueError
-
-
-# モバイルアプリとして識別するための関数
-async def mobile_identify(self):
-    """Discordのモバイルアプリとして識別するための関数"""
-    # 通常のidentifyペイロードを取得
-    payload = {
-        "op": self.IDENTIFY,
-        "d": {
-            "token": self.token,
-            "properties": {
-                "$os": "iOS",  # モバイルアプリとして識別
-                "$browser": "Discord iOS",
-                "$device": "iPhone",
-                "$referrer": "",
-                "$referring_domain": "",
-            },
-            "compress": True,
-            "large_threshold": 250,
-            "v": 3,
-        },
-    }
-
-    # 必要に応じてintentsを追加
-    if hasattr(self._connection, "intents") and self._connection.intents is not None:
-        payload["d"]["intents"] = self._connection.intents.value
-
-    # プレゼンス情報を追加（存在する場合）
-    if hasattr(self._connection, "_activity") or hasattr(self._connection, "_status"):
-        presence = {}
-        if hasattr(self._connection, "_status"):
-            presence["status"] = self._connection._status or "online"
-        if hasattr(self._connection, "_activity"):
-            presence["game"] = self._connection._activity
-
-        if presence:
-            presence.update({"since": 0, "afk": False})
-            payload["d"]["presence"] = presence
-
-    # 識別情報を送信
-    if hasattr(self, "call_hooks"):
-        await self.call_hooks(
-            "before_identify",
-            self.shard_id,
-            initial=getattr(self, "_initial_identify", False),
-        )
-    await self.send_as_json(payload)
-
 
 class Momoka(commands.Bot):
     """MOMOKA Botのメインクラス"""
@@ -172,7 +124,12 @@ class Momoka(commands.Bot):
 
     def is_admin(self, user_id: int) -> bool:
         """ユーザーが管理者かどうかをチェック"""
-        admin_ids = self.config.get('admin_user_ids', [])
+        # 設定値が文字列でも Discord の整数 ID と比較できるよう正規化する
+        admin_ids = {
+            int(admin_id)
+            for admin_id in self.config.get('admin_user_ids', [])
+            if str(admin_id).isdigit()
+        }
         return user_id in admin_ids
 
     async def notify_active_users_of_restart(self) -> None:
@@ -301,7 +258,12 @@ class Momoka(commands.Bot):
             if all_log_channel_ids:
                 try:
                     # Discord ログハンドラを作成する
-                    discord_handler = DiscordLogHandler(bot=self, channel_ids=all_log_channel_ids, interval=6.0)
+                    discord_handler = DiscordLogHandler(
+                        bot=self,
+                        channel_ids=all_log_channel_ids,
+                        interval=6.0,
+                        config_path=logging_json_path,
+                    )
                     # ログレベルを INFO に設定する
                     discord_handler.setLevel(logging.INFO)
                     # フォーマッタを設定する
@@ -384,8 +346,9 @@ class Momoka(commands.Bot):
                 # テストギルド ID が設定されているか確認する
                 test_guild_id = self.config.get('test_guild_id')
                 if test_guild_id:
-                    # テストギルドへ同期する
+                    # テストギルドへグローバルコマンドを複製して同期する
                     guild_obj = discord.Object(id=int(test_guild_id))
+                    self.tree.copy_global_to(guild=guild_obj)
                     synced_commands = await self.tree.sync(guild=guild_obj)
                     logging.info(
                         "%s %d 個のスラッシュコマンドをテストギルド %s に同期しました。",
@@ -430,9 +393,18 @@ class Momoka(commands.Bot):
         except KeyError:
             status_text = status_template  # プレースホルダーがない場合はそのまま使用
 
-        # ステータスを更新
+        # 配信 URL の設定を取得し、未設定時は公式の既定 URL を使う
+        presence_config = self.config.get("presence", {})
+        streaming_url = presence_config.get(
+            "streaming_url",
+            "https://www.twitch.tv/coffinnoob299",
+        )
+
+        # 配信中ステータスを更新
         try:
-            await self.change_presence(activity=discord.Game(name=status_text))
+            await self.change_presence(
+                activity=discord.Streaming(name=status_text, url=streaming_url)
+            )
         except (aiohttp.client_exceptions.ClientConnectionResetError, ConnectionResetError) as e:
             logging.warning(f"Failed to rotate status due to connection reset: {e}")
         except Exception as e:
@@ -452,28 +424,60 @@ class Momoka(commands.Bot):
         # その他のエラーはログに記録（必要に応じて処理）
         logging.debug(f"コマンドエラー: {error}")
 
-    async def on_app_command_error(self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-        """スラッシュコマンドのエラーハンドリング"""
-        if isinstance(error, (commands.CommandNotFound, commands.CheckFailure)):
-            return  # 無視するエラー
+    async def _send_app_command_error(
+        self,
+        interaction: discord.Interaction,
+        message: str,
+    ) -> None:
+        """スラッシュコマンドのエラー応答を重複なく送信する。"""
+        # 初回応答済みなら followup を使い、二重応答エラーを防ぐ
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+            return
+        # 未応答なら interaction の初回応答として送信する
+        await interaction.response.send_message(message, ephemeral=True)
 
-        if isinstance(error, commands.MissingPermissions):
-            await interaction.response.send_message("❌ このコマンドを実行する権限がありません。", ephemeral=True)
-        elif isinstance(error, (commands.BotMissingPermissions, discord.Forbidden)):
-            await interaction.response.send_message("❌ ボットに必要な権限がありません。管理者に連絡してください。",
-                                                    ephemeral=True)
-        elif isinstance(error, commands.CommandOnCooldown):
-            await interaction.response.send_message(f"⏳ このコマンドは {error.retry_after:.1f} 秒後に再試行できます。",
-                                                    ephemeral=True)
-        elif isinstance(error, (InvalidDiceNotationError, DiceValueError)):
-            await interaction.response.send_message(f"❌ {str(error)}", ephemeral=True)
+    async def on_app_command_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ):
+        """スラッシュコマンドのエラーハンドリング"""
+        # InvokeError は元例外を取り出して適切なエラー種別で判定する
+        original_error = (
+            error.original
+            if isinstance(error, app_commands.CommandInvokeError)
+            else error
+        )
+
+        if isinstance(original_error, app_commands.MissingPermissions):
+            await self._send_app_command_error(
+                interaction,
+                "❌ このコマンドを実行する権限がありません。",
+            )
+        elif isinstance(
+            original_error,
+            (app_commands.BotMissingPermissions, discord.Forbidden),
+        ):
+            await self._send_app_command_error(
+                interaction,
+                "❌ ボットに必要な権限がありません。管理者に連絡してください。",
+            )
+        elif isinstance(original_error, app_commands.CommandOnCooldown):
+            await self._send_app_command_error(
+                interaction,
+                "⏳ このコマンドは "
+                f"{original_error.retry_after:.1f} 秒後に再試行できます。",
+            )
+        elif isinstance(original_error, app_commands.CheckFailure):
+            return
         else:
-            # その他のエラーはログに記録
-            logging.error(f"コマンドエラー: {error}", exc_info=error)
-            if interaction.response.is_done():
-                await interaction.followup.send("❌ コマンドの実行中にエラーが発生しました。", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ コマンドの実行中にエラーが発生しました。", ephemeral=True)
+            # 未分類の例外は原因を記録し、利用者には共通メッセージだけを返す
+            logging.error("コマンドエラー: %s", original_error, exc_info=original_error)
+            await self._send_app_command_error(
+                interaction,
+                "❌ コマンドの実行中にエラーが発生しました。",
+            )
 
 
 # CONFIG_FILE / DEFAULT_CONFIG_FILE は削除済み — configs/*.yaml を使用
@@ -491,8 +495,6 @@ PRIMARY_COGS = [
     'MOMOKA.music.music_cog',
     'MOMOKA.notifications.earthquake_notification_cog',
     'MOMOKA.notifications.twitch_notification_cog',
-    'MOMOKA.scheduler.match_time_cog',
-    'MOMOKA.timer.timer_cog',
     'MOMOKA.tracker.r6s_tracker_cog',
     'MOMOKA.tracker.valorant_tracker_cog',
     'MOMOKA.tts.tts_cog',
@@ -588,9 +590,6 @@ if __name__ == "__main__":
 
     # メンション設定を作成する
     allowed_mentions = discord.AllowedMentions(everyone=False, users=True, roles=False, replied_user=True)
-
-    # モバイル識別関数をパッチする
-    discord.gateway.DiscordWebSocket.identify = mobile_identify
 
     # --- PLANA（プライマリボット）の作成 ---
     # PLANA の設定ブロックを取得する

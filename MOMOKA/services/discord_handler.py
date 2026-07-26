@@ -52,7 +52,7 @@ class DiscordLogHandler(logging.Handler):
     """
 
     def __init__(self, bot: Client, channel_ids: List[int], interval: float = 5.0,
-                 config_path: str = "data/log_channels.json"):
+                 config_path: str = "data/logging_channels.json"):
         super().__init__()
         self.bot = bot
         self.channel_ids = channel_ids
@@ -105,9 +105,8 @@ class DiscordLogHandler(logging.Handler):
         try:
             os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
 
-            data = {
-                "log_channels": self.channel_ids
-            }
+            # main.py と同じ JSON 配列形式でチャンネル ID を保存する
+            data = self.channel_ids
 
             try:
                 import aiofiles
@@ -211,6 +210,27 @@ class DiscordLogHandler(logging.Handler):
             r'\1\2****',
             message,
             flags=re.IGNORECASE
+        )
+        # Discord Bot トークン形式を常に伏せる
+        message = re.sub(
+            r'\b(?:mfa\.)?[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{20,}\b',
+            '********',
+            message,
+        )
+        # キー名と値が対になった一般的な API キー設定を伏せる
+        message = re.sub(
+            r'(?i)\b(api[_-]?key|access[_-]?token|client[_-]?secret|'
+            r'authorization|bearer)\b(\s*[:=]\s*|\s+)(["\']?)'
+            r'(?:bearer\s+)?[A-Za-z0-9_./+=-]{16,}\3',
+            r'\1\2********',
+            message,
+        )
+        # GitHub・OpenAI・Google などで使われる既知のキー接頭辞を伏せる
+        message = re.sub(
+            r'\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|'
+            r'AIza[A-Za-z0-9_-]{20,})\b',
+            '********',
+            message,
         )
 
         # --- 長大なログメッセージを切り詰め（APIエラーレスポンス全文等の対策） ---

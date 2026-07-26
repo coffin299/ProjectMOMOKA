@@ -91,8 +91,8 @@ class HelpLayoutView(discord.ui.LayoutView):
         page: int = 0,
         lang: str = "en",
     ) -> None:
-        # 長時間表示するためタイムアウトなし
-        super().__init__(timeout=None)
+        # 放置された操作用 UI を約10分後に無効化する
+        super().__init__(timeout=600)
         # Bot 参照を保持する
         self.bot = bot
         # 招待 URL を config から解決する
@@ -311,7 +311,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "2. **Music** — `/play` plus `/download_*`\n"
                 "3. **Link Fix** — replace SNS embeds with Fix URLs\n"
                 "4. **Twitch** — Discord alerts when a stream goes live\n\n"
-                "Also: TTS / image search / earthquake alerts / timers, …"
+                "Also: TTS / image search / earthquake alerts, …"
             )
         return (
             "### 📜 MOMOKA Help — Overview\n"
@@ -507,9 +507,6 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "• `/tts volume` `/autojoin` `/dictionary`\n\n"
                 "**画像検索**\n"
                 "• `/meow` `/yandere-safe` `/danbooru-safe`\n\n"
-                "**タイマー・対戦時間**\n"
-                "• `/timer start` `/timer stop`\n"
-                "• `/match_time` — 対戦時間の調整"
                 f"{note}"
             )
         note_en = ""
@@ -526,9 +523,6 @@ class HelpLayoutView(discord.ui.LayoutView):
             "• `/tts volume` `/autojoin` `/dictionary`\n\n"
             "**Image search**\n"
             "• `/meow` `/yandere-safe` `/danbooru-safe`\n\n"
-            "**Timer & match time**\n"
-            "• `/timer start` `/timer stop`\n"
-            "• `/match_time` — match time helper"
             f"{note_en}"
         )
 
@@ -668,8 +662,8 @@ class InviteLayoutView(discord.ui.LayoutView):
     """ /invite 用 LayoutView（PLANA / ARONA リンク）。"""
 
     def __init__(self, bot: commands.Bot, *, lang: str = "en") -> None:
-        # 長時間表示
-        super().__init__(timeout=None)
+        # 放置された操作用 UI を約10分後に無効化する
+        super().__init__(timeout=600)
         # Bot 参照
         self.bot = bot
         # UI 言語を正規化する

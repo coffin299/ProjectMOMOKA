@@ -15,6 +15,21 @@ logger = logging.getLogger(__name__)
 
 # Discordのメッセージ最大長
 DISCORD_MESSAGE_MAX_LENGTH = 1990
+# yt-dlp の詳細メッセージに割り当てる最大文字数
+YTDLP_ERROR_DETAIL_MAX_LENGTH = 1500
+
+
+def _truncate_ytdlp_error_detail(error_detail: object) -> str:
+    """Discord の上限内で yt-dlp のエラー詳細を省略する。"""
+    # 例外詳細を安全に文字列へ変換する
+    detail = str(error_detail)
+    # 上限以下なら元の詳細を返す
+    if len(detail) <= YTDLP_ERROR_DETAIL_MAX_LENGTH:
+        return detail
+    # 省略したことを示す末尾を確保して切り詰める
+    suffix = "\n…（エラー詳細は省略されました）"
+    # 末尾表示を含めても上限を超えない本文を切り出す
+    return f"{detail[:YTDLP_ERROR_DETAIL_MAX_LENGTH - len(suffix)]}{suffix}"
 
 
 class LLMExceptionHandler:
@@ -69,36 +84,47 @@ class YTDLPExceptionHandler:
         logger.error(f"An error occurred in YTDLP/GDrive process: {e}", exc_info=True)
 
         if isinstance(e, yt_dlp.utils.DownloadError):
+            # yt-dlp の長い詳細を Discord の表示上限内へ収める
+            error_detail = _truncate_ytdlp_error_detail(e)
             return pick_str(
                 lang,
                 ja=(
                     f"動画が見つからないか、ダウンロードが許可されていません。"
-                    f"検索クエリやURLを確認してください。\n```{str(e)}```"
+                    f"検索クエリやURLを確認してください。\n```{error_detail}```"
                 ),
                 en=(
                     f"Video not found or download is not allowed. "
-                    f"Please check the query or URL.\n```{str(e)}```"
+                    f"Please check the query or URL.\n```{error_detail}```"
                 ),
             )
         elif isinstance(e, HttpError):
+            # Google Drive API の長い詳細を Discord の表示上限内へ収める
+            error_detail = _truncate_ytdlp_error_detail(e)
             return pick_str(
                 lang,
                 ja=(
                     f"Google Drive APIでエラーが発生しました。"
-                    f"認証情報やフォルダID、APIの割り当てを確認してください。\n```{str(e)}```"
+                    f"認証情報やフォルダID、APIの割り当てを確認してください。\n```{error_detail}```"
                 ),
                 en=(
                     f"An error occurred with the Google Drive API. "
-                    f"Please check credentials, folder ID, and API quota.\n```{str(e)}```"
+                    f"Please check credentials, folder ID, and API quota.\n```{error_detail}```"
                 ),
             )
         else:
+            # 例外名を含む長い詳細を Discord の表示上限内へ収める
+            error_detail = _truncate_ytdlp_error_detail(
+                f"{type(e).__name__}: {e}"
+            )
             return pick_str(
                 lang,
-                ja=f"処理中に予期せぬエラーが発生しました。\n```{type(e).__name__}: {str(e)}```",
+                ja=(
+                    f"処理中に予期せぬエラーが発生しました。\n"
+                    f"```{error_detail}```"
+                ),
                 en=(
                     f"An unexpected error occurred during processing.\n"
-                    f"```{type(e).__name__}: {str(e)}```"
+                    f"```{error_detail}```"
                 ),
             )
 

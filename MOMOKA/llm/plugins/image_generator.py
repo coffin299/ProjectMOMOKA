@@ -403,8 +403,17 @@ class ImageGenerator:
                 "リクエストをキューに追加しました（位置: #{pos}）。お待ちください..."
             ).format(pos=queue_position)
 
-        result = await self._process_task(task, return_result=True)
-        # Return result if available, otherwise return None (embed is already sent)
+        try:
+            # 先頭タスクは完了通知を待ち、失敗時もキュー処理を継続する
+            result = await self._process_task(task, return_result=True)
+        except Exception:  # noqa: BLE001
+            # 例外を記録しても次の待機タスクが停止しないようにする
+            logger.exception("Image generation task failed for user %s", user_name)
+            return "❌ Image generation failed. / 画像生成に失敗しました。"
+        finally:
+            # 成否にかかわらず後続タスクを開始する
+            await self._schedule_next_task()
+        # 送信済みの埋め込み以外に返す内容があれば返す
         return result if result else None
 
     async def _process_task(self, task: GenerationTask, return_result: bool) -> Optional[str]:
@@ -576,7 +585,6 @@ class ImageGenerator:
                 except Exception as exc:  # noqa: BLE001
                     logger.warning("Failed to delete queue message: %s", exc)
             
-            await self._schedule_next_task()
             return None  # Don't return success message for NSFW-filtered images
         
         # Normal image generation - show completed message and send image
@@ -635,7 +643,6 @@ class ImageGenerator:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Failed to delete queue message: %s", exc)
 
-        await self._schedule_next_task()
         return None  # Don't return success message
 
     async def _schedule_next_task(self) -> None:
@@ -649,7 +656,27 @@ class ImageGenerator:
             next_task.position = 1
             self.current_task = next_task
 
-        asyncio.create_task(self._process_task(next_task, return_result=False))
+        # バックグラウンド処理の例外を回収してキュー停止を防ぐ
+        processing_task = asyncio.create_task(
+            self._process_task(next_task, return_result=False)
+        )
+        # 完了時に次のタスクを必ずスケジュールする
+        processing_task.add_done_callback(self._on_generation_task_done)
+
+    def _on_generation_task_done(self, processing_task: asyncio.Task) -> None:
+        """バックグラウンド生成の結果を回収して後続タスクを開始する。"""
+        try:
+            # タスク結果を取得して未回収例外を発生させない
+            processing_task.result()
+        except asyncio.CancelledError:
+            # 停止要求によるキャンセルはエラーとして扱わない
+            logger.info("Image generation task was cancelled.")
+        except Exception:  # noqa: BLE001
+            # 失敗内容を記録してもキューは継続する
+            logger.exception("Queued image generation task failed.")
+        finally:
+            # 成否にかかわらず次のタスクへ進めて生成状態を解除する
+            asyncio.create_task(self._schedule_next_task())
 
     async def _handle_modal_submission(
         self,

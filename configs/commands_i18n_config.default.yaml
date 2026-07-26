@@ -36,6 +36,21 @@ commands_i18n:
             ru: Выберите число наборов.
             th: เลือกจำนวนครั้งในการรับสมัคร
             id: Pilih jumlah perekrutan.
+    ping:
+      description:
+        en: Displays the bot latency.
+        ja: Botの応答遅延を表示します。
+        ko: 봇의 응답 지연 시간을 표시합니다.
+        vi: Hiển thị độ trễ của bot.
+        zh-CN: 显示机器人的延迟。
+        zh-TW: 顯示機器人的延遲。
+        es: Muestra la latencia del bot.
+        fr: Affiche la latence du bot.
+        de: Zeigt die Bot-Latenz an.
+        pt-BR: Exibe a latência do bot.
+        ru: Показывает задержку бота.
+        th: แสดงความหน่วงของบอต
+        id: Menampilkan latensi bot.
     serverinfo:
       description:
         en: Displays information about the current server.
@@ -1073,51 +1088,6 @@ commands_i18n:
             ru: Слово для поиска (частичное совпадение).
             th: คำที่ค้นหา (จับคู่บางส่วน)
             id: Kata yang dicari (cocok sebagian).
-    timer:
-      description:
-        en: Timer-related commands.
-        ja: タイマー関連のコマンド
-        ko: 타이머 관련 명령
-        vi: Các lệnh liên quan đến hẹn giờ.
-        zh-CN: 计时器相关命令。
-        zh-TW: 計時器相關指令。
-        es: Comandos relacionados con el temporizador.
-        fr: Commandes liées au minuteur.
-        de: Timerbezogene Befehle.
-        pt-BR: Comandos relacionados ao timer.
-        ru: Команды таймера.
-        th: คำสั่งเกี่ยวกับตัวจับเวลา
-        id: Perintah terkait timer.
-    timer start:
-      description:
-        en: Start a timer.
-        ja: タイマーを開始します。
-        ko: 타이머를 시작합니다.
-        vi: Bắt đầu hẹn giờ.
-        zh-CN: 开始计时。
-        zh-TW: 開始計時。
-        es: Inicia un temporizador.
-        fr: Démarre un minuteur.
-        de: Startet einen Timer.
-        pt-BR: Inicia um timer.
-        ru: Запускает таймер.
-        th: เริ่มตัวจับเวลา
-        id: Mulai timer.
-    timer stop:
-      description:
-        en: Stop the timer and show elapsed time.
-        ja: タイマーを停止し、経過時間を表示します。
-        ko: 타이머를 중지하고 경과 시간을 표시합니다.
-        vi: Dừng hẹn giờ và hiện thời gian đã trôi.
-        zh-CN: 停止计时并显示经过时间。
-        zh-TW: 停止計時並顯示經過時間。
-        es: Detiene el temporizador y muestra el tiempo.
-        fr: Arrête le minuteur et affiche le temps.
-        de: Stoppt den Timer und zeigt die Zeit.
-        pt-BR: Para o timer e mostra o tempo decorrido.
-        ru: Останавливает таймер и показывает время.
-        th: หยุดตัวจับเวลาและแสดงเวลาที่ผ่านไป
-        id: Hentikan timer dan tampilkan waktu berlalu.
     meow:
       description:
         en: Displays a cute cat picture.
@@ -2098,37 +2068,6 @@ commands_i18n:
             ru: URL или поисковый запрос видео.
             th: URL หรือคำค้นหาของวิดีโอ
             id: URL atau kata kunci pencarian video.
-    match_time:
-      description:
-        en: Start time matching; find the best overlap from preferences.
-        ja: 時間調整を開始し、ベストマッチを自動算出します。
-        ko: 시간 조정을 시작하고 최적 겹침을 자동 계산합니다.
-        vi: Bắt đầu khớp giờ; tìm khoảng trùng tốt nhất từ sở thích.
-        zh-CN: 开始时间匹配，从偏好中找出最佳重叠。
-        zh-TW: 開始時間媒合，從偏好找出最佳重疊。
-        es: Inicia el ajuste de horarios y halla el mejor solape.
-        fr: Lance l'appariement d'horaires (meilleur chevauchement).
-        de: Startet Zeitmatching und findet die beste Überschneidung.
-        pt-BR: Inicia o ajuste de horários e acha a melhor sobreposição.
-        ru: Запускает подбор времени по предпочтениям.
-        th: เริ่มจับคู่เวลาและหาช่วงที่ทับซ้อนดีที่สุด
-        id: Mulai pencocokan waktu; cari overlap terbaik.
-      options:
-        title:
-          description:
-            en: Session title (e.g. scrim, rank grind).
-            ja: '募集タイトル名（例: スクリム練習、ランク周回）'
-            ko: '모집 제목(예: 스크림, 랭크)'
-            vi: 'Tiêu đề phiên (vd: scrim, rank grind).'
-            zh-CN: 会话标题（例如 scrim、排位）。
-            zh-TW: 場次標題（例如 scrim、排位）。
-            es: Título de la sesión (p. ej. scrim, ranked).
-            fr: Titre de session (ex. scrim, ranked).
-            de: Sitzungstitel (z. B. Scrim, Ranked).
-            pt-BR: 'Título da sessão (ex.: scrim, ranked).'
-            ru: Название сессии (напр. scrim, ranked).
-            th: ชื่อเซสชัน (เช่น scrim, rank grind)
-            id: Judul sesi (mis. scrim, rank grind).
     shutdown:
       description:
         en: Shut down both bots after notifying users (owner only).

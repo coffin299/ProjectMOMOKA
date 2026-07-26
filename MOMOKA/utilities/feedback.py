@@ -116,15 +116,32 @@ class FeedbackService:
         """投稿先が1つ以上あるか。"""
         return bool(self.channel_ids())
 
+    def _prune_expired_cooldowns(self, now: float) -> None:
+        """期限切れのクールダウン記録を削除して辞書肥大を防ぐ。"""
+        # 期限切れ user_id を集める
+        expired_user_ids = [
+            uid
+            for uid, submitted_at in self._last_submit.items()
+            if now - submitted_at >= COOLDOWN_SECONDS
+        ]
+        # 期限切れエントリを取り除く
+        for uid in expired_user_ids:
+            # 記録を削除する
+            self._last_submit.pop(uid, None)
+
     def check_cooldown(self, user_id: int) -> Optional[int]:
         """クールダウン中なら残り秒、否则 None。"""
+        # 現在の monotonic 時刻を取る
+        now = time.monotonic()
+        # 期限切れエントリを先に掃除する
+        self._prune_expired_cooldowns(now)
         # 最終投稿時刻を取る
         last = self._last_submit.get(user_id)
         # 未投稿なら通過する
         if last is None:
             return None
         # 経過秒を計算する
-        elapsed = time.monotonic() - last
+        elapsed = now - last
         # クールダウン超過なら通過する
         if elapsed >= COOLDOWN_SECONDS:
             return None
@@ -133,7 +150,12 @@ class FeedbackService:
 
     def mark_submitted(self, user_id: int) -> None:
         """投稿成功時にクールダウンを記録する。"""
-        self._last_submit[user_id] = time.monotonic()
+        # 現在時刻を取る
+        now = time.monotonic()
+        # 期限切れを掃除してから記録する
+        self._prune_expired_cooldowns(now)
+        # 投稿時刻を記録する
+        self._last_submit[user_id] = now
 
     def build_embed(
         self,

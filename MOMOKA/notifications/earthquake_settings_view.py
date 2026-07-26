@@ -317,7 +317,7 @@ class EarthquakeSettingsView(discord.ui.LayoutView):
             await interaction.response.send_message("チャンネルが選択されていません。", ephemeral=True)
             return
         # 先頭 ID を保存
-        self.cog.set_channels_unified(self.guild_id, int(raw_values[0]))
+        await self.cog.set_channels_unified(self.guild_id, int(raw_values[0]))
         # UI 再構築
         self._rebuild()
         # メッセージ更新
@@ -336,7 +336,11 @@ class EarthquakeSettingsView(discord.ui.LayoutView):
                 await interaction.response.send_message("チャンネルが選択されていません。", ephemeral=True)
                 return
             # 保存
-            self.cog.set_channel_for_type(self.guild_id, info_type, int(raw_values[0]))
+            await self.cog.set_channel_for_type(
+                self.guild_id,
+                info_type,
+                int(raw_values[0]),
+            )
             # 再構築
             self._rebuild()
             # 更新
@@ -361,7 +365,7 @@ class EarthquakeSettingsView(discord.ui.LayoutView):
                 except (TypeError, ValueError):
                     continue
             # 保存
-            self.cog.set_notify_scales(self.guild_id, info_type, scales)
+            await self.cog.set_notify_scales(self.guild_id, info_type, scales)
             # 再構築
             self._rebuild()
             # 更新
@@ -377,7 +381,7 @@ class EarthquakeSettingsView(discord.ui.LayoutView):
         # 現在値を反転
         current = self.cog.get_notify_tsunami(self.guild_id)
         # 保存
-        self.cog.set_notify_tsunami(self.guild_id, not current)
+        await self.cog.set_notify_tsunami(self.guild_id, not current)
         # 再構築
         self._rebuild()
         # 更新

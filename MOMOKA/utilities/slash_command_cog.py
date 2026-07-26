@@ -3,8 +3,6 @@ import datetime
 import logging
 import random
 import re
-import json
-import os
 from typing import Optional, List, Dict, Any
 
 import aiohttp
@@ -12,8 +10,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-# ユーザー指定のエラークラスをインポート
-from MOMOKA.utilities.error.errors import InvalidDiceNotationError, DiceValueError
 # /help /invite 用 Components V2 LayoutView と招待 URL 解決
 from MOMOKA.utilities.help_view import (
     HelpLayoutView,
@@ -38,8 +34,6 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.session = aiohttp.ClientSession()
-        # 保存先を data/json/ に変更
-        self.logging_channels_file = "data/logging_channels.json"
         # フィードバック投稿サービスを初期化する
         self.feedback_service = FeedbackService(bot)
 
@@ -77,35 +71,6 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
 
     async def cog_unload(self) -> None:
         await self.session.close()
-
-    def _load_logging_channels(self) -> List[int]:
-        if os.path.exists(self.logging_channels_file):
-            try:
-                with open(self.logging_channels_file, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, list) and all(isinstance(i, int) for i in data):
-                        return data
-            except (json.JSONDecodeError, IOError) as e:
-                logger.error(f"ロギングチャンネル設定ファイルの読み込みに失敗しました: {e}")
-        return []
-
-    def _save_logging_channels(self, channel_ids: List[int]) -> None:
-        try:
-            # ディレクトリのパスを取得
-            dir_path = os.path.dirname(self.logging_channels_file)
-            # ディレクトリが存在しない場合は作成
-            os.makedirs(dir_path, exist_ok=True)
-            with open(self.logging_channels_file, 'w') as f:
-                json.dump(channel_ids, f, indent=4)
-        except IOError as e:
-            logger.error(f"ロギングチャンネル設定ファイルの保存に失敗しました: {e}")
-
-    def _get_discord_log_handler(self) -> Optional[Any]:
-        root_logger = logging.getLogger()
-        for handler in root_logger.handlers:
-            if handler.__class__.__name__ == 'DiscordLogHandler':
-                return handler
-        return None
 
     async def get_prefix_from_config(self) -> str:
         prefix = "!!"
@@ -174,6 +139,7 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         embed.set_footer(text="提供割合: 🟪(☆3): 3.0%, 🟨(☆2): 18.5%, 🟦(☆1): 78.5%")
         self._add_support_footer(embed)
         await interaction.followup.send(embed=embed, view=self._create_support_view())
+    @app_commands.command(name="ping", description="Displays the bot latency.")
     async def ping(self, interaction: discord.Interaction):
         latency_ms = round(self.bot.latency * 1000)
         embed = discord.Embed(title="Pong! 🏓", description=f"現在のレイテンシ / Current Latency: `{latency_ms}ms`",
@@ -258,15 +224,29 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
                     "👑 **管理者権限** / Administrator Privileges" if member.guild_permissions.administrator else "🔧 **標準権限** / Standard Privileges"]
                 embed.add_field(name="Botの評価 / Bot Evaluation", value="\n".join(evaluation_lines), inline=False)
             else:
-                if member.joined_at:
+                # メンバーインテントと完全なキャッシュがある場合だけ順位を信用する
+                can_calculate_join_rank = (
+                    member.joined_at is not None
+                    and self.bot.intents.members
+                    and interaction.guild.chunked
+                )
+                # 信頼できない場合もフィールドを残して不明と明示する
+                join_rank_value = "不明 / Unknown"
+                if can_calculate_join_rank:
+                    # 参加日時の昇順で参加順位を計算する
                     sorted_members = sorted(interaction.guild.members,
                                             key=lambda m: m.joined_at or datetime.datetime.max.replace(
                                                 tzinfo=datetime.timezone.utc))
-                    try:
+                    # 対象メンバーが完全なキャッシュ内にあれば順位を表示する
+                    if member in sorted_members:
                         join_position = sorted_members.index(member) + 1
-                        embed.add_field(name="参加順位 / Join Rank", value=f"{join_position}番目 / th", inline=True)
-                    except ValueError:
-                        pass
+                        join_rank_value = f"{join_position}番目 / th"
+                # 常に参加順位フィールドを表示し、算出不可時は不明とする
+                embed.add_field(
+                    name="参加順位 / Join Rank",
+                    value=join_rank_value,
+                    inline=True,
+                )
                 perms = member.guild_permissions
                 notable_perms_ja = {"管理者": perms.administrator, "サーバー管理": perms.manage_guild,
                                     "ロール管理": perms.manage_roles, "追放": perms.kick_members,

@@ -81,7 +81,7 @@ class CustomFixDomainModal(discord.ui.Modal):
             )
             return
         # 保存する
-        ok = self.parent.store.set_fix_domain(
+        ok = await self.parent.store.set_fix_domain(
             self.parent.guild_id, self.parent.site_id, normalized
         )
         # 失敗時
@@ -150,7 +150,7 @@ class EditMatchDomainsModal(discord.ui.Modal):
             await interaction.response.send_message(err, ephemeral=True)
             return
         # 保存する
-        ok = self.parent.store.set_match_domains(
+        ok = await self.parent.store.set_match_domains(
             self.parent.guild_id, self.parent.site_id, parsed
         )
         # 失敗
@@ -523,7 +523,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
                 return
             # 反転する
             current = self.store.is_site_enabled(self.guild_id, site_id)
-            self.store.set_site_enabled(self.guild_id, site_id, not current)
+            await self.store.set_site_enabled(self.guild_id, site_id, not current)
             # 再描画
             self._rebuild()
             await interaction.response.edit_message(view=self)
@@ -570,7 +570,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
             return
         # 反転
         current = self.store.is_feature_enabled(self.guild_id)
-        self.store.set_feature_enabled(self.guild_id, not current)
+        await self.store.set_feature_enabled(self.guild_id, not current)
         self._rebuild()
         await interaction.response.edit_message(view=self)
 
@@ -580,7 +580,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if not await self._ensure_manage(interaction):
             return
         # 全サイトを ON にする
-        self.store.set_all_sites_enabled(self.guild_id, True)
+        await self.store.set_all_sites_enabled(self.guild_id, True)
         # 再描画する
         self._rebuild()
         await interaction.response.edit_message(view=self)
@@ -591,7 +591,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if not await self._ensure_manage(interaction):
             return
         # 全サイトを OFF にする
-        self.store.set_all_sites_enabled(self.guild_id, False)
+        await self.store.set_all_sites_enabled(self.guild_id, False)
         # 再描画する
         self._rebuild()
         await interaction.response.edit_message(view=self)
@@ -600,7 +600,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         """ギルド設定リセット。"""
         if not await self._ensure_manage(interaction):
             return
-        self.store.reset_guild(self.guild_id)
+        await self.store.reset_guild(self.guild_id)
         self.page = _Page.OVERVIEW
         self.site_id = None
         self._rebuild()
@@ -657,7 +657,9 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if value.startswith("preset:"):
             domain = value.split(":", 1)[1]
             if self.site_id:
-                self.store.set_fix_domain(self.guild_id, self.site_id, domain)
+                await self.store.set_fix_domain(
+                    self.guild_id, self.site_id, domain
+                )
             self._rebuild()
             await interaction.response.edit_message(view=self)
             return
@@ -687,6 +689,6 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if not await self._ensure_manage(interaction):
             return
         if self.site_id:
-            self.store.clear_match_domains(self.guild_id, self.site_id)
+            await self.store.clear_match_domains(self.guild_id, self.site_id)
         self._rebuild()
         await interaction.response.edit_message(view=self)
