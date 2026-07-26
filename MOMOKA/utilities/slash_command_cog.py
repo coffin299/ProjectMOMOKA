@@ -14,10 +14,11 @@ from discord.ext import commands
 
 # ユーザー指定のエラークラスをインポート
 from MOMOKA.utilities.error.errors import InvalidDiceNotationError, DiceValueError
-# /help /invite 用 Components V2 LayoutView
+# /help /invite 用 Components V2 LayoutView と招待 URL 解決
 from MOMOKA.utilities.help_view import (
     HelpLayoutView,
     InviteLayoutView,
+    resolve_invite_urls,
 )
 from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 # フィードバック Modal / 複数チャンネル投稿
