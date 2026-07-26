@@ -1,0 +1,2162 @@
+# スラッシュ／hybrid コマンドの description / パラメータ説明（Discord localizations）
+# 対応言語: en（フォールバック）, ja, ko, vi, zh-CN, zh-TW, es, fr, de, pt-BR, ru, th, id
+# コマンド name は翻訳しない（英語固定）
+# 注意: 既存の commands_i18n_config.yaml がある場合、この default の新規キーは自動マージされない。
+#       default 更新後は実行用 yaml へ不足キーを追記すること。
+commands_i18n:
+  fallback: en
+  commands:
+    gacha:
+      description:
+        en: Recruits students like in Blue Archive.
+        ja: ブルーアーカイブ風の生徒募集（ガチャ）を行います。
+        ko: 블루 아카이브 스타일로 학생을 모집(가챠)합니다.
+        vi: Tuyển sinh viên theo phong cách Blue Archive (gacha).
+        zh-CN: 像《碧蓝档案》一样招募学生。
+        zh-TW: 像《蔚藍檔案》一樣招募學生。
+        es: Recluta estudiantes como en Blue Archive.
+        fr: Recrutez des élèves comme dans Blue Archive.
+        de: Rekrutiere Schüler wie in Blue Archive.
+        pt-BR: Recrute estudantes como em Blue Archive.
+        ru: Набирает учеников, как в Blue Archive.
+        th: รับสมัครนักเรียนแบบ Blue Archive
+        id: Rekrut siswa seperti di Blue Archive.
+      options:
+        rolls:
+          description:
+            en: Select the number of recruitments.
+            ja: 募集回数を選択します。
+            ko: 모집 횟수를 선택합니다.
+            vi: Chọn số lần tuyển sinh.
+            zh-CN: 选择招募次数。
+            zh-TW: 選擇招募次數。
+            es: Selecciona el número de reclutamientos.
+            fr: Sélectionnez le nombre de recrutements.
+            de: Wähle die Anzahl der Rekrutierungen.
+            pt-BR: Selecione o número de recrutamentos.
+            ru: Выберите число наборов.
+            th: เลือกจำนวนครั้งในการรับสมัคร
+            id: Pilih jumlah perekrutan.
+    serverinfo:
+      description:
+        en: Displays information about the current server.
+        ja: 現在のサーバーに関する情報を表示します。
+        ko: 현재 서버 정보를 표시합니다.
+        vi: Hiển thị thông tin máy chủ hiện tại.
+        zh-CN: 显示当前服务器的信息。
+        zh-TW: 顯示目前伺服器的資訊。
+        es: Muestra información del servidor actual.
+        fr: Affiche les informations du serveur actuel.
+        de: Zeigt Informationen zum aktuellen Server an.
+        pt-BR: Mostra informações do servidor atual.
+        ru: Показывает сведения о текущем сервере.
+        th: แสดงข้อมูลเกี่ยวกับเซิร์ฟเวอร์ปัจจุบัน
+        id: Menampilkan informasi server saat ini.
+    userinfo:
+      description:
+        en: Displays information about the specified user.
+        ja: 指定されたユーザーの情報を表示します。
+        ko: 지정한 사용자 정보를 표시합니다.
+        vi: Hiển thị thông tin người dùng đã chỉ định.
+        zh-CN: 显示指定用户的信息。
+        zh-TW: 顯示指定使用者的資訊。
+        es: Muestra información del usuario especificado.
+        fr: Affiche les informations de l'utilisateur indiqué.
+        de: Zeigt Informationen zum angegebenen Benutzer an.
+        pt-BR: Mostra informações do usuário especificado.
+        ru: Показывает сведения об указанном пользователе.
+        th: แสดงข้อมูลของผู้ใช้ที่ระบุ
+        id: Menampilkan informasi pengguna yang ditentukan.
+      options:
+        user:
+          description:
+            en: User to display information for (optional, defaults to you).
+            ja: 情報を表示するユーザー（任意、デフォルトはコマンド実行者）
+            ko: 정보를 표시할 사용자(선택, 기본값은 실행자)
+            vi: Người dùng cần hiển thị (tùy chọn, mặc định là bạn).
+            zh-CN: 要显示信息的用户（可选，默认是你）。
+            zh-TW: 要顯示資訊的使用者（選填，預設為你）。
+            es: Usuario a mostrar (opcional; tú por defecto).
+            fr: Utilisateur à afficher (facultatif, vous par défaut).
+            de: Anzuzeigender Nutzer (optional, standardmäßig du).
+            pt-BR: Usuário a exibir (opcional; você por padrão).
+            ru: Пользователь для показа (необязательно, по умолчанию вы).
+            th: ผู้ใช้ที่จะแสดง (ไม่บังคับ ค่าเริ่มต้นคือคุณ)
+            id: Pengguna yang ditampilkan (opsional, default Anda).
+    avatar:
+      description:
+        en: Displays the avatar of the specified user.
+        ja: 指定されたユーザーのアバター画像URLを表示します。
+        ko: 지정한 사용자의 아바타 URL을 표시합니다.
+        vi: Hiển thị URL avatar của người dùng đã chỉ định.
+        zh-CN: 显示指定用户的头像 URL。
+        zh-TW: 顯示指定使用者的頭像 URL。
+        es: Muestra el URL del avatar del usuario indicado.
+        fr: Affiche l'URL de l'avatar de l'utilisateur indiqué.
+        de: Zeigt die Avatar-URL des angegebenen Benutzers an.
+        pt-BR: Mostra a URL do avatar do usuário especificado.
+        ru: Показывает URL аватара указанного пользователя.
+        th: แสดง URL รูปโปรไฟล์ของผู้ใช้ที่ระบุ
+        id: Menampilkan URL avatar pengguna yang ditentukan.
+      options:
+        user:
+          description:
+            en: User whose avatar to display (optional, defaults to you).
+            ja: アバターを表示するユーザー（任意、デフォルトはコマンド実行者）
+            ko: 아바타를 표시할 사용자(선택, 기본값은 실행자)
+            vi: Người dùng cần hiện avatar (tùy chọn, mặc định là bạn).
+            zh-CN: 要显示头像的用户（可选，默认是你）。
+            zh-TW: 要顯示頭像的使用者（選填，預設為你）。
+            es: Usuario cuyo avatar mostrar (opcional; tú por defecto).
+            fr: Utilisateur dont afficher l'avatar (facultatif, vous par défaut).
+            de: Nutzer, dessen Avatar gezeigt wird (optional, standardmäßig du).
+            pt-BR: Usuário cujo avatar mostrar (opcional; você por padrão).
+            ru: Пользователь, чей аватар показать (необязательно, по умолчанию вы).
+            th: ผู้ใช้ที่จะแสดงรูปโปรไฟล์ (ไม่บังคับ ค่าเริ่มต้นคือคุณ)
+            id: Pengguna yang avatarnya ditampilkan (opsional, default Anda).
+    feedback:
+      description:
+        en: Send a bug report or feature request.
+        ja: 不具合・要望を開発者サーバーへ送ります
+        ko: 버그 제보나 기능 요청을 개발자 서버로 보냅니다.
+        vi: Gửi báo cáo lỗi hoặc yêu cầu tính năng.
+        zh-CN: 发送错误报告或功能请求。
+        zh-TW: 傳送錯誤回報或功能需求。
+        es: Envía un informe de error o solicitud de función.
+        fr: Envoyez un rapport de bug ou une demande de fonctionnalité.
+        de: Sende einen Fehlerbericht oder Funktionswunsch.
+        pt-BR: Envie um relatório de erro ou pedido de recurso.
+        ru: Отправляет отчёт об ошибке или запрос функции.
+        th: ส่งรายงานบั๊กหรือคำขอฟีเจอร์
+        id: Kirim laporan bug atau permintaan fitur.
+      options:
+        category:
+          description:
+            en: Report category.
+            ja: 報告の種類
+            ko: 제보 종류
+            vi: Loại báo cáo.
+            zh-CN: 报告类别。
+            zh-TW: 回報類別。
+            es: Categoría del informe.
+            fr: Catégorie du rapport.
+            de: Meldekategorie.
+            pt-BR: Categoria do relatório.
+            ru: Категория отчёта.
+            th: หมวดหมู่รายงาน
+            id: Kategori laporan.
+    support:
+      description:
+        en: Shows how to contact the developer.
+        ja: 開発者へのお問い合わせ方法を表示します
+        ko: 개발자에게 문의하는 방법을 표시합니다.
+        vi: Hiển thị cách liên hệ nhà phát triển.
+        zh-CN: 显示联系开发者的方法。
+        zh-TW: 顯示聯絡開發者的方法。
+        es: Muestra cómo contactar al desarrollador.
+        fr: Indique comment contacter le développeur.
+        de: Zeigt, wie man den Entwickler kontaktiert.
+        pt-BR: Mostra como contatar o desenvolvedor.
+        ru: Показывает, как связаться с разработчиком.
+        th: แสดงวิธีติดต่อผู้พัฒนา
+        id: Menampilkan cara menghubungi pengembang.
+    invite:
+      description:
+        en: Shows invite links for PLANA and ARONA.
+        ja: PLANA / ARONA の招待リンクを表示します。
+        ko: PLANA / ARONA 초대 링크를 표시합니다.
+        vi: Hiển thị liên kết mời PLANA và ARONA.
+        zh-CN: 显示 PLANA 和 ARONA 的邀请链接。
+        zh-TW: 顯示 PLANA 和 ARONA 的邀請連結。
+        es: Muestra enlaces de invitación para PLANA y ARONA.
+        fr: Affiche les liens d'invitation de PLANA et ARONA.
+        de: Zeigt Einladungslinks für PLANA und ARONA.
+        pt-BR: Mostra links de convite para PLANA e ARONA.
+        ru: Показывает ссылки-приглашения PLANA и ARONA.
+        th: แสดงลิงก์เชิญสำหรับ PLANA และ ARONA
+        id: Menampilkan tautan undangan PLANA dan ARONA.
+    updates:
+      description:
+        en: Shows the bot's latest update history (commit log).
+        ja: Botの最新のアップデート履歴（コミットログ）を表示します。
+        ko: 봇의 최신 업데이트 기록(커밋 로그)을 표시합니다.
+        vi: Hiển thị lịch sử cập nhật mới nhất của bot (commit log).
+        zh-CN: 显示机器人的最新更新历史（提交日志）。
+        zh-TW: 顯示機器人的最新更新紀錄（提交日誌）。
+        es: Muestra el historial reciente de actualizaciones del bot.
+        fr: Affiche l'historique des dernières mises à jour du bot.
+        de: Zeigt die neuesten Aktualisierungen des Bots an.
+        pt-BR: Mostra o histórico recente de atualizações do bot.
+        ru: Показывает последние обновления бота.
+        th: แสดงประวัติการอัปเดตล่าสุดของบอต
+        id: Menampilkan riwayat pembaruan terbaru bot.
+    help:
+      description:
+        en: Displays help information for the bot.
+        ja: Botのヘルプ情報を表示します。
+        ko: 봇의 도움말 정보를 표시합니다.
+        vi: Hiển thị thông tin trợ giúp của bot.
+        zh-CN: 显示机器人的帮助信息。
+        zh-TW: 顯示機器人的說明資訊。
+        es: Muestra la ayuda del bot.
+        fr: Affiche l'aide du bot.
+        de: Zeigt die Hilfe für den Bot an.
+        pt-BR: Mostra a ajuda do bot.
+        ru: Показывает справку по боту.
+        th: แสดงข้อมูลช่วยเหลือของบอต
+        id: Menampilkan bantuan bot.
+    chat:
+      description:
+        en: Chat with the AI without needing to mention.
+        ja: AIと対話します。メンション不要で会話できます。
+        ko: 멘션 없이 AI와 대화합니다.
+        vi: Trò chuyện với AI mà không cần mention.
+        zh-CN: 无需提及即可与 AI 聊天。
+        zh-TW: 無需提及即可與 AI 聊天。
+        es: Chatea con la IA sin necesidad de mencionarla.
+        fr: Discutez avec l'IA sans la mentionner.
+        de: Chatte mit der KI, ohne sie zu erwähnen.
+        pt-BR: Converse com a IA sem precisar mencioná-la.
+        ru: Общайтесь с ИИ без упоминания.
+        th: สนทนากับ AI โดยไม่ต้องเมนชัน
+        id: Mengobrol dengan AI tanpa menyebutnya.
+      options:
+        message:
+          description:
+            en: The message you want to send to the AI.
+            ja: AIに送信したいメッセージ
+            ko: AI에 보낼 메시지
+            vi: Tin nhắn gửi tới AI.
+            zh-CN: 要发送给 AI 的消息。
+            zh-TW: 要傳送給 AI 的訊息。
+            es: El mensaje que quieres enviar a la IA.
+            fr: Le message à envoyer à l'IA.
+            de: Die Nachricht, die du der KI senden möchtest.
+            pt-BR: A mensagem que deseja enviar à IA.
+            ru: Сообщение, которое вы хотите отправить ИИ.
+            th: ข้อความที่ต้องการส่งให้ AI
+            id: Pesan yang ingin dikirim ke AI.
+        image_url:
+          description:
+            en: URL of an image (optional).
+            ja: 画像のURL（オプション）
+            ko: 이미지 URL(선택)
+            vi: URL hình ảnh (tùy chọn).
+            zh-CN: 图片 URL（可选）。
+            zh-TW: 圖片 URL（選填）。
+            es: URL de una imagen (opcional).
+            fr: URL d'une image (facultatif).
+            de: URL eines Bildes (optional).
+            pt-BR: URL de uma imagem (opcional).
+            ru: URL изображения (необязательно).
+            th: URL ของรูปภาพ (ไม่บังคับ)
+            id: URL gambar (opsional).
+    switch-models:
+      description:
+        en: Switches the AI model used for this channel.
+        ja: このチャンネルで使用するAIモデルを切り替えます。
+        ko: 이 채널에서 사용할 AI 모델을 전환합니다.
+        vi: Chuyển mô hình AI dùng cho kênh này.
+        zh-CN: 切换此频道使用的 AI 模型。
+        zh-TW: 切換此頻道使用的 AI 模型。
+        es: Cambia el modelo de IA de este canal.
+        fr: Change le modèle d'IA utilisé pour ce canal.
+        de: Wechselt das KI-Modell dieses Kanals.
+        pt-BR: Alterna o modelo de IA usado neste canal.
+        ru: Меняет модель ИИ для этого канала.
+        th: เปลี่ยนโมเดล AI ที่ใช้ในช่องนี้
+        id: Ganti model AI yang digunakan kanal ini.
+      options:
+        model:
+          description:
+            en: Select the model you want to use.
+            ja: 使用したいモデルを選択してください。
+            ko: 사용할 모델을 선택하세요.
+            vi: Chọn mô hình bạn muốn dùng.
+            zh-CN: 选择要使用的模型。
+            zh-TW: 選擇要使用的模型。
+            es: Selecciona el modelo que quieres usar.
+            fr: Sélectionnez le modèle à utiliser.
+            de: Wähle das Modell aus, das du verwenden möchtest.
+            pt-BR: Selecione o modelo que deseja usar.
+            ru: Выберите модель для использования.
+            th: เลือกโมเดลที่ต้องการใช้
+            id: Pilih model yang ingin digunakan.
+    switch-models-default-server:
+      description:
+        en: Resets the AI model for this channel to the server default.
+        ja: このチャンネルのAIモデルをサーバーのデフォルト設定に戻します。
+        ko: 이 채널의 AI 모델을 서버 기본값으로 되돌립니다.
+        vi: Đặt lại mô hình AI của kênh về mặc định máy chủ.
+        zh-CN: 将此频道的 AI 模型重置为服务器默认值。
+        zh-TW: 將此頻道的 AI 模型重設為伺服器預設值。
+        es: Restablece el modelo de IA al predeterminado del servidor.
+        fr: Réinitialise le modèle d'IA à celui par défaut du serveur.
+        de: Setzt das KI-Modell auf den Serverstandard zurück.
+        pt-BR: Redefine o modelo de IA para o padrão do servidor.
+        ru: Сбрасывает модель ИИ к значению сервера.
+        th: รีเซ็ตโมเดล AI ของช่องเป็นค่าเริ่มต้นเซิร์ฟเวอร์
+        id: Atur ulang model AI ke default server.
+    switch-image-model:
+      description:
+        en: Switch the image generation model for this channel.
+        ja: このチャンネルの画像生成モデルを切り替えます。
+        ko: 이 채널의 이미지 생성 모델을 전환합니다.
+        vi: Chuyển mô hình tạo ảnh cho kênh này.
+        zh-CN: 切换此频道的图像生成模型。
+        zh-TW: 切換此頻道的圖片生成模型。
+        es: Cambia el modelo de generación de imágenes de este canal.
+        fr: Change le modèle de génération d'images de ce canal.
+        de: Wechselt das Bildgenerierungsmodell dieses Kanals.
+        pt-BR: Alterna o modelo de geração de imagens deste canal.
+        ru: Меняет модель генерации изображений для канала.
+        th: เปลี่ยนโมเดลสร้างภาพของช่องนี้
+        id: Ganti model pembuatan gambar kanal ini.
+      options:
+        model:
+          description:
+            en: Select the image generation model you want to use.
+            ja: 使用したい画像生成モデルを選択してください。
+            ko: 사용할 이미지 생성 모델을 선택하세요.
+            vi: Chọn mô hình tạo ảnh bạn muốn dùng.
+            zh-CN: 选择要使用的图像生成模型。
+            zh-TW: 選擇要使用的圖片生成模型。
+            es: Selecciona el modelo de generación de imágenes.
+            fr: Sélectionnez le modèle de génération d'images.
+            de: Wähle das Bildgenerierungsmodell aus.
+            pt-BR: Selecione o modelo de geração de imagens.
+            ru: Выберите модель генерации изображений.
+            th: เลือกโมเดลสร้างภาพที่ต้องการใช้
+            id: Pilih model pembuatan gambar yang ingin digunakan.
+    show-image-model:
+      description:
+        en: Show the current image generation model for this channel.
+        ja: このチャンネルの現在の画像生成モデルを表示します。
+        ko: 이 채널의 현재 이미지 생성 모델을 표시합니다.
+        vi: Hiển thị mô hình tạo ảnh hiện tại của kênh.
+        zh-CN: 显示此频道当前的图像生成模型。
+        zh-TW: 顯示此頻道目前的圖片生成模型。
+        es: Muestra el modelo de generación de imágenes actual.
+        fr: Affiche le modèle de génération d'images actuel.
+        de: Zeigt das aktuelle Bildgenerierungsmodell an.
+        pt-BR: Mostra o modelo de geração de imagens atual.
+        ru: Показывает текущую модель генерации изображений.
+        th: แสดงโมเดลสร้างภาพปัจจุบันของช่องนี้
+        id: Menampilkan model pembuatan gambar saat ini.
+    list-image-models:
+      description:
+        en: List all available image generation models.
+        ja: 利用可能な画像生成モデルの一覧を表示します。
+        ko: 사용 가능한 이미지 생성 모델 목록을 표시합니다.
+        vi: Liệt kê tất cả mô hình tạo ảnh khả dụng.
+        zh-CN: 列出所有可用的图像生成模型。
+        zh-TW: 列出所有可用的圖片生成模型。
+        es: Lista todos los modelos de generación de imágenes disponibles.
+        fr: Liste tous les modèles de génération d'images disponibles.
+        de: Listet alle verfügbaren Bildgenerierungsmodelle auf.
+        pt-BR: Lista todos os modelos de geração de imagens disponíveis.
+        ru: Показывает все доступные модели генерации изображений.
+        th: แสดงรายการโมเดลสร้างภาพที่ใช้ได้ทั้งหมด
+        id: Daftar semua model pembuatan gambar yang tersedia.
+      options:
+        provider:
+          description:
+            en: Filter by provider (optional).
+            ja: プロバイダーで絞り込み（オプション）
+            ko: 제공자로 필터(선택)
+            vi: Lọc theo nhà cung cấp (tùy chọn).
+            zh-CN: 按提供商筛选（可选）。
+            zh-TW: 依提供者篩選（選填）。
+            es: Filtra por proveedor (opcional).
+            fr: Filtre par fournisseur (facultatif).
+            de: Nach Anbieter filtern (optional).
+            pt-BR: Filtre por provedor (opcional).
+            ru: Фильтр по провайдеру (необязательно).
+            th: กรองตามผู้ให้บริการ (ไม่บังคับ)
+            id: Filter berdasarkan penyedia (opsional).
+    clear_history:
+      description:
+        en: Clears the history of the current conversation thread.
+        ja: 現在の会話スレッドの履歴をクリアします。
+        ko: 현재 대화 스레드의 기록을 지웁니다.
+        vi: Xóa lịch sử luồng hội thoại hiện tại.
+        zh-CN: 清除当前对话线程的历史记录。
+        zh-TW: 清除目前對話串的歷史紀錄。
+        es: Borra el historial del hilo de conversación actual.
+        fr: Efface l'historique du fil de conversation actuel.
+        de: Löscht den Verlauf des aktuellen Gesprächsthreads.
+        pt-BR: Limpa o histórico da conversa atual.
+        ru: Очищает историю текущей беседы.
+        th: ล้างประวัติของเธรดการสนทนาปัจจุบัน
+        id: Hapus riwayat percakapan saat ini.
+    play:
+      description:
+        en: Play a song or add it to the queue.
+        ja: 曲を再生またはキューに追加します。
+        ko: 곡을 재생하거나 대기열에 추가합니다.
+        vi: Phát bài hát hoặc thêm vào hàng đợi.
+        zh-CN: 播放歌曲或将其加入队列。
+        zh-TW: 播放歌曲或將其加入佇列。
+        es: Reproduce una canción o la añade a la cola.
+        fr: Joue une chanson ou l'ajoute à la file.
+        de: Spielt einen Song oder fügt ihn zur Warteschlange hinzu.
+        pt-BR: Toca uma música ou a adiciona à fila.
+        ru: Воспроизводит трек или добавляет в очередь.
+        th: เล่นเพลงหรือเพิ่มเข้าคิว
+        id: Putar lagu atau tambahkan ke antrean.
+      options:
+        query:
+          description:
+            en: Song title or URL to play.
+            ja: 再生したい曲のタイトル、またはURL
+            ko: 재생할 곡 제목 또는 URL
+            vi: Tiêu đề bài hát hoặc URL cần phát.
+            zh-CN: 要播放的歌曲标题或 URL。
+            zh-TW: 要播放的歌曲標題或 URL。
+            es: Título o URL de la canción.
+            fr: Titre ou URL de la chanson.
+            de: Songtitel oder URL.
+            pt-BR: Título ou URL da música.
+            ru: Название или URL трека.
+            th: ชื่อเพลงหรือ URL ที่จะเล่น
+            id: Judul lagu atau URL untuk diputar.
+    seek:
+      description:
+        en: Seek to a specified time in the track.
+        ja: 再生位置を指定した時刻に移動します。
+        ko: 재생 위치를 지정한 시각으로 이동합니다.
+        vi: Nhảy đến thời điểm chỉ định trong bài.
+        zh-CN: 跳转到曲目中的指定时间。
+        zh-TW: 跳到曲目中的指定時間。
+        es: Salta a un tiempo concreto de la pista.
+        fr: Va à un instant précis de la piste.
+        de: Springt zu einer Zeitstelle im Track.
+        pt-BR: Pula para um tempo na faixa.
+        ru: Переход к указанному времени трека.
+        th: เลื่อนไปยังเวลาที่ระบุในเพลง
+        id: Lompat ke waktu tertentu di trek.
+      options:
+        time:
+          description:
+            en: Seek target (e.g. 1:30 or 90 seconds).
+            ja: '移動先の時刻 (例: 1:30 または 90 秒)'
+            ko: '이동할 시각(예: 1:30 또는 90초)'
+            vi: 'Thời điểm đích (vd: 1:30 hoặc 90 giây).'
+            zh-CN: 跳转目标（例如 1:30 或 90 秒）。
+            zh-TW: 跳轉目標（例如 1:30 或 90 秒）。
+            es: Destino (p. ej. 1:30 o 90 segundos).
+            fr: Cible (ex. 1:30 ou 90 secondes).
+            de: Zielzeit (z. B. 1:30 oder 90 Sekunden).
+            pt-BR: 'Destino (ex.: 1:30 ou 90 segundos).'
+            ru: Цель (напр. 1:30 или 90 секунд).
+            th: เป้าหมาย (เช่น 1:30 หรือ 90 วินาที)
+            id: Target seek (mis. 1:30 atau 90 detik).
+    pause:
+      description:
+        en: Pause playback.
+        ja: 再生を一時停止します。
+        ko: 재생을 일시정지합니다.
+        vi: Tạm dừng phát.
+        zh-CN: 暂停播放。
+        zh-TW: 暫停播放。
+        es: Pausa la reproducción.
+        fr: Met la lecture en pause.
+        de: Pausiert die Wiedergabe.
+        pt-BR: Pausa a reprodução.
+        ru: Приостанавливает воспроизведение.
+        th: หยุดเล่นชั่วคราว
+        id: Jeda pemutaran.
+    resume:
+      description:
+        en: Resume paused playback.
+        ja: 一時停止中の再生を再開します。
+        ko: 일시정지된 재생을 재개합니다.
+        vi: Tiếp tục phát đã tạm dừng.
+        zh-CN: 恢复已暂停的播放。
+        zh-TW: 繼續已暫停的播放。
+        es: Reanuda la reproducción en pausa.
+        fr: Reprend la lecture en pause.
+        de: Setzt die pausierte Wiedergabe fort.
+        pt-BR: Retoma a reprodução pausada.
+        ru: Возобновляет паузу.
+        th: เล่นต่อจากที่หยุดชั่วคราว
+        id: Lanjutkan pemutaran yang dijeda.
+    skip:
+      description:
+        en: Skip the current track.
+        ja: 再生中の曲をスキップします。
+        ko: 현재 곡을 건너뜁니다.
+        vi: Bỏ qua bài đang phát.
+        zh-CN: 跳过当前曲目。
+        zh-TW: 跳過目前曲目。
+        es: Salta la pista actual.
+        fr: Passe la piste actuelle.
+        de: Überspringt den aktuellen Track.
+        pt-BR: Pula a faixa atual.
+        ru: Пропускает текущий трек.
+        th: ข้ามเพลงปัจจุบัน
+        id: Lewati trek saat ini.
+    stop:
+      description:
+        en: Stop playback and clear the queue.
+        ja: 再生を停止し、キューをクリアします。
+        ko: 재생을 중지하고 대기열을 비웁니다.
+        vi: Dừng phát và xóa hàng đợi.
+        zh-CN: 停止播放并清空队列。
+        zh-TW: 停止播放並清空佇列。
+        es: Detiene la reproducción y vacía la cola.
+        fr: Arrête la lecture et vide la file.
+        de: Stoppt die Wiedergabe und leert die Warteschlange.
+        pt-BR: Para a reprodução e limpa a fila.
+        ru: Останавливает воспроизведение и очищает очередь.
+        th: หยุดเล่นและล้างคิว
+        id: Hentikan pemutaran dan kosongkan antrean.
+    leave:
+      description:
+        en: Disconnect the bot from the voice channel.
+        ja: ボットをボイスチャンネルから切断します。
+        ko: 봇을 음성 채널에서 연결 해제합니다.
+        vi: Ngắt bot khỏi kênh thoại.
+        zh-CN: 将机器人从语音频道断开。
+        zh-TW: 將機器人從語音頻道斷開。
+        es: Desconecta el bot del canal de voz.
+        fr: Déconnecte le bot du salon vocal.
+        de: Trennt den Bot vom Sprachkanal.
+        pt-BR: Desconecta o bot do canal de voz.
+        ru: Отключает бота от голосового канала.
+        th: ตัดบอทออกจากช่องเสียง
+        id: Putuskan bot dari saluran suara.
+    queue:
+      description:
+        en: Show the current playback queue.
+        ja: 現在の再生キューを表示します。
+        ko: 현재 재생 대기열을 표시합니다.
+        vi: Hiển thị hàng đợi phát hiện tại.
+        zh-CN: 显示当前播放队列。
+        zh-TW: 顯示目前播放佇列。
+        es: Muestra la cola de reproducción.
+        fr: Affiche la file de lecture.
+        de: Zeigt die aktuelle Warteschlange.
+        pt-BR: Mostra a fila de reprodução.
+        ru: Показывает текущую очередь.
+        th: แสดงคิวการเล่นปัจจุบัน
+        id: Tampilkan antrean pemutaran saat ini.
+    nowplaying:
+      description:
+        en: Show info about the currently playing track.
+        ja: 現在再生中の曲の情報を表示します。
+        ko: 현재 재생 중인 곡 정보를 표시합니다.
+        vi: Hiển thị thông tin bài đang phát.
+        zh-CN: 显示当前播放曲目的信息。
+        zh-TW: 顯示目前播放曲目的資訊。
+        es: Muestra info de la pista actual.
+        fr: Affiche les infos de la piste en cours.
+        de: Zeigt Infos zum aktuellen Track.
+        pt-BR: Mostra info da faixa atual.
+        ru: Показывает информацию о текущем треке.
+        th: แสดงข้อมูลเพลงที่กำลังเล่น
+        id: Tampilkan info trek yang sedang diputar.
+    shuffle:
+      description:
+        en: Shuffle the playback queue.
+        ja: 再生キューをシャッフルします。
+        ko: 재생 대기열을 섞습니다.
+        vi: Xáo trộn hàng đợi phát.
+        zh-CN: 打乱播放队列。
+        zh-TW: 打亂播放佇列。
+        es: Mezcla la cola de reproducción.
+        fr: Mélange la file de lecture.
+        de: Mischt die Warteschlange.
+        pt-BR: Embaralha a fila de reprodução.
+        ru: Перемешивает очередь.
+        th: สลับคิวการเล่น
+        id: Acak antrean pemutaran.
+    clear:
+      description:
+        en: Clear the queue (does not stop the current track).
+        ja: 再生キューを空にします（再生中の曲は停止しません）。
+        ko: 대기열을 비웁니다(현재 곡은 중지하지 않음).
+        vi: Xóa hàng đợi (không dừng bài đang phát).
+        zh-CN: 清空队列（不停止当前曲目）。
+        zh-TW: 清空佇列（不停止目前曲目）。
+        es: Vacía la cola (no detiene la pista actual).
+        fr: Vide la file (ne stoppe pas la piste).
+        de: Leert die Warteschlange (stoppt den Track nicht).
+        pt-BR: Limpa a fila (não para a faixa atual).
+        ru: Очищает очередь (не останавливает трек).
+        th: ล้างคิว (ไม่หยุดเพลงปัจจุบัน)
+        id: Kosongkan antrean (tidak menghentikan trek).
+    remove:
+      description:
+        en: Remove a track from the queue by number.
+        ja: キューから指定した番号の曲を削除します。
+        ko: 대기열에서 지정 번호의 곡을 제거합니다.
+        vi: Xóa bài khỏi hàng đợi theo số thứ tự.
+        zh-CN: 按编号从队列中移除曲目。
+        zh-TW: 依編號從佇列移除曲目。
+        es: Quita una pista de la cola por número.
+        fr: Retire une piste de la file par numéro.
+        de: Entfernt einen Track anhand der Nummer.
+        pt-BR: Remove uma faixa da fila pelo número.
+        ru: Удаляет трек из очереди по номеру.
+        th: ลบเพลงจากคิวตามหมายเลข
+        id: Hapus trek dari antrean menurut nomor.
+      options:
+        index:
+          description:
+            en: Queue position to remove.
+            ja: 削除したい曲のキュー番号
+            ko: 제거할 곡의 대기열 번호
+            vi: Vị trí trong hàng đợi cần xóa.
+            zh-CN: 要移除的队列位置。
+            zh-TW: 要移除的佇列位置。
+            es: Posición en la cola a quitar.
+            fr: Position dans la file à retirer.
+            de: Warteschlangenposition zum Entfernen.
+            pt-BR: Posição na fila a remover.
+            ru: Позиция в очереди для удаления.
+            th: ตำแหน่งในคิวที่จะลบ
+            id: Posisi antrean yang dihapus.
+    volume:
+      description:
+        en: Change the volume (0-200).
+        ja: 音量を変更します (0-200)。
+        ko: 음량을 변경합니다(0-200).
+        vi: Đổi âm lượng (0-200).
+        zh-CN: 更改音量（0-200）。
+        zh-TW: 變更音量（0-200）。
+        es: Cambia el volumen (0-200).
+        fr: Change le volume (0-200).
+        de: Ändert die Lautstärke (0-200).
+        pt-BR: Altera o volume (0-200).
+        ru: Изменяет громкость (0-200).
+        th: เปลี่ยนระดับเสียง (0-200)
+        id: Ubah volume (0-200).
+      options:
+        level:
+          description:
+            en: Volume level to set (0-200).
+            ja: 設定したい音量レベル (0-200)
+            ko: 설정할 음량 레벨(0-200)
+            vi: Mức âm lượng cần đặt (0-200).
+            zh-CN: 要设置的音量（0-200）。
+            zh-TW: 要設定的音量（0-200）。
+            es: Nivel de volumen (0-200).
+            fr: Niveau de volume (0-200).
+            de: Lautstärkepegel (0-200).
+            pt-BR: Nível de volume (0-200).
+            ru: Уровень громкости (0-200).
+            th: ระดับเสียงที่จะตั้ง (0-200)
+            id: Level volume yang diatur (0-200).
+    loop:
+      description:
+        en: Set the loop playback mode.
+        ja: ループ再生モードを設定します。
+        ko: 반복 재생 모드를 설정합니다.
+        vi: Đặt chế độ phát lặp.
+        zh-CN: 设置循环播放模式。
+        zh-TW: 設定循環播放模式。
+        es: Configura el modo de bucle.
+        fr: Définit le mode de boucle.
+        de: Stellt den Loop-Modus ein.
+        pt-BR: Define o modo de repetição.
+        ru: Задаёт режим повтора.
+        th: ตั้งโหมดเล่นวนซ้ำ
+        id: Atur mode putar berulang.
+      options:
+        mode:
+          description:
+            en: Select the loop mode.
+            ja: ループのモードを選択してください。
+            ko: 반복 모드를 선택하세요.
+            vi: Chọn chế độ lặp.
+            zh-CN: 选择循环模式。
+            zh-TW: 選擇循環模式。
+            es: Selecciona el modo de bucle.
+            fr: Choisissez le mode de boucle.
+            de: Wähle den Loop-Modus.
+            pt-BR: Selecione o modo de repetição.
+            ru: Выберите режим повтора.
+            th: เลือกโหมดวนซ้ำ
+            id: Pilih mode pengulangan.
+    join:
+      description:
+        en: Join your voice channel.
+        ja: ボットをあなたのいるボイスチャンネルに接続します。
+        ko: 봇을 당신이 있는 음성 채널에 연결합니다.
+        vi: Kết nối bot vào kênh thoại của bạn.
+        zh-CN: 加入你所在的语音频道。
+        zh-TW: 加入你所在的語音頻道。
+        es: Une el bot a tu canal de voz.
+        fr: Rejoint votre salon vocal.
+        de: Tritt deinem Sprachkanal bei.
+        pt-BR: Entra no seu canal de voz.
+        ru: Подключается к вашему голосовому каналу.
+        th: เข้าร่วมช่องเสียงของคุณ
+        id: Gabung ke saluran suara Anda.
+    tts:
+      description:
+        en: TTS-related commands.
+        ja: TTS関連のコマンド
+        ko: TTS 관련 명령
+        vi: Các lệnh liên quan đến TTS.
+        zh-CN: TTS 相关命令。
+        zh-TW: TTS 相關指令。
+        es: Comandos relacionados con TTS.
+        fr: Commandes liées au TTS.
+        de: TTS-bezogene Befehle.
+        pt-BR: Comandos relacionados a TTS.
+        ru: Команды, связанные с TTS.
+        th: คำสั่งเกี่ยวกับ TTS
+        id: Perintah terkait TTS.
+    tts volume:
+      description:
+        en: Set TTS volume (0-200%).
+        ja: TTSの音量を設定します (0-200%)
+        ko: TTS 음량을 설정합니다(0-200%).
+        vi: Đặt âm lượng TTS (0-200%).
+        zh-CN: 设置 TTS 音量（0-200%）。
+        zh-TW: 設定 TTS 音量（0-200%）。
+        es: Ajusta el volumen TTS (0-200%).
+        fr: Règle le volume TTS (0-200 %).
+        de: Setzt die TTS-Lautstärke (0-200%).
+        pt-BR: Define o volume TTS (0-200%).
+        ru: Задаёт громкость TTS (0-200%).
+        th: ตั้งระดับเสียง TTS (0-200%)
+        id: Atur volume TTS (0-200%).
+      options:
+        volume:
+          description:
+            en: Volume (integer from 0 to 200).
+            ja: 音量 (0から200の整数)
+            ko: 음량(0~200 정수)
+            vi: Âm lượng (số nguyên 0–200).
+            zh-CN: 音量（0 到 200 的整数）。
+            zh-TW: 音量（0 到 200 的整數）。
+            es: Volumen (entero de 0 a 200).
+            fr: Volume (entier de 0 à 200).
+            de: Lautstärke (Ganzzahl 0–200).
+            pt-BR: Volume (inteiro de 0 a 200).
+            ru: Громкость (целое 0–200).
+            th: ระดับเสียง (จำนวนเต็ม 0 ถึง 200)
+            id: Volume (bilangan bulat 0–200).
+    speech:
+      description:
+        en: Text channel read-aloud commands.
+        ja: テキストチャンネルの読み上げに関するコマンド
+        ko: 텍스트 채널 읽어주기 관련 명령
+        vi: Lệnh đọc to kênh văn bản.
+        zh-CN: 文字频道朗读相关命令。
+        zh-TW: 文字頻道朗讀相關指令。
+        es: Comandos de lectura en voz alta.
+        fr: Commandes de lecture à voix haute.
+        de: Befehle für Vorlesen im Textkanal.
+        pt-BR: Comandos de leitura em voz alta.
+        ru: Команды озвучки текстового канала.
+        th: คำสั่งอ่านข้อความในช่องข้อความ
+        id: Perintah baca nyaring saluran teks.
+    speech enable:
+      description:
+        en: Enable message read-aloud for this channel.
+        ja: このチャンネルのメッセージ読み上げを有効にします
+        ko: 이 채널의 메시지 읽어주기를 켭니다.
+        vi: Bật đọc tin nhắn cho kênh này.
+        zh-CN: 为此频道启用消息朗读。
+        zh-TW: 為此頻道啟用訊息朗讀。
+        es: Activa la lectura de mensajes en este canal.
+        fr: Active la lecture des messages de ce salon.
+        de: Aktiviert Vorlesen für diesen Kanal.
+        pt-BR: Ativa leitura de mensagens neste canal.
+        ru: Включает озвучку сообщений канала.
+        th: เปิดการอ่านข้อความสำหรับช่องนี้
+        id: Aktifkan baca pesan untuk saluran ini.
+    speech disable:
+      description:
+        en: Disable message read-aloud.
+        ja: メッセージ読み上げを無効にします
+        ko: 메시지 읽어주기를 끕니다.
+        vi: Tắt đọc tin nhắn.
+        zh-CN: 禁用消息朗读。
+        zh-TW: 停用訊息朗讀。
+        es: Desactiva la lectura de mensajes.
+        fr: Désactive la lecture des messages.
+        de: Deaktiviert das Vorlesen.
+        pt-BR: Desativa a leitura de mensagens.
+        ru: Отключает озвучку сообщений.
+        th: ปิดการอ่านข้อความ
+        id: Nonaktifkan baca pesan.
+    speech skip:
+      description:
+        en: Skip the current read-aloud.
+        ja: 現在の読み上げをスキップします
+        ko: 현재 읽어주기를 건너뜁니다.
+        vi: Bỏ qua phần đang đọc.
+        zh-CN: 跳过当前朗读。
+        zh-TW: 跳過目前朗讀。
+        es: Salta la lectura actual.
+        fr: Passe la lecture en cours.
+        de: Überspringt das aktuelle Vorlesen.
+        pt-BR: Pula a leitura atual.
+        ru: Пропускает текущую озвучку.
+        th: ข้ามการอ่านปัจจุบัน
+        id: Lewati bacaan saat ini.
+    autojoin:
+      description:
+        en: Auto-join voice channel commands.
+        ja: VCへの自動参加に関するコマンド
+        ko: 음성 채널 자동 참여 관련 명령
+        vi: Lệnh tự động tham gia kênh thoại.
+        zh-CN: 自动加入语音频道相关命令。
+        zh-TW: 自動加入語音頻道相關指令。
+        es: Comandos de auto-unión al canal de voz.
+        fr: Commandes d'auto-rejoindre le vocal.
+        de: Befehle für Auto-Join im Sprachkanal.
+        pt-BR: Comandos de entrada automática no canal de voz.
+        ru: Команды автоподключения к голосовому каналу.
+        th: คำสั่งเข้าร่วมช่องเสียงอัตโนมัติ
+        id: Perintah auto-join saluran suara.
+    autojoin enable:
+      description:
+        en: Auto-join VC when you join.
+        ja: あなたがVCに参加した際、BOTも自動で参加するようにします
+        ko: 당신이 VC에 입장하면 봇도 자동 참여합니다.
+        vi: Tự tham gia VC khi bạn vào.
+        zh-CN: 当你加入语音频道时机器人自动加入。
+        zh-TW: 當你加入語音頻道時機器人自動加入。
+        es: El bot se une al VC cuando tú entras.
+        fr: Le bot rejoint le VC quand vous entrez.
+        de: Bot tritt dem VC bei, wenn du beitrittst.
+        pt-BR: O bot entra no VC quando você entrar.
+        ru: Бот заходит в VC, когда заходите вы.
+        th: บอทเข้า VC อัตโนมัติเมื่อคุณเข้า
+        id: Bot ikut VC saat Anda bergabung.
+    autojoin disable:
+      description:
+        en: Disable bot auto-join.
+        ja: BOTの自動参加設定を解除します
+        ko: 봇 자동 참여 설정을 해제합니다.
+        vi: Tắt tự động tham gia của bot.
+        zh-CN: 禁用机器人自动加入。
+        zh-TW: 停用機器人自動加入。
+        es: Desactiva la auto-unión del bot.
+        fr: Désactive l'auto-rejoindre du bot.
+        de: Deaktiviert Auto-Join des Bots.
+        pt-BR: Desativa a entrada automática do bot.
+        ru: Отключает автоподключение бота.
+        th: ปิดการเข้าร่วมอัตโนมัติของบอท
+        id: Nonaktifkan auto-join bot.
+    say:
+      description:
+        en: Read text aloud with TTS.
+        ja: テキストを音声で読み上げます
+        ko: 텍스트를 TTS로 읽어줍니다.
+        vi: Đọc văn bản bằng TTS.
+        zh-CN: 用 TTS 朗读文本。
+        zh-TW: 用 TTS 朗讀文字。
+        es: Lee texto en voz alta con TTS.
+        fr: Lit du texte à voix haute via TTS.
+        de: Liest Text per TTS vor.
+        pt-BR: Lê texto em voz alta com TTS.
+        ru: Озвучивает текст через TTS.
+        th: อ่านข้อความด้วย TTS
+        id: Bacakan teks dengan TTS.
+      options:
+        text:
+          description:
+            en: Text to read aloud.
+            ja: 読み上げるテキスト
+            ko: 읽어줄 텍스트
+            vi: Văn bản cần đọc.
+            zh-CN: 要朗读的文本。
+            zh-TW: 要朗讀的文字。
+            es: Texto a leer.
+            fr: Texte à lire.
+            de: Vorzulesender Text.
+            pt-BR: Texto a ler.
+            ru: Текст для озвучки.
+            th: ข้อความที่จะอ่าน
+            id: Teks yang dibacakan.
+        model_id:
+          description:
+            en: Model ID.
+            ja: モデルID
+            ko: 모델 ID
+            vi: ID mô hình.
+            zh-CN: 模型 ID。
+            zh-TW: 模型 ID。
+            es: ID del modelo.
+            fr: ID du modèle.
+            de: Modell-ID.
+            pt-BR: ID do modelo.
+            ru: ID модели.
+            th: รหัสโมเดล
+            id: ID model.
+        style:
+          description:
+            en: Style name.
+            ja: スタイル名
+            ko: 스타일 이름
+            vi: Tên phong cách.
+            zh-CN: 风格名称。
+            zh-TW: 風格名稱。
+            es: Nombre del estilo.
+            fr: Nom du style.
+            de: Stilname.
+            pt-BR: Nome do estilo.
+            ru: Название стиля.
+            th: ชื่อสไตล์
+            id: Nama gaya.
+        style_weight:
+          description:
+            en: Style weight.
+            ja: スタイルの強さ
+            ko: 스타일 강도
+            vi: Độ mạnh phong cách.
+            zh-CN: 风格强度。
+            zh-TW: 風格強度。
+            es: Peso del estilo.
+            fr: Intensité du style.
+            de: Stilstärke.
+            pt-BR: Peso do estilo.
+            ru: Сила стиля.
+            th: น้ำหนักสไตล์
+            id: Bobot gaya.
+        speed:
+          description:
+            en: Speech speed.
+            ja: 話速
+            ko: 말하기 속도
+            vi: Tốc độ nói.
+            zh-CN: 语速。
+            zh-TW: 語速。
+            es: Velocidad del habla.
+            fr: Vitesse de parole.
+            de: Sprechgeschwindigkeit.
+            pt-BR: Velocidade da fala.
+            ru: Скорость речи.
+            th: ความเร็วในการพูด
+            id: Kecepatan bicara.
+    dictionary:
+      description:
+        en: Manage the read-aloud dictionary.
+        ja: 読み上げ辞書の管理
+        ko: 읽어주기 사전 관리
+        vi: Quản lý từ điển đọc to.
+        zh-CN: 管理朗读词典。
+        zh-TW: 管理朗讀詞典。
+        es: Gestiona el diccionario de lectura.
+        fr: Gère le dictionnaire de lecture.
+        de: Verwaltet das Vorlese-Wörterbuch.
+        pt-BR: Gerencia o dicionário de leitura.
+        ru: Управляет словарём озвучки.
+        th: จัดการพจนานุกรมการอ่าน
+        id: Kelola kamus baca nyaring.
+    dictionary add:
+      description:
+        en: Add a word to the read-aloud dictionary.
+        ja: 読み上げ辞書に単語を追加します
+        ko: 읽어주기 사전에 단어를 추가합니다.
+        vi: Thêm từ vào từ điển đọc to.
+        zh-CN: 向朗读词典添加单词。
+        zh-TW: 向朗讀詞典新增單字。
+        es: Añade una palabra al diccionario.
+        fr: Ajoute un mot au dictionnaire.
+        de: Fügt ein Wort zum Wörterbuch hinzu.
+        pt-BR: Adiciona uma palavra ao dicionário.
+        ru: Добавляет слово в словарь.
+        th: เพิ่มคำลงในพจนานุกรมการอ่าน
+        id: Tambah kata ke kamus baca.
+      options:
+        word:
+          description:
+            en: Word to register.
+            ja: 登録する単語
+            ko: 등록할 단어
+            vi: Từ cần đăng ký.
+            zh-CN: 要注册的单词。
+            zh-TW: 要註冊的單字。
+            es: Palabra a registrar.
+            fr: Mot à enregistrer.
+            de: Zu registrierendes Wort.
+            pt-BR: Palavra a registrar.
+            ru: Слово для регистрации.
+            th: คำที่จะลงทะเบียน
+            id: Kata yang didaftarkan.
+        reading:
+          description:
+            en: How to read it.
+            ja: 読み方
+            ko: 읽는 방법
+            vi: Cách đọc.
+            zh-CN: 读法。
+            zh-TW: 讀法。
+            es: Cómo se lee.
+            fr: Prononciation.
+            de: Aussprache.
+            pt-BR: Como ler.
+            ru: Как читать.
+            th: วิธีอ่าน
+            id: Cara membacanya.
+    dictionary remove:
+      description:
+        en: Remove a word from the read-aloud dictionary.
+        ja: 読み上げ辞書から単語を削除します
+        ko: 읽어주기 사전에서 단어를 제거합니다.
+        vi: Xóa từ khỏi từ điển đọc to.
+        zh-CN: 从朗读词典删除单词。
+        zh-TW: 從朗讀詞典刪除單字。
+        es: Quita una palabra del diccionario.
+        fr: Retire un mot du dictionnaire.
+        de: Entfernt ein Wort aus dem Wörterbuch.
+        pt-BR: Remove uma palavra do dicionário.
+        ru: Удаляет слово из словаря.
+        th: ลบคำออกจากพจนานุกรมการอ่าน
+        id: Hapus kata dari kamus baca.
+      options:
+        word:
+          description:
+            en: Word to remove.
+            ja: 削除する単語
+            ko: 제거할 단어
+            vi: Từ cần xóa.
+            zh-CN: 要删除的单词。
+            zh-TW: 要刪除的單字。
+            es: Palabra a quitar.
+            fr: Mot à retirer.
+            de: Zu entfernendes Wort.
+            pt-BR: Palavra a remover.
+            ru: Слово для удаления.
+            th: คำที่จะลบ
+            id: Kata yang dihapus.
+    dictionary list:
+      description:
+        en: List registered dictionary entries.
+        ja: 登録されている辞書の一覧を表示します
+        ko: 등록된 사전 항목 목록을 표시합니다.
+        vi: Liệt kê mục từ điển đã đăng ký.
+        zh-CN: 列出已注册的词典条目。
+        zh-TW: 列出已註冊的詞典條目。
+        es: Lista las entradas del diccionario.
+        fr: Liste les entrées du dictionnaire.
+        de: Listet registrierte Wörterbucheinträge.
+        pt-BR: Lista as entradas do dicionário.
+        ru: Список записей словаря.
+        th: แสดงรายการในพจนานุกรม
+        id: Daftar entri kamus terdaftar.
+    dictionary search:
+      description:
+        en: Search the dictionary for a word.
+        ja: 辞書から単語を検索します
+        ko: 사전에서 단어를 검색합니다.
+        vi: Tìm từ trong từ điển.
+        zh-CN: 在词典中搜索单词。
+        zh-TW: 在詞典中搜尋單字。
+        es: Busca una palabra en el diccionario.
+        fr: Cherche un mot dans le dictionnaire.
+        de: Sucht ein Wort im Wörterbuch.
+        pt-BR: Busca uma palavra no dicionário.
+        ru: Ищет слово в словаре.
+        th: ค้นหาคำในพจนานุกรม
+        id: Cari kata di kamus.
+      options:
+        query:
+          description:
+            en: Word to search (partial match).
+            ja: 検索する単語（部分一致）
+            ko: 검색할 단어(부분 일치)
+            vi: Từ cần tìm (khớp một phần).
+            zh-CN: 要搜索的单词（部分匹配）。
+            zh-TW: 要搜尋的單字（部分符合）。
+            es: Palabra a buscar (coincidencia parcial).
+            fr: Mot à chercher (correspondance partielle).
+            de: Suchwort (Teilübereinstimmung).
+            pt-BR: Palavra a buscar (correspondência parcial).
+            ru: Слово для поиска (частичное совпадение).
+            th: คำที่ค้นหา (จับคู่บางส่วน)
+            id: Kata yang dicari (cocok sebagian).
+    timer:
+      description:
+        en: Timer-related commands.
+        ja: タイマー関連のコマンド
+        ko: 타이머 관련 명령
+        vi: Các lệnh liên quan đến hẹn giờ.
+        zh-CN: 计时器相关命令。
+        zh-TW: 計時器相關指令。
+        es: Comandos relacionados con el temporizador.
+        fr: Commandes liées au minuteur.
+        de: Timerbezogene Befehle.
+        pt-BR: Comandos relacionados ao timer.
+        ru: Команды таймера.
+        th: คำสั่งเกี่ยวกับตัวจับเวลา
+        id: Perintah terkait timer.
+    timer start:
+      description:
+        en: Start a timer.
+        ja: タイマーを開始します。
+        ko: 타이머를 시작합니다.
+        vi: Bắt đầu hẹn giờ.
+        zh-CN: 开始计时。
+        zh-TW: 開始計時。
+        es: Inicia un temporizador.
+        fr: Démarre un minuteur.
+        de: Startet einen Timer.
+        pt-BR: Inicia um timer.
+        ru: Запускает таймер.
+        th: เริ่มตัวจับเวลา
+        id: Mulai timer.
+    timer stop:
+      description:
+        en: Stop the timer and show elapsed time.
+        ja: タイマーを停止し、経過時間を表示します。
+        ko: 타이머를 중지하고 경과 시간을 표시합니다.
+        vi: Dừng hẹn giờ và hiện thời gian đã trôi.
+        zh-CN: 停止计时并显示经过时间。
+        zh-TW: 停止計時並顯示經過時間。
+        es: Detiene el temporizador y muestra el tiempo.
+        fr: Arrête le minuteur et affiche le temps.
+        de: Stoppt den Timer und zeigt die Zeit.
+        pt-BR: Para o timer e mostra o tempo decorrido.
+        ru: Останавливает таймер и показывает время.
+        th: หยุดตัวจับเวลาและแสดงเวลาที่ผ่านไป
+        id: Hentikan timer dan tampilkan waktu berlalu.
+    meow:
+      description:
+        en: Displays a cute cat picture.
+        ja: 可愛い猫の画像を表示します。
+        ko: 귀여운 고양이 사진을 표시합니다.
+        vi: Hiển thị ảnh mèo dễ thương.
+        zh-CN: 显示可爱的猫图。
+        zh-TW: 顯示可愛的貓圖。
+        es: Muestra una foto de gato adorable.
+        fr: Affiche une mignonne photo de chat.
+        de: Zeigt ein süßes Katzenbild.
+        pt-BR: Mostra uma foto fofa de gato.
+        ru: Показывает милую картинку кота.
+        th: แสดงรูปแมวน่ารัก
+        id: Menampilkan gambar kucing lucu.
+    yandere-safe:
+      description:
+        en: Search safe images from Yandere (rating:safe).
+        ja: Yandereから安全な画像を検索します (rating:safe)
+        ko: Yandere에서 안전한 이미지를 검색합니다(rating:safe).
+        vi: Tìm ảnh an toàn từ Yandere (rating:safe).
+        zh-CN: 从 Yandere 搜索安全图片（rating:safe）。
+        zh-TW: 從 Yandere 搜尋安全圖片（rating:safe）。
+        es: Busca imágenes seguras en Yandere (rating:safe).
+        fr: Cherche des images safe sur Yandere (rating:safe).
+        de: Sucht sichere Bilder auf Yandere (rating:safe).
+        pt-BR: Busca imagens seguras no Yandere (rating:safe).
+        ru: Ищет безопасные изображения на Yandere (rating:safe).
+        th: ค้นหารูปปลอดภัยจาก Yandere (rating:safe)
+        id: Cari gambar aman dari Yandere (rating:safe).
+      options:
+        query:
+          description:
+            en: Search tags (space separated).
+            ja: 検索タグ (スペース区切り)
+            ko: 검색 태그(공백 구분)
+            vi: Thẻ tìm kiếm (cách nhau bằng dấu cách).
+            zh-CN: 搜索标签（空格分隔）。
+            zh-TW: 搜尋標籤（以空白分隔）。
+            es: Etiquetas de búsqueda (separadas por espacios).
+            fr: Tags de recherche (séparés par des espaces).
+            de: Such-Tags (durch Leerzeichen getrennt).
+            pt-BR: Tags de busca (separadas por espaços).
+            ru: Теги поиска (через пробел).
+            th: แท็กค้นหา (คั่นด้วยช่องว่าง)
+            id: Tag pencarian (dipisah spasi).
+    danbooru-safe:
+      description:
+        en: Search safe images from Danbooru (rating:general).
+        ja: Danbooruから安全な画像を検索します (rating:general)
+        ko: Danbooru에서 안전한 이미지를 검색합니다(rating:general).
+        vi: Tìm ảnh an toàn từ Danbooru (rating:general).
+        zh-CN: 从 Danbooru 搜索安全图片（rating:general）。
+        zh-TW: 從 Danbooru 搜尋安全圖片（rating:general）。
+        es: Busca imágenes seguras en Danbooru (rating:general).
+        fr: Cherche des images safe sur Danbooru (rating:general).
+        de: Sucht sichere Bilder auf Danbooru (rating:general).
+        pt-BR: Busca imagens seguras no Danbooru (rating:general).
+        ru: Ищет безопасные изображения на Danbooru (rating:general).
+        th: ค้นหารูปปลอดภัยจาก Danbooru (rating:general)
+        id: Cari gambar aman dari Danbooru (rating:general).
+      options:
+        query:
+          description:
+            en: Search tags (space separated).
+            ja: 検索タグ (スペース区切り)
+            ko: 검색 태그(공백 구분)
+            vi: Thẻ tìm kiếm (cách nhau bằng dấu cách).
+            zh-CN: 搜索标签（空格分隔）。
+            zh-TW: 搜尋標籤（以空白分隔）。
+            es: Etiquetas de búsqueda (separadas por espacios).
+            fr: Tags de recherche (séparés par des espaces).
+            de: Such-Tags (durch Leerzeichen getrennt).
+            pt-BR: Tags de busca (separadas por espaços).
+            ru: Теги поиска (через пробел).
+            th: แท็กค้นหา (คั่นด้วยช่องว่าง)
+            id: Tag pencarian (dipisah spasi).
+    earthquake_channel:
+      description:
+        en: Set the notification channel for earthquake/tsunami alerts.
+        ja: 地震・津波情報の通知チャンネルを設定します
+        ko: 지진·쓰나미 알림 채널을 설정합니다.
+        vi: Đặt kênh thông báo động đất/sóng thần.
+        zh-CN: 设置地震/海啸警报的通知频道。
+        zh-TW: 設定地震／海嘯警報的通知頻道。
+        es: Configura el canal de alertas sísmicas/tsunami.
+        fr: Définit le salon d'alertes séisme/tsunami.
+        de: Setzt den Kanal für Erdbeben-/Tsunami-Warnungen.
+        pt-BR: Define o canal de alertas de terremoto/tsunami.
+        ru: Задаёт канал оповещений о землетрясениях/цунами.
+        th: ตั้งช่องแจ้งเตือนแผ่นดินไหว/สึนามิ
+        id: Atur saluran notifikasi gempa/tsunami.
+      options:
+        channel:
+          description:
+            en: Channel to send notifications to.
+            ja: 通知を送信するチャンネル
+            ko: 알림을 보낼 채널
+            vi: Kênh nhận thông báo.
+            zh-CN: 发送通知的频道。
+            zh-TW: 傳送通知的頻道。
+            es: Canal donde enviar notificaciones.
+            fr: Salon pour envoyer les notifications.
+            de: Kanal für Benachrichtigungen.
+            pt-BR: Canal para enviar notificações.
+            ru: Канал для уведомлений.
+            th: ช่องที่จะส่งการแจ้งเตือน
+            id: Saluran untuk mengirim notifikasi.
+        info_type:
+          description:
+            en: Type of alert to notify.
+            ja: 通知したい情報の種類
+            ko: 알림할 정보 종류
+            vi: Loại cảnh báo cần thông báo.
+            zh-CN: 要通知的警报类型。
+            zh-TW: 要通知的警報類型。
+            es: Tipo de alerta a notificar.
+            fr: Type d'alerte à notifier.
+            de: Art der Warnung.
+            pt-BR: Tipo de alerta a notificar.
+            ru: Тип оповещения.
+            th: ประเภทการแจ้งเตือน
+            id: Jenis peringatan yang dinotifikasi.
+    earthquake_status:
+      description:
+        en: Check earthquake/tsunami system status.
+        ja: 地震・津波情報システムの状態を確認します
+        ko: 지진·쓰나미 시스템 상태를 확인합니다.
+        vi: Kiểm tra trạng thái hệ thống động đất/sóng thần.
+        zh-CN: 检查地震/海啸系统状态。
+        zh-TW: 檢查地震／海嘯系統狀態。
+        es: Comprueba el estado del sistema sísmico.
+        fr: Vérifie l'état du système séisme/tsunami.
+        de: Prüft den Status des Erdbeben-/Tsunami-Systems.
+        pt-BR: Verifica o status do sistema de terremoto/tsunami.
+        ru: Проверяет статус системы землетрясений/цунами.
+        th: ตรวจสอบสถานะระบบแผ่นดินไหว/สึนามิ
+        id: Periksa status sistem gempa/tsunami.
+    earthquake_test:
+      description:
+        en: Send a test earthquake/tsunami notification.
+        ja: 地震・津波情報のテスト通知を送信します
+        ko: 지진·쓰나미 테스트 알림을 보냅니다.
+        vi: Gửi thông báo thử động đất/sóng thần.
+        zh-CN: 发送地震/海啸测试通知。
+        zh-TW: 傳送地震／海嘯測試通知。
+        es: Envía una notificación de prueba sísmica.
+        fr: Envoie une notification test séisme/tsunami.
+        de: Sendet eine Test-Erdbeben-/Tsunami-Meldung.
+        pt-BR: Envia uma notificação de teste de terremoto/tsunami.
+        ru: Отправляет тестовое оповещение.
+        th: ส่งการแจ้งเตือนทดสอบแผ่นดินไหว/สึนามิ
+        id: Kirim notifikasi uji gempa/tsunami.
+      options:
+        info_type:
+          description:
+            en: Alert type to test.
+            ja: テストしたい情報の種類
+            ko: 테스트할 정보 종류
+            vi: Loại cảnh báo cần thử.
+            zh-CN: 要测试的警报类型。
+            zh-TW: 要測試的警報類型。
+            es: Tipo de alerta a probar.
+            fr: Type d'alerte à tester.
+            de: Zu testende Warnungsart.
+            pt-BR: Tipo de alerta a testar.
+            ru: Тип оповещения для теста.
+            th: ประเภทการแจ้งเตือนที่จะทดสอบ
+            id: Jenis peringatan yang diuji.
+        max_scale:
+          description:
+            en: Maximum intensity for the test.
+            ja: テストしたい最大震度
+            ko: 테스트할 최대 진도
+            vi: Cường độ tối đa cho bài thử.
+            zh-CN: 测试用的最大震度。
+            zh-TW: 測試用的最大震度。
+            es: Intensidad máxima para la prueba.
+            fr: Intensité maximale pour le test.
+            de: Maximale Intensität für den Test.
+            pt-BR: Intensidade máxima para o teste.
+            ru: Максимальная интенсивность для теста.
+            th: ความรุนแรงสูงสุดสำหรับการทดสอบ
+            id: Intensitas maksimum untuk uji.
+        tsunami_level:
+          description:
+            en: Tsunami warning level for the test.
+            ja: テストしたい津波レベル
+            ko: 테스트할 쓰나미 레벨
+            vi: Mức cảnh báo sóng thần cho bài thử.
+            zh-CN: 测试用的海啸等级。
+            zh-TW: 測試用的海嘯等級。
+            es: Nivel de tsunami para la prueba.
+            fr: Niveau de tsunami pour le test.
+            de: Tsunami-Warnstufe für den Test.
+            pt-BR: Nível de tsunami para o teste.
+            ru: Уровень цунами для теста.
+            th: ระดับสึนามิสำหรับการทดสอบ
+            id: Tingkat peringatan tsunami untuk uji.
+    earthquake_remove:
+      description:
+        en: Remove earthquake/tsunami notification settings.
+        ja: 地震・津波情報の通知設定を削除します
+        ko: 지진·쓰나미 알림 설정을 삭제합니다.
+        vi: Xóa cài đặt thông báo động đất/sóng thần.
+        zh-CN: 删除地震/海啸通知设置。
+        zh-TW: 刪除地震／海嘯通知設定。
+        es: Elimina la configuración de alertas sísmicas.
+        fr: Supprime les réglages d'alertes séisme/tsunami.
+        de: Entfernt Erdbeben-/Tsunami-Benachrichtigungen.
+        pt-BR: Remove as configurações de alerta de terremoto/tsunami.
+        ru: Удаляет настройки оповещений.
+        th: ลบการตั้งค่าแจ้งเตือนแผ่นดินไหว/สึนามิ
+        id: Hapus pengaturan notifikasi gempa/tsunami.
+      options:
+        info_type:
+          description:
+            en: Notification setting to remove.
+            ja: 削除したい通知設定
+            ko: 삭제할 알림 설정
+            vi: Cài đặt thông báo cần xóa.
+            zh-CN: 要删除的通知设置。
+            zh-TW: 要刪除的通知設定。
+            es: Configuración de notificación a eliminar.
+            fr: Réglage de notification à supprimer.
+            de: Zu entfernende Benachrichtigungseinstellung.
+            pt-BR: Configuração de notificação a remover.
+            ru: Настройка уведомления для удаления.
+            th: การตั้งค่าการแจ้งเตือนที่จะลบ
+            id: Pengaturan notifikasi yang dihapus.
+    earthquake_help:
+      description:
+        en: Show help for this system.
+        ja: このシステムのヘルプを表示します
+        ko: 이 시스템의 도움말을 표시합니다.
+        vi: Hiển thị trợ giúp hệ thống này.
+        zh-CN: 显示此系统的帮助。
+        zh-TW: 顯示此系統的說明。
+        es: Muestra la ayuda de este sistema.
+        fr: Affiche l'aide de ce système.
+        de: Zeigt die Hilfe zu diesem System.
+        pt-BR: Mostra a ajuda deste sistema.
+        ru: Показывает справку по системе.
+        th: แสดงวิธีใช้ระบบนี้
+        id: Tampilkan bantuan untuk sistem ini.
+    earthquake_map:
+      description:
+        en: Display recent earthquakes on a map of Japan.
+        ja: 最近の地震を日本地図上に表示します
+        ko: 최근 지진을 일본 지도에 표시합니다.
+        vi: Hiển thị động đất gần đây trên bản đồ Nhật Bản.
+        zh-CN: 在日本地图上显示近期地震。
+        zh-TW: 在日本地圖上顯示近期地震。
+        es: Muestra terremotos recientes en un mapa de Japón.
+        fr: Affiche les séismes récents sur une carte du Japon.
+        de: Zeigt aktuelle Erdbeben auf einer Japan-Karte.
+        pt-BR: Mostra terremotos recentes no mapa do Japão.
+        ru: Показывает недавние землетрясения на карте Японии.
+        th: แสดงแผ่นดินไหวล่าสุดบนแผนที่ญี่ปุ่น
+        id: Tampilkan gempa terkini di peta Jepang.
+      options:
+        limit:
+          description:
+            en: Number of earthquakes to show (1-50).
+            ja: 表示する地震の数（1-50）
+            ko: 표시할 지진 수(1-50)
+            vi: Số trận động đất hiển thị (1–50).
+            zh-CN: 要显示的地震数量（1-50）。
+            zh-TW: 要顯示的地震數量（1-50）。
+            es: Número de terremotos a mostrar (1-50).
+            fr: Nombre de séismes à afficher (1-50).
+            de: Anzahl der Erdbeben (1-50).
+            pt-BR: Número de terremotos a mostrar (1-50).
+            ru: Число землетрясений (1–50).
+            th: จำนวนแผ่นดินไหวที่จะแสดง (1-50)
+            id: Jumlah gempa yang ditampilkan (1–50).
+        min_scale:
+          description:
+            en: Minimum intensity to display.
+            ja: 表示する最小震度
+            ko: 표시할 최소 진도
+            vi: Cường độ tối thiểu để hiển thị.
+            zh-CN: 要显示的最小震度。
+            zh-TW: 要顯示的最小震度。
+            es: Intensidad mínima a mostrar.
+            fr: Intensité minimale à afficher.
+            de: Mindestintensität zum Anzeigen.
+            pt-BR: Intensidade mínima a exibir.
+            ru: Минимальная интенсивность.
+            th: ความรุนแรงขั้นต่ำที่จะแสดง
+            id: Intensitas minimum yang ditampilkan.
+        hours:
+          description:
+            en: Show earthquakes within the past N hours (1-168 = 7 days).
+            ja: 過去何時間以内の地震を表示（1-168時間=7日）
+            ko: 과거 N시간 이내 지진 표시(1-168=7일)
+            vi: Động đất trong N giờ qua (1–168 = 7 ngày).
+            zh-CN: 显示过去 N 小时内的地震（1-168=7天）。
+            zh-TW: 顯示過去 N 小時內的地震（1-168=7天）。
+            es: Terremotos de las últimas N horas (1-168=7 días).
+            fr: Séismes des N dernières heures (1-168=7 j).
+            de: Erdbeben der letzten N Stunden (1-168=7 Tage).
+            pt-BR: Terremotos nas últimas N horas (1-168=7 dias).
+            ru: Землетрясения за N часов (1–168=7 дней).
+            th: แผ่นดินไหวใน N ชั่วโมงที่ผ่านมา (1-168=7 วัน)
+            id: Gempa dalam N jam terakhir (1–168=7 hari).
+    earthquake_history:
+      description:
+        en: Display recent earthquake information.
+        ja: 最近の地震情報を表示します
+        ko: 최근 지진 정보를 표시합니다.
+        vi: Hiển thị thông tin động đất gần đây.
+        zh-CN: 显示近期地震信息。
+        zh-TW: 顯示近期地震資訊。
+        es: Muestra información de terremotos recientes.
+        fr: Affiche les infos des séismes récents.
+        de: Zeigt aktuelle Erdbebeninformationen.
+        pt-BR: Mostra informações de terremotos recentes.
+        ru: Показывает информацию о недавних землетрясениях.
+        th: แสดงข้อมูลแผ่นดินไหวล่าสุด
+        id: Tampilkan informasi gempa terkini.
+      options:
+        limit:
+          description:
+            en: Number of earthquakes to show (1-20).
+            ja: 表示する地震の数（1-20）
+            ko: 표시할 지진 수(1-20)
+            vi: Số trận động đất hiển thị (1–20).
+            zh-CN: 要显示的地震数量（1-20）。
+            zh-TW: 要顯示的地震數量（1-20）。
+            es: Número de terremotos a mostrar (1-20).
+            fr: Nombre de séismes à afficher (1-20).
+            de: Anzahl der Erdbeben (1-20).
+            pt-BR: Número de terremotos a mostrar (1-20).
+            ru: Число землетрясений (1–20).
+            th: จำนวนแผ่นดินไหวที่จะแสดง (1-20)
+            id: Jumlah gempa yang ditampilkan (1–20).
+        min_scale:
+          description:
+            en: Minimum intensity to display.
+            ja: 表示する最小震度
+            ko: 표시할 최소 진도
+            vi: Cường độ tối thiểu để hiển thị.
+            zh-CN: 要显示的最小震度。
+            zh-TW: 要顯示的最小震度。
+            es: Intensidad mínima a mostrar.
+            fr: Intensité minimale à afficher.
+            de: Mindestintensität zum Anzeigen.
+            pt-BR: Intensidade mínima a exibir.
+            ru: Минимальная интенсивность.
+            th: ความรุนแรงขั้นต่ำที่จะแสดง
+            id: Intensitas minimum yang ditampilkan.
+    earthquake_debug:
+      description:
+        en: Detailed diagnosis of notification settings.
+        ja: 通知設定の詳細診断
+        ko: 알림 설정의 상세 진단
+        vi: Chẩn đoán chi tiết cài đặt thông báo.
+        zh-CN: 通知设置的详细诊断。
+        zh-TW: 通知設定的詳細診斷。
+        es: Diagnóstico detallado de las notificaciones.
+        fr: Diagnostic détaillé des notifications.
+        de: Detaillierte Diagnose der Benachrichtigungen.
+        pt-BR: Diagnóstico detalhado das notificações.
+        ru: Подробная диагностика настроек уведомлений.
+        th: วินิจฉัยการตั้งค่าการแจ้งเตือนโดยละเอียด
+        id: Diagnosis rinci pengaturan notifikasi.
+    twitch_set:
+      description:
+        en: Set up Twitch stream notifications.
+        ja: Twitch配信通知を設定します。
+        ko: Twitch 방송 알림을 설정합니다.
+        vi: Thiết lập thông báo livestream Twitch.
+        zh-CN: 设置 Twitch 直播通知。
+        zh-TW: 設定 Twitch 直播通知。
+        es: Configura notificaciones de streams de Twitch.
+        fr: Configure les notifications de stream Twitch.
+        de: Richtet Twitch-Stream-Benachrichtigungen ein.
+        pt-BR: Configura notificações de stream da Twitch.
+        ru: Настраивает уведомления о стримах Twitch.
+        th: ตั้งค่าการแจ้งเตือนสตรีม Twitch
+        id: Atur notifikasi stream Twitch.
+      options:
+        twitch_url:
+          description:
+            en: Twitch channel URL to watch (e.g. https://www.twitch.tv/twitch).
+            ja: 通知したいTwitchチャンネルのURL
+            ko: 알림할 Twitch 채널 URL
+            vi: URL kênh Twitch cần theo dõi.
+            zh-CN: 要监视的 Twitch 频道 URL。
+            zh-TW: 要監視的 Twitch 頻道 URL。
+            es: URL del canal de Twitch a vigilar.
+            fr: URL du canal Twitch à surveiller.
+            de: Twitch-Kanal-URL zum Überwachen.
+            pt-BR: URL do canal Twitch a monitorar.
+            ru: URL канала Twitch для отслеживания.
+            th: URL ช่อง Twitch ที่จะเฝ้าดู
+            id: URL saluran Twitch yang dipantau.
+        notification_channel:
+          description:
+            en: Discord channel to send notifications to.
+            ja: 通知を送信するDiscordチャンネル
+            ko: 알림을 보낼 Discord 채널
+            vi: Kênh Discord nhận thông báo.
+            zh-CN: 发送通知的 Discord 频道。
+            zh-TW: 傳送通知的 Discord 頻道。
+            es: Canal de Discord para notificaciones.
+            fr: Salon Discord pour les notifications.
+            de: Discord-Kanal für Benachrichtigungen.
+            pt-BR: Canal do Discord para notificações.
+            ru: Канал Discord для уведомлений.
+            th: ช่อง Discord สำหรับส่งการแจ้งเตือน
+            id: Saluran Discord untuk notifikasi.
+        message:
+          description:
+            en: Optional custom message (e.g. mentions) for notifications.
+            ja: 通知時のカスタムメッセージ
+            ko: '알림용 사용자 지정 메시지(예: 멘션)'
+            vi: 'Tin nhắn tùy chỉnh tùy chọn (vd: mention).'
+            zh-CN: 通知的可选自定义消息（如提及）。
+            zh-TW: 通知的選填自訂訊息（如提及）。
+            es: Mensaje personalizado opcional (p. ej. menciones).
+            fr: Message personnalisé optionnel (ex. mentions).
+            de: Optionale Nachricht (z. B. Erwähnungen).
+            pt-BR: 'Mensagem personalizada opcional (ex.: menções).'
+            ru: Необязательное сообщение (напр. упоминания).
+            th: ข้อความกำหนดเอง (เช่น แท็ก) ไม่บังคับ
+            id: Pesan kustom opsional (mis. mention).
+    twitch_remove:
+      description:
+        en: Remove Twitch stream notification settings.
+        ja: Twitch配信通知の設定を解除します。
+        ko: Twitch 방송 알림 설정을 해제합니다.
+        vi: Xóa cài đặt thông báo livestream Twitch.
+        zh-CN: 移除 Twitch 直播通知设置。
+        zh-TW: 移除 Twitch 直播通知設定。
+        es: Elimina la configuración de Twitch.
+        fr: Supprime les réglages de notification Twitch.
+        de: Entfernt Twitch-Benachrichtigungen.
+        pt-BR: Remove as configurações de notificação Twitch.
+        ru: Удаляет настройки уведомлений Twitch.
+        th: ลบการตั้งค่าแจ้งเตือนสตรีม Twitch
+        id: Hapus pengaturan notifikasi stream Twitch.
+      options:
+        twitch_channel:
+          description:
+            en: Twitch channel to remove.
+            ja: 解除したいTwitchチャンネル
+            ko: 해제할 Twitch 채널
+            vi: Kênh Twitch cần xóa.
+            zh-CN: 要移除的 Twitch 频道。
+            zh-TW: 要移除的 Twitch 頻道。
+            es: Canal de Twitch a eliminar.
+            fr: Canal Twitch à supprimer.
+            de: Zu entfernender Twitch-Kanal.
+            pt-BR: Canal Twitch a remover.
+            ru: Канал Twitch для удаления.
+            th: ช่อง Twitch ที่จะลบ
+            id: Saluran Twitch yang dihapus.
+    twitch_test:
+      description:
+        en: Send a Twitch notification test message.
+        ja: Twitch配信通知のテストメッセージを送信します。
+        ko: Twitch 알림 테스트 메시지를 보냅니다.
+        vi: Gửi tin nhắn thử thông báo Twitch.
+        zh-CN: 发送 Twitch 通知测试消息。
+        zh-TW: 傳送 Twitch 通知測試訊息。
+        es: Envía un mensaje de prueba de Twitch.
+        fr: Envoie un message test Twitch.
+        de: Sendet eine Twitch-Testnachricht.
+        pt-BR: Envia uma mensagem de teste do Twitch.
+        ru: Отправляет тестовое уведомление Twitch.
+        th: ส่งข้อความทดสอบการแจ้งเตือน Twitch
+        id: Kirim pesan uji notifikasi Twitch.
+      options:
+        twitch_channel:
+          description:
+            en: Twitch channel to test.
+            ja: テストしたいTwitchチャンネル
+            ko: 테스트할 Twitch 채널
+            vi: Kênh Twitch cần thử.
+            zh-CN: 要测试的 Twitch 频道。
+            zh-TW: 要測試的 Twitch 頻道。
+            es: Canal de Twitch a probar.
+            fr: Canal Twitch à tester.
+            de: Zu testender Twitch-Kanal.
+            pt-BR: Canal Twitch a testar.
+            ru: Канал Twitch для теста.
+            th: ช่อง Twitch ที่จะทดสอบ
+            id: Saluran Twitch yang diuji.
+    twitch_list:
+      description:
+        en: List configured Twitch notifications.
+        ja: 設定されているTwitch通知の一覧を表示します。
+        ko: 설정된 Twitch 알림 목록을 표시합니다.
+        vi: Liệt kê thông báo Twitch đã cấu hình.
+        zh-CN: 列出已配置的 Twitch 通知。
+        zh-TW: 列出已設定的 Twitch 通知。
+        es: Lista las notificaciones de Twitch configuradas.
+        fr: Liste les notifications Twitch configurées.
+        de: Listet konfigurierte Twitch-Benachrichtigungen.
+        pt-BR: Lista as notificações Twitch configuradas.
+        ru: Список настроенных уведомлений Twitch.
+        th: แสดงรายการแจ้งเตือน Twitch ที่ตั้งไว้
+        id: Daftar notifikasi Twitch yang dikonfigurasi.
+    r6s-stats:
+      description:
+        en: Display comprehensive R6 Siege player statistics.
+        ja: R6 Siegeの詳細なプレイヤー統計を表示
+        ko: R6 Siege 상세 플레이어 통계를 표시합니다.
+        vi: Hiển thị thống kê người chơi R6 Siege chi tiết.
+        zh-CN: 显示完整的 R6 Siege 玩家统计。
+        zh-TW: 顯示完整的 R6 Siege 玩家統計。
+        es: Muestra estadísticas completas de R6 Siege.
+        fr: Affiche les stats complètes R6 Siege.
+        de: Zeigt umfassende R6-Siege-Spielerstatistiken.
+        pt-BR: Mostra estatísticas completas de R6 Siege.
+        ru: Показывает подробную статистику R6 Siege.
+        th: แสดงสถิติผู้เล่น R6 Siege แบบละเอียด
+        id: Tampilkan statistik pemain R6 Siege lengkap.
+      options:
+        username:
+          description:
+            en: Player username (Ubisoft Connect name).
+            ja: プレイヤー名（Ubisoft Connect名）
+            ko: 플레이어 이름(Ubisoft Connect)
+            vi: Tên người chơi (Ubisoft Connect).
+            zh-CN: 玩家用户名（Ubisoft Connect 名称）。
+            zh-TW: 玩家使用者名稱（Ubisoft Connect 名稱）。
+            es: Nombre de usuario (Ubisoft Connect).
+            fr: Nom d'utilisateur (Ubisoft Connect).
+            de: Spielername (Ubisoft Connect).
+            pt-BR: Nome de usuário (Ubisoft Connect).
+            ru: Имя игрока (Ubisoft Connect).
+            th: ชื่อผู้เล่น (Ubisoft Connect)
+            id: Nama pengguna (Ubisoft Connect).
+        platform:
+          description:
+            en: Platform.
+            ja: プラットフォーム
+            ko: 플랫폼
+            vi: Nền tảng.
+            zh-CN: 平台。
+            zh-TW: 平台。
+            es: Plataforma.
+            fr: Plateforme.
+            de: Plattform.
+            pt-BR: Plataforma.
+            ru: Платформа.
+            th: แพลตฟอร์ม
+            id: Platform.
+    r6s-compare:
+      description:
+        en: Compare two players' statistics.
+        ja: 2人のプレイヤー統計を比較
+        ko: 두 플레이어 통계를 비교합니다.
+        vi: So sánh thống kê hai người chơi.
+        zh-CN: 比较两名玩家的统计。
+        zh-TW: 比較兩名玩家的統計。
+        es: Compara las estadísticas de dos jugadores.
+        fr: Compare les stats de deux joueurs.
+        de: Vergleicht die Statistiken zweier Spieler.
+        pt-BR: Compara as estatísticas de dois jogadores.
+        ru: Сравнивает статистику двух игроков.
+        th: เปรียบเทียบสถิติผู้เล่นสองคน
+        id: Bandingkan statistik dua pemain.
+      options:
+        player1:
+          description:
+            en: First player username.
+            ja: 1人目のプレイヤー名
+            ko: 첫 번째 플레이어 이름
+            vi: Tên người chơi thứ nhất.
+            zh-CN: 第一位玩家用户名。
+            zh-TW: 第一位玩家使用者名稱。
+            es: Nombre del primer jugador.
+            fr: Nom du premier joueur.
+            de: Name des ersten Spielers.
+            pt-BR: Nome do primeiro jogador.
+            ru: Имя первого игрока.
+            th: ชื่อผู้เล่นคนแรก
+            id: Nama pemain pertama.
+        player2:
+          description:
+            en: Second player username.
+            ja: 2人目のプレイヤー名
+            ko: 두 번째 플레이어 이름
+            vi: Tên người chơi thứ hai.
+            zh-CN: 第二位玩家用户名。
+            zh-TW: 第二位玩家使用者名稱。
+            es: Nombre del segundo jugador.
+            fr: Nom du second joueur.
+            de: Name des zweiten Spielers.
+            pt-BR: Nome do segundo jogador.
+            ru: Имя второго игрока.
+            th: ชื่อผู้เล่นคนที่สอง
+            id: Nama pemain kedua.
+        platform:
+          description:
+            en: Platform (both players must be on same platform).
+            ja: プラットフォーム（同一必須）
+            ko: 플랫폼(두 플레이어 동일해야 함)
+            vi: Nền tảng (cả hai phải cùng nền tảng).
+            zh-CN: 平台（两名玩家必须相同）。
+            zh-TW: 平台（兩名玩家必須相同）。
+            es: Plataforma (ambos deben coincidir).
+            fr: Plateforme (identique pour les deux).
+            de: Plattform (beide Spieler gleich).
+            pt-BR: Plataforma (ambos devem ser iguais).
+            ru: Платформа (оба игрока на одной).
+            th: แพลตฟอร์ม (ผู้เล่นทั้งคู่ต้องเหมือนกัน)
+            id: Platform (keduanya harus sama).
+    r6s-operator:
+      description:
+        en: Search Rainbow Six Siege operator information.
+        ja: R6オペレーター情報を検索
+        ko: R6 오퍼레이터 정보를 검색합니다.
+        vi: Tìm thông tin operator Rainbow Six Siege.
+        zh-CN: 搜索 Rainbow Six Siege 干员信息。
+        zh-TW: 搜尋 Rainbow Six Siege 幹員資訊。
+        es: Busca información de operadores de R6.
+        fr: Cherche des infos d'opérateurs R6.
+        de: Sucht R6-Operator-Informationen.
+        pt-BR: Busca informações de operadores do R6.
+        ru: Ищет информацию об оперативниках R6.
+        th: ค้นหาข้อมูลโอเปอเรเตอร์ R6
+        id: Cari info operator Rainbow Six Siege.
+      options:
+        name:
+          description:
+            en: Operator name (e.g., Ash, Thermite).
+            ja: 'オペレーター名（例: Ash, Thermite）'
+            ko: '오퍼레이터 이름(예: Ash, Thermite)'
+            vi: 'Tên operator (vd: Ash, Thermite).'
+            zh-CN: 干员名称（例如 Ash、Thermite）。
+            zh-TW: 幹員名稱（例如 Ash、Thermite）。
+            es: Nombre del operador (p. ej. Ash, Thermite).
+            fr: Nom de l'opérateur (ex. Ash, Thermite).
+            de: Operatorname (z. B. Ash, Thermite).
+            pt-BR: 'Nome do operador (ex.: Ash, Thermite).'
+            ru: Имя оперативника (напр. Ash, Thermite).
+            th: ชื่อโอเปอเรเตอร์ (เช่น Ash, Thermite)
+            id: Nama operator (mis. Ash, Thermite).
+        role:
+          description:
+            en: Filter by role.
+            ja: ロールで絞り込み
+            ko: 역할로 필터
+            vi: Lọc theo vai trò.
+            zh-CN: 按角色筛选。
+            zh-TW: 依角色篩選。
+            es: Filtrar por rol.
+            fr: Filtrer par rôle.
+            de: Nach Rolle filtern.
+            pt-BR: Filtrar por função.
+            ru: Фильтр по роли.
+            th: กรองตามบทบาท
+            id: Filter menurut peran.
+    r6s-server-status:
+      description:
+        en: Check Rainbow Six Siege server status.
+        ja: R6サーバーステータスを確認
+        ko: R6 서버 상태를 확인합니다.
+        vi: Kiểm tra trạng thái máy chủ Rainbow Six Siege.
+        zh-CN: 检查 Rainbow Six Siege 服务器状态。
+        zh-TW: 檢查 Rainbow Six Siege 伺服器狀態。
+        es: Comprueba el estado de los servidores de R6.
+        fr: Vérifie l'état des serveurs R6.
+        de: Prüft den R6-Serverstatus.
+        pt-BR: Verifica o status dos servidores do R6.
+        ru: Проверяет статус серверов R6.
+        th: ตรวจสอบสถานะเซิร์ฟเวอร์ R6
+        id: Periksa status server Rainbow Six Siege.
+    r6s-search:
+      description:
+        en: Search for operators, weapons, maps, and more.
+        ja: オペレーター・武器・マップ等を検索
+        ko: 오퍼레이터·무기·맵 등을 검색합니다.
+        vi: Tìm operator, vũ khí, bản đồ, v.v.
+        zh-CN: 搜索干员、武器、地图等。
+        zh-TW: 搜尋幹員、武器、地圖等。
+        es: Busca operadores, armas, mapas y más.
+        fr: Cherche opérateurs, armes, cartes, etc.
+        de: Sucht Operatoren, Waffen, Maps und mehr.
+        pt-BR: Busca operadores, armas, mapas e mais.
+        ru: Ищет оперативников, оружие, карты и др.
+        th: ค้นหาโอเปอเรเตอร์ อาวุธ แผนที่ ฯลฯ
+        id: Cari operator, senjata, peta, dan lainnya.
+      options:
+        query:
+          description:
+            en: Search query (e.g., 'Ash', 'R4-C', 'Oregon').
+            ja: 検索キーワード
+            ko: 검색어
+            vi: Từ khóa tìm kiếm.
+            zh-CN: 搜索关键词（例如 Ash、R4-C、Oregon）。
+            zh-TW: 搜尋關鍵字（例如 Ash、R4-C、Oregon）。
+            es: Consulta (p. ej. Ash, R4-C, Oregon).
+            fr: Requête (ex. Ash, R4-C, Oregon).
+            de: Suchbegriff (z. B. Ash, R4-C, Oregon).
+            pt-BR: 'Consulta (ex.: Ash, R4-C, Oregon).'
+            ru: Запрос (напр. Ash, R4-C, Oregon).
+            th: คำค้นหา (เช่น Ash, R4-C, Oregon)
+            id: Kata kunci (mis. Ash, R4-C, Oregon).
+    r6s-map:
+      description:
+        en: Get information about Rainbow Six Siege maps.
+        ja: R6マップ情報を取得
+        ko: R6 맵 정보를 가져옵니다.
+        vi: Lấy thông tin bản đồ Rainbow Six Siege.
+        zh-CN: 获取 Rainbow Six Siege 地图信息。
+        zh-TW: 取得 Rainbow Six Siege 地圖資訊。
+        es: Obtiene información de mapas de R6.
+        fr: Obtient des infos sur les cartes R6.
+        de: Holt Infos zu R6-Maps.
+        pt-BR: Obtém informações de mapas do R6.
+        ru: Получает информацию о картах R6.
+        th: ดึงข้อมูลแผนที่ R6
+        id: Ambil info peta Rainbow Six Siege.
+      options:
+        name:
+          description:
+            en: Map name (e.g., 'Oregon', 'Clubhouse').
+            ja: 'マップ名（例: Oregon, Clubhouse）'
+            ko: '맵 이름(예: Oregon, Clubhouse)'
+            vi: 'Tên bản đồ (vd: Oregon, Clubhouse).'
+            zh-CN: 地图名称（例如 Oregon、Clubhouse）。
+            zh-TW: 地圖名稱（例如 Oregon、Clubhouse）。
+            es: Nombre del mapa (p. ej. Oregon, Clubhouse).
+            fr: Nom de la carte (ex. Oregon, Clubhouse).
+            de: Map-Name (z. B. Oregon, Clubhouse).
+            pt-BR: 'Nome do mapa (ex.: Oregon, Clubhouse).'
+            ru: Название карты (напр. Oregon, Clubhouse).
+            th: ชื่อแผนที่ (เช่น Oregon, Clubhouse)
+            id: Nama peta (mis. Oregon, Clubhouse).
+    r6s-weapon:
+      description:
+        en: Get information about weapons.
+        ja: 武器情報を取得
+        ko: 무기 정보를 가져옵니다.
+        vi: Lấy thông tin vũ khí.
+        zh-CN: 获取武器信息。
+        zh-TW: 取得武器資訊。
+        es: Obtiene información sobre armas.
+        fr: Obtient des infos sur les armes.
+        de: Holt Informationen zu Waffen.
+        pt-BR: Obtém informações sobre armas.
+        ru: Получает информацию об оружии.
+        th: ดึงข้อมูลอาวุธ
+        id: Ambil informasi senjata.
+      options:
+        name:
+          description:
+            en: Weapon name (e.g., 'R4-C', 'AK-12').
+            ja: '武器名（例: R4-C, AK-12）'
+            ko: '무기 이름(예: R4-C, AK-12)'
+            vi: 'Tên vũ khí (vd: R4-C, AK-12).'
+            zh-CN: 武器名称（例如 R4-C、AK-12）。
+            zh-TW: 武器名稱（例如 R4-C、AK-12）。
+            es: Nombre del arma (p. ej. R4-C, AK-12).
+            fr: Nom de l'arme (ex. R4-C, AK-12).
+            de: Waffenname (z. B. R4-C, AK-12).
+            pt-BR: 'Nome da arma (ex.: R4-C, AK-12).'
+            ru: Название оружия (напр. R4-C, AK-12).
+            th: ชื่ออาวุธ (เช่น R4-C, AK-12)
+            id: Nama senjata (mis. R4-C, AK-12).
+    r6s-clear-cache:
+      description:
+        en: Clear API response cache (Admin only).
+        ja: APIキャッシュをクリア（管理者専用）
+        ko: API 캐시를 지웁니다(관리자 전용).
+        vi: Xóa cache phản hồi API (chỉ admin).
+        zh-CN: 清除 API 响应缓存（仅管理员）。
+        zh-TW: 清除 API 回應快取（僅管理員）。
+        es: Vacía la caché de la API (solo admin).
+        fr: Vide le cache API (admin uniquement).
+        de: Leert den API-Cache (nur Admin).
+        pt-BR: Limpa o cache da API (somente admin).
+        ru: Очищает кэш API (только админ).
+        th: ล้างแคช API (ผู้ดูแลเท่านั้น)
+        id: Hapus cache respons API (hanya admin).
+    valorant-stats:
+      description:
+        en: Get Valorant player statistics.
+        ja: Valorantプレイヤー統計を取得
+        ko: Valorant 플레이어 통계를 가져옵니다.
+        vi: Lấy thống kê người chơi Valorant.
+        zh-CN: 获取 Valorant 玩家统计。
+        zh-TW: 取得 Valorant 玩家統計。
+        es: Obtiene estadísticas de Valorant.
+        fr: Obtient les stats Valorant d'un joueur.
+        de: Holt Valorant-Spielerstatistiken.
+        pt-BR: Obtém estatísticas de Valorant.
+        ru: Получает статистику игрока Valorant.
+        th: ดึงสถิติผู้เล่น Valorant
+        id: Ambil statistik pemain Valorant.
+      options:
+        riot_id:
+          description:
+            en: Player's Riot ID (e.g., PlayerName#TAG).
+            ja: 'プレイヤーのRiot ID（例: PlayerName#TAG）'
+            ko: '플레이어 Riot ID(예: PlayerName#TAG)'
+            vi: 'Riot ID người chơi (vd: PlayerName#TAG).'
+            zh-CN: 玩家的 Riot ID（例如 PlayerName#TAG）。
+            zh-TW: 玩家的 Riot ID（例如 PlayerName#TAG）。
+            es: Riot ID del jugador (p. ej. PlayerName#TAG).
+            fr: Riot ID du joueur (ex. PlayerName#TAG).
+            de: Riot-ID des Spielers (z. B. PlayerName#TAG).
+            pt-BR: 'Riot ID do jogador (ex.: PlayerName#TAG).'
+            ru: Riot ID игрока (напр. PlayerName#TAG).
+            th: Riot ID ของผู้เล่น (เช่น PlayerName#TAG)
+            id: Riot ID pemain (mis. PlayerName#TAG).
+        region:
+          description:
+            en: Region (eu, na, ap, kr, latam, br).
+            ja: リージョン
+            ko: 리전
+            vi: Khu vực (eu, na, ap, kr, latam, br).
+            zh-CN: 地区（eu, na, ap, kr, latam, br）。
+            zh-TW: 地區（eu, na, ap, kr, latam, br）。
+            es: Región (eu, na, ap, kr, latam, br).
+            fr: Région (eu, na, ap, kr, latam, br).
+            de: Region (eu, na, ap, kr, latam, br).
+            pt-BR: Região (eu, na, ap, kr, latam, br).
+            ru: Регион (eu, na, ap, kr, latam, br).
+            th: ภูมิภาค (eu, na, ap, kr, latam, br)
+            id: Wilayah (eu, na, ap, kr, latam, br).
+    valorant-recent:
+      description:
+        en: Get recent competitive matches.
+        ja: 最近のコンペティティブ試合を取得
+        ko: 최근 경쟁전 경기를 가져옵니다.
+        vi: Lấy các trận competitive gần đây.
+        zh-CN: 获取最近的竞技对局。
+        zh-TW: 取得最近的競技對戰。
+        es: Obtiene partidas competitivas recientes.
+        fr: Obtient les matchs compétitifs récents.
+        de: Holt aktuelle Competitive-Matches.
+        pt-BR: Obtém partidas competitivas recentes.
+        ru: Получает недавние соревновательные матчи.
+        th: ดึงแมตช์ Competitive ล่าสุด
+        id: Ambil pertandingan competitive terbaru.
+      options:
+        riot_id:
+          description:
+            en: Player's Riot ID (e.g., PlayerName#TAG).
+            ja: 'プレイヤーのRiot ID（例: PlayerName#TAG）'
+            ko: '플레이어 Riot ID(예: PlayerName#TAG)'
+            vi: 'Riot ID người chơi (vd: PlayerName#TAG).'
+            zh-CN: 玩家的 Riot ID（例如 PlayerName#TAG）。
+            zh-TW: 玩家的 Riot ID（例如 PlayerName#TAG）。
+            es: Riot ID del jugador (p. ej. PlayerName#TAG).
+            fr: Riot ID du joueur (ex. PlayerName#TAG).
+            de: Riot-ID des Spielers (z. B. PlayerName#TAG).
+            pt-BR: 'Riot ID do jogador (ex.: PlayerName#TAG).'
+            ru: Riot ID игрока (напр. PlayerName#TAG).
+            th: Riot ID ของผู้เล่น (เช่น PlayerName#TAG)
+            id: Riot ID pemain (mis. PlayerName#TAG).
+        region:
+          description:
+            en: Region (eu, na, ap, kr, latam, br).
+            ja: リージョン
+            ko: 리전
+            vi: Khu vực (eu, na, ap, kr, latam, br).
+            zh-CN: 地区（eu, na, ap, kr, latam, br）。
+            zh-TW: 地區（eu, na, ap, kr, latam, br）。
+            es: Región (eu, na, ap, kr, latam, br).
+            fr: Région (eu, na, ap, kr, latam, br).
+            de: Region (eu, na, ap, kr, latam, br).
+            pt-BR: Região (eu, na, ap, kr, latam, br).
+            ru: Регион (eu, na, ap, kr, latam, br).
+            th: ภูมิภาค (eu, na, ap, kr, latam, br)
+            id: Wilayah (eu, na, ap, kr, latam, br).
+    linkfix:
+      description:
+        en: Configure Link Fix (social embed replacement).
+        ja: Link Fix（SNS埋め込み置換）を設定します
+        ko: Link Fix(SNS 임베드 치환)를 설정합니다.
+        vi: Cấu hình Link Fix (thay thế embed mạng xã hội).
+        zh-CN: 配置 Link Fix（社交嵌入替换）。
+        zh-TW: 設定 Link Fix（社群嵌入替換）。
+        es: Configura Link Fix (reemplazo de embeds).
+        fr: Configure Link Fix (remplacement d'embeds).
+        de: Konfiguriert Link Fix (Embed-Ersatz).
+        pt-BR: Configura o Link Fix (substituição de embeds).
+        ru: Настраивает Link Fix (замена эмбедов).
+        th: ตั้งค่า Link Fix (แทนที่เอ็มเบดโซเชียล)
+        id: Konfigurasi Link Fix (pengganti embed sosial).
+    download_audio:
+      description:
+        en: Downloads audio and shares it via Google Drive.
+        ja: 音声をダウンロードし、Google Drive経由で共有します。
+        ko: 음성을 다운로드해 Google Drive로 공유합니다.
+        vi: Tải âm thanh và chia sẻ qua Google Drive.
+        zh-CN: 下载音频并通过 Google Drive 分享。
+        zh-TW: 下載音訊並透過 Google Drive 分享。
+        es: Descarga audio y lo comparte por Google Drive.
+        fr: Télécharge l'audio et le partage via Google Drive.
+        de: Lädt Audio herunter und teilt es per Google Drive.
+        pt-BR: Baixa áudio e compartilha via Google Drive.
+        ru: Скачивает аудио и делится через Google Drive.
+        th: ดาวน์โหลดเสียงและแชร์ผ่าน Google Drive
+        id: Unduh audio dan bagikan via Google Drive.
+      options:
+        query:
+          description:
+            en: YouTube URL or search query.
+            ja: YouTubeのURLまたは検索キーワード
+            ko: YouTube URL 또는 검색어
+            vi: URL YouTube hoặc từ khóa tìm kiếm.
+            zh-CN: YouTube URL 或搜索关键词。
+            zh-TW: YouTube URL 或搜尋關鍵字。
+            es: URL de YouTube o consulta de búsqueda.
+            fr: URL YouTube ou requête de recherche.
+            de: YouTube-URL oder Suchbegriff.
+            pt-BR: URL do YouTube ou termo de busca.
+            ru: URL YouTube или поисковый запрос.
+            th: URL YouTube หรือคำค้นหา
+            id: URL YouTube atau kata kunci pencarian.
+        audio_format:
+          description:
+            en: Output audio format.
+            ja: 出力する音声フォーマット
+            ko: 출력 오디오 형식
+            vi: Định dạng âm thanh đầu ra.
+            zh-CN: 输出音频格式。
+            zh-TW: 輸出音訊格式。
+            es: Formato de audio de salida.
+            fr: Format audio de sortie.
+            de: Ausgabe-Audioformat.
+            pt-BR: Formato de áudio de saída.
+            ru: Формат выходного аудио.
+            th: รูปแบบไฟล์เสียงขาออก
+            id: Format audio keluaran.
+    download_video:
+      description:
+        en: Downloads a video and shares it via Google Drive.
+        ja: 動画をダウンロードし、Google Drive経由で共有します。
+        ko: 동영상을 다운로드해 Google Drive로 공유합니다.
+        vi: Tải video và chia sẻ qua Google Drive.
+        zh-CN: 下载视频并通过 Google Drive 分享。
+        zh-TW: 下載影片並透過 Google Drive 分享。
+        es: Descarga un vídeo y lo comparte por Google Drive.
+        fr: Télécharge une vidéo et la partage via Google Drive.
+        de: Lädt ein Video herunter und teilt es per Google Drive.
+        pt-BR: Baixa um vídeo e compartilha via Google Drive.
+        ru: Скачивает видео и делится через Google Drive.
+        th: ดาวน์โหลดวิดีโอและแชร์ผ่าน Google Drive
+        id: Unduh video dan bagikan via Google Drive.
+      options:
+        query:
+          description:
+            en: URL or search query of the video.
+            ja: ダウンロードしたい動画のURLまたは検索キーワード
+            ko: 다운로드할 동영상 URL 또는 검색어
+            vi: URL hoặc từ khóa tìm kiếm của video.
+            zh-CN: 视频的 URL 或搜索关键词。
+            zh-TW: 影片的 URL 或搜尋關鍵字。
+            es: URL o consulta de búsqueda del vídeo.
+            fr: URL ou requête de recherche de la vidéo.
+            de: URL oder Suchbegriff des Videos.
+            pt-BR: URL ou termo de busca do vídeo.
+            ru: URL или поисковый запрос видео.
+            th: URL หรือคำค้นหาของวิดีโอ
+            id: URL atau kata kunci pencarian video.
+    match_time:
+      description:
+        en: Start time matching; find the best overlap from preferences.
+        ja: 時間調整を開始し、ベストマッチを自動算出します。
+        ko: 시간 조정을 시작하고 최적 겹침을 자동 계산합니다.
+        vi: Bắt đầu khớp giờ; tìm khoảng trùng tốt nhất từ sở thích.
+        zh-CN: 开始时间匹配，从偏好中找出最佳重叠。
+        zh-TW: 開始時間媒合，從偏好找出最佳重疊。
+        es: Inicia el ajuste de horarios y halla el mejor solape.
+        fr: Lance l'appariement d'horaires (meilleur chevauchement).
+        de: Startet Zeitmatching und findet die beste Überschneidung.
+        pt-BR: Inicia o ajuste de horários e acha a melhor sobreposição.
+        ru: Запускает подбор времени по предпочтениям.
+        th: เริ่มจับคู่เวลาและหาช่วงที่ทับซ้อนดีที่สุด
+        id: Mulai pencocokan waktu; cari overlap terbaik.
+      options:
+        title:
+          description:
+            en: Session title (e.g. scrim, rank grind).
+            ja: '募集タイトル名（例: スクリム練習、ランク周回）'
+            ko: '모집 제목(예: 스크림, 랭크)'
+            vi: 'Tiêu đề phiên (vd: scrim, rank grind).'
+            zh-CN: 会话标题（例如 scrim、排位）。
+            zh-TW: 場次標題（例如 scrim、排位）。
+            es: Título de la sesión (p. ej. scrim, ranked).
+            fr: Titre de session (ex. scrim, ranked).
+            de: Sitzungstitel (z. B. Scrim, Ranked).
+            pt-BR: 'Título da sessão (ex.: scrim, ranked).'
+            ru: Название сессии (напр. scrim, ranked).
+            th: ชื่อเซสชัน (เช่น scrim, rank grind)
+            id: Judul sesi (mis. scrim, rank grind).
+    shutdown:
+      description:
+        en: Shut down both bots after notifying users (owner only).
+        ja: 通知後に両Botを停止（オーナー専用）
+        ko: 알림 후 두 봇을 종료합니다(오너 전용).
+        vi: Tắt cả hai bot sau khi thông báo (chỉ owner).
+        zh-CN: 通知用户后关闭两个机器人（仅所有者）。
+        zh-TW: 通知使用者後關閉兩個機器人（僅擁有者）。
+        es: Apaga ambos bots tras avisar (solo owner).
+        fr: Arrête les deux bots après notification (owner).
+        de: Fährt beide Bots nach Benachrichtigung herunter (Owner).
+        pt-BR: Desliga ambos os bots após avisar (somente owner).
+        ru: Выключает оба бота после уведомления (только владелец).
+        th: ปิดบอททั้งคู่หลังแจ้งเตือน (เจ้าของเท่านั้น)
+        id: Matikan kedua bot setelah memberi tahu (hanya owner).
+    reload_plana:
+      description:
+        en: Reload PLANA cogs (admin only).
+        ja: PLANAのCogをリロードします（管理者専用）
+        ko: PLANA Cog를 다시 로드합니다(관리자 전용).
+        vi: Tải lại cog PLANA (chỉ admin).
+        zh-CN: 重新加载 PLANA 的 Cog（仅管理员）。
+        zh-TW: 重新載入 PLANA 的 Cog（僅管理員）。
+        es: Recarga los cogs de PLANA (solo admin).
+        fr: Recharge les cogs PLANA (admin uniquement).
+        de: Lädt PLANA-Cogs neu (nur Admin).
+        pt-BR: Recarrega os cogs do PLANA (somente admin).
+        ru: Перезагружает коги PLANA (только админ).
+        th: รีโหลด Cog ของ PLANA (ผู้ดูแลเท่านั้น)
+        id: Muat ulang cog PLANA (hanya admin).
+    list_plana_cogs:
+      description:
+        en: List loaded PLANA cogs.
+        ja: PLANAのロード済みCog一覧を表示します
+        ko: 로드된 PLANA Cog 목록을 표시합니다.
+        vi: Liệt kê các cog PLANA đã tải.
+        zh-CN: 列出已加载的 PLANA Cog。
+        zh-TW: 列出已載入的 PLANA Cog。
+        es: Lista los cogs de PLANA cargados.
+        fr: Liste les cogs PLANA chargés.
+        de: Listet geladene PLANA-Cogs.
+        pt-BR: Lista os cogs do PLANA carregados.
+        ru: Список загруженных когов PLANA.
+        th: แสดงรายการ Cog ของ PLANA ที่โหลดแล้ว
+        id: Daftar cog PLANA yang dimuat.

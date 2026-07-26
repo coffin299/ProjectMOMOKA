@@ -27,6 +27,8 @@ CATEGORIES: List[str] = [
     "debate",
     "link_fix",
     "count",
+    # スラッシュコマンド description の多言語カタログ
+    "commands_i18n",
 ]
 
 # プレースホルダ判定用

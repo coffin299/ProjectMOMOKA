@@ -19,6 +19,7 @@ class WaitingLayoutView(discord.ui.LayoutView):
         bot: Any = None,
         tip_data: Optional[Dict[str, Any]] = None,
         model_name: Optional[str] = None,
+        lang: str = "en",
         timeout: Optional[float] = 300.0,
     ) -> None:
         # 待機は短命なので適当なタイムアウト
@@ -31,6 +32,8 @@ class WaitingLayoutView(discord.ui.LayoutView):
         self.tip_data = tip_data
         # 現在試行中のモデル表示名
         self.model_name = model_name
+        # UI 言語（再描画時に維持する）
+        self.lang = "ja" if lang == "ja" else "en"
         # UI を組み立てる
         self._rebuild()
 

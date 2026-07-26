@@ -3,11 +3,12 @@ import json
 import logging
 import os
 import random
-import time
 from collections import defaultdict, deque
 from typing import List, Dict, Any, Optional
 
 import discord
+
+from MOMOKA.utilities.locale import pick_str
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -96,21 +97,31 @@ class ResponseTimeTracker:
         # ローリング平均を算出
         return sum(times) / len(times)
 
-    def format_estimate(self, model_name: str) -> str:
+    def format_estimate(self, model_name: str, *, lang: str = "en") -> str:
         """予想時間を人間向け文字列にフォーマットする"""
+        # 予想秒数を取る
         estimate = self.get_estimate(model_name)
+        # データ不足
         if estimate is None:
-            # データ不足時は「計測中」と表示
-            return "⏱️ 予想応答時間: *計測中...* / Estimated time: *Measuring...*"
+            return pick_str(
+                lang,
+                ja="⏱️ 予想応答時間: *計測中...*",
+                en="⏱️ Estimated time: *Measuring...*",
+            )
+        # 60秒未満は秒表示
         if estimate < 60:
-            # 60秒未満は秒表示
-            return f"⏱️ 予想応答時間: ~**{estimate:.0f}秒** / Estimated: ~**{estimate:.0f}s**"
+            return pick_str(
+                lang,
+                ja=f"⏱️ 予想応答時間: ~**{estimate:.0f}秒**",
+                en=f"⏱️ Estimated: ~**{estimate:.0f}s**",
+            )
         # 60秒以上は分+秒表示
         minutes = int(estimate // 60)
         seconds = int(estimate % 60)
-        return (
-            f"⏱️ 予想応答時間: ~**{minutes}分{seconds}秒** "
-            f"/ Estimated: ~**{minutes}m{seconds}s**"
+        return pick_str(
+            lang,
+            ja=f"⏱️ 予想応答時間: ~**{minutes}分{seconds}秒**",
+            en=f"⏱️ Estimated: ~**{minutes}m{seconds}s**",
         )
 
 
@@ -123,63 +134,146 @@ class TipsManager:
         self.response_tracker = ResponseTimeTracker()
 
     def _create_tips_list(self) -> List[Dict[str, Any]]:
-        """tipsのリストを作成する"""
+        """tipsのリストを作成する（日英分離）。"""
         return [
             {
-                "title": "💡 AI Tips / AIのヒント",
-                "description": "**画像を送信できます！**\n画像URLを貼り付けるか、画像ファイルを添付してAIに説明を求めることができます。\n\n**You can send images!**\nPaste image URLs or attach image files to ask the AI for descriptions.",
-                "color": discord.Color.blue()
+                "title_ja": "💡 AIのヒント",
+                "title_en": "💡 AI Tips",
+                "description_ja": (
+                    "**画像を送信できます！**\n"
+                    "画像URLを貼り付けるか、画像ファイルを添付してAIに説明を求めることができます。"
+                ),
+                "description_en": (
+                    "**You can send images!**\n"
+                    "Paste image URLs or attach image files to ask the AI for descriptions."
+                ),
+                "color": discord.Color.blue(),
             },
             {
-                "title": "💡 AI Tips / AIのヒント",
-                "description": "**会話を続けるには返信機能を！**\nBotのメッセージに返信することで、メンションなしで会話を続けられます。\n\n**Use reply to continue conversations!**\nReply to bot messages to continue chatting without mentioning.",
-                "color": discord.Color.green()
+                "title_ja": "💡 AIのヒント",
+                "title_en": "💡 AI Tips",
+                "description_ja": (
+                    "**会話を続けるには返信機能を！**\n"
+                    "Botのメッセージに返信することで、メンションなしで会話を続けられます。"
+                ),
+                "description_en": (
+                    "**Use reply to continue conversations!**\n"
+                    "Reply to bot messages to continue chatting without mentioning."
+                ),
+                "color": discord.Color.green(),
             },
             {
-                "title": "💡 AI Tips / AIのヒント",
-                "description": "**モデルを切り替えられます！**\n`/switch-models`コマンドでこのチャンネルのAIモデルを変更できます。\n\n**You can switch models!**\nUse `/switch-models` command to change the AI model for this channel.",
-                "color": discord.Color.orange()
+                "title_ja": "💡 AIのヒント",
+                "title_en": "💡 AI Tips",
+                "description_ja": (
+                    "**モデルを切り替えられます！**\n"
+                    "`/switch-models`コマンドでこのチャンネルのAIモデルを変更できます。"
+                ),
+                "description_en": (
+                    "**You can switch models!**\n"
+                    "Use `/switch-models` command to change the AI model for this channel."
+                ),
+                "color": discord.Color.orange(),
             },
             {
-                "title": "💡 AI Tips / AIのヒント",
-                "description": "**画像生成も可能！**\nAIに画像生成を依頼すると、StableDiffusionが画像生成AIが画像を作成します。\n\n**Image generation available!**\nAsk the AI to generate images and it will use StableDiffusion image generation AI.",
-                "color": discord.Color.gold()
+                "title_ja": "💡 AIのヒント",
+                "title_en": "💡 AI Tips",
+                "description_ja": (
+                    "**画像生成も可能！**\n"
+                    "AIに画像生成を依頼すると、StableDiffusionが画像を作成します。"
+                ),
+                "description_en": (
+                    "**Image generation available!**\n"
+                    "Ask the AI to generate images and it will use StableDiffusion."
+                ),
+                "color": discord.Color.gold(),
             },
             {
-                "title": "💡 AI Tips / AIのヒント",
-                "description": "**検索機能を利用！**\nAIに最新情報を調べてもらうことができます。リアルタイムの情報取得が可能です。\n\n**Use search functionality!**\nAsk the AI to search for the latest information. Real-time information retrieval is available.",
-                "color": discord.Color.red()
-            }
+                "title_ja": "💡 AIのヒント",
+                "title_en": "💡 AI Tips",
+                "description_ja": (
+                    "**検索機能を利用！**\n"
+                    "AIに最新情報を調べてもらうことができます。リアルタイムの情報取得が可能です。"
+                ),
+                "description_en": (
+                    "**Use search functionality!**\n"
+                    "Ask the AI to search for the latest information. Real-time info is available."
+                ),
+                "color": discord.Color.red(),
+            },
         ]
 
-    def get_random_tip(self) -> discord.Embed:
+    def _tip_title(self, tip_data: Dict[str, Any], lang: str) -> str:
+        """tip のタイトルを言語別に返す。"""
+        # 新形式（分離キー）を優先する
+        if "title_ja" in tip_data or "title_en" in tip_data:
+            return pick_str(
+                lang,
+                ja=str(tip_data.get("title_ja") or tip_data.get("title_en") or ""),
+                en=str(tip_data.get("title_en") or tip_data.get("title_ja") or ""),
+            )
+        # 旧形式フォールバック
+        return str(tip_data.get("title") or "")
+
+    def _tip_description(self, tip_data: Dict[str, Any], lang: str) -> str:
+        """tip の本文を言語別に返す。"""
+        # 新形式（分離キー）を優先する
+        if "description_ja" in tip_data or "description_en" in tip_data:
+            return pick_str(
+                lang,
+                ja=str(
+                    tip_data.get("description_ja")
+                    or tip_data.get("description_en")
+                    or ""
+                ),
+                en=str(
+                    tip_data.get("description_en")
+                    or tip_data.get("description_ja")
+                    or ""
+                ),
+            )
+        # 旧形式フォールバック
+        return str(tip_data.get("description") or "")
+
+    def get_random_tip(self, *, lang: str = "en") -> discord.Embed:
         """ランダムなtipのembedを取得する"""
         tip_data = random.choice(self.tips)
         embed = discord.Embed(
-            title=tip_data["title"],
-            description=tip_data["description"],
-            color=tip_data["color"]
+            title=self._tip_title(tip_data, lang),
+            description=self._tip_description(tip_data, lang),
+            color=tip_data["color"],
         )
-        embed.set_footer(text="we are experiencing technical difficulties with our main server. \n full documentation : https://coffin299.net")
+        embed.set_footer(
+            text=pick_str(
+                lang,
+                ja="メインサーバーで技術的な問題が発生しています。\nドキュメント: https://coffin299.net",
+                en="we are experiencing technical difficulties with our main server.\nfull documentation : https://coffin299.net",
+            )
+        )
         return embed
 
     # 応答時間がこの秒数以上ならモデル切替の提案を表示する閾値
     SLOW_MODEL_THRESHOLD = 30
 
-    def get_waiting_embed(self, model_name: str) -> discord.Embed:
+    def get_waiting_embed(self, model_name: str, *, lang: str = "en") -> discord.Embed:
         """待機中の embed（後方互換。新規は get_waiting_layout を使う）。"""
-        tip_embed = self.get_random_tip()
+        tip_embed = self.get_random_tip(lang=lang)
         # タイトル: モデル名の応答待ち表示
-        tip_embed.title = f"⏳ Waiting for '{model_name}' response..."
+        tip_embed.title = pick_str(
+            lang,
+            ja=f"### ⏳ '{model_name}' の応答を待っています...",
+            en=f"### ⏳ Waiting for '{model_name}' response...",
+        )
         # 予想応答時間をdescriptionの先頭に挿入
-        time_estimate = self.response_tracker.format_estimate(model_name)
+        time_estimate = self.response_tracker.format_estimate(model_name, lang=lang)
         # 予想時間が閾値を超える場合、モデル切替の提案を追加
         estimate = self.response_tracker.get_estimate(model_name)
         switch_hint = ""
         if estimate is not None and estimate >= self.SLOW_MODEL_THRESHOLD:
-            switch_hint = (
-                "\n💡 応答が遅い場合は `/switch-models` で他のモデルへの切り替えもご検討ください。"
-                "\n💡 If response is slow, consider switching to another model with `/switch-models`."
+            switch_hint = pick_str(
+                lang,
+                ja="\n💡 応答が遅い場合は `/switch-models` で他のモデルへの切り替えもご検討ください。",
+                en="\n💡 If response is slow, consider switching models with `/switch-models`.",
             )
         original_desc = tip_embed.description or ""
         # 「予想時間 → 切替提案 → 空行 → tips本文」の構成
@@ -192,6 +286,7 @@ class TipsManager:
         *,
         tip_data: Optional[Dict[str, Any]] = None,
         fallback_from: Optional[str] = None,
+        lang: str = "en",
     ) -> tuple[str, discord.Color, Dict[str, Any]]:
         """待機 LayoutView 用の本文・アクセント色・使用 tip を返す。
 
@@ -202,30 +297,58 @@ class TipsManager:
         if tip_data is None:
             tip_data = random.choice(self.tips)
         # 予想時間文字列（試行中モデル基準）
-        time_estimate = self.response_tracker.format_estimate(model_name)
+        time_estimate = self.response_tracker.format_estimate(model_name, lang=lang)
         # 遅いモデルなら切替提案
         estimate = self.response_tracker.get_estimate(model_name)
         switch_hint = ""
         if estimate is not None and estimate >= self.SLOW_MODEL_THRESHOLD:
-            switch_hint = (
-                "\n💡 応答が遅い場合は `/switch-models` で他のモデルへの切り替えもご検討ください。"
-                "\n💡 If response is slow, consider switching to another model with `/switch-models`."
+            switch_hint = pick_str(
+                lang,
+                ja="\n💡 応答が遅い場合は `/switch-models` で他のモデルへの切り替えもご検討ください。",
+                en="\n💡 If response is slow, consider switching models with `/switch-models`.",
             )
         # 別モデルへのフォールバック時のみ案内を付ける（同一モデルのキー回転では付けない）
         fallback_notice = ""
         if fallback_from:
-            fallback_notice = (
-                f"\n⚠️ `{fallback_from}` のクォータ/API制限のため、`{model_name}` に切り替え中..."
-                f"\n⚠️ Switching to `{model_name}` because `{fallback_from}` hit quota/API limits..."
+            fallback_notice = pick_str(
+                lang,
+                ja=(
+                    f"\n⚠️ `{fallback_from}` のクォータ/API制限のため、"
+                    f"`{model_name}` に切り替え中..."
+                ),
+                en=(
+                    f"\n⚠️ Switching to `{model_name}` because "
+                    f"`{fallback_from}` hit quota/API limits..."
+                ),
             )
-        # V2 TextDisplay 用本文（タイトル相当を先頭に）
+        # tip 文言を言語別に取る
+        tip_title = self._tip_title(tip_data, lang)
+        tip_desc = self._tip_description(tip_data, lang)
+        # フッター文言
+        footer = pick_str(
+            lang,
+            ja=(
+                "-# メインサーバーで技術的な問題が発生しています。\n"
+                "-# ドキュメント: https://coffin299.net"
+            ),
+            en=(
+                "-# we are experiencing technical difficulties with our main server.\n"
+                "-# full documentation : https://coffin299.net"
+            ),
+        )
+        # 見出し
+        heading = pick_str(
+            lang,
+            ja=f"### ⏳ '{model_name}' の応答を待っています...",
+            en=f"### ⏳ Waiting for '{model_name}' response...",
+        )
+        # V2 TextDisplay 用本文
         body = (
-            f"### ⏳ Waiting for '{model_name}' response...\n"
+            f"{heading}\n"
             f"{time_estimate}{switch_hint}{fallback_notice}\n\n"
-            f"**{tip_data['title']}**\n"
-            f"{tip_data['description']}\n\n"
-            f"-# we are experiencing technical difficulties with our main server.\n"
-            f"-# full documentation : https://coffin299.net"
+            f"**{tip_title}**\n"
+            f"{tip_desc}\n\n"
+            f"{footer}"
         )
         # tip の色をアクセントに使う
         accent = tip_data.get("color") or discord.Color.orange()

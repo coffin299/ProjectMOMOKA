@@ -28,6 +28,7 @@ from MOMOKA.generator.image import (
     ImageModelRegistry,
     LocalTxt2ImgPipeline,
 )
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 logger = logging.getLogger(__name__)
 
@@ -833,10 +834,21 @@ class ImageModelSelect(discord.ui.Select):
         await interaction.response.defer()
 
 
-class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation / 画像生成設定"):
-    def __init__(self, parent_view: "ImageGenerationSetupView"):
-        super().__init__(timeout=None)
+class ImageGenerationModal(discord.ui.Modal):
+    def __init__(self, parent_view: "ImageGenerationSetupView", *, lang: str = "en"):
+        # UI 言語を正規化する
+        ui_lang = "ja" if lang == "ja" else "en"
+        # タイトルを単一言語にする
+        super().__init__(
+            title=pick_str(
+                ui_lang,
+                ja="画像生成設定",
+                en="Configure Image Generation",
+            ),
+            timeout=None,
+        )
         self.parent_view = parent_view
+        self.lang = ui_lang
         generator = parent_view.image_generator
         base_args = parent_view.base_arguments
         default_steps = base_args.get("steps", generator.default_params.get("steps", 20))
@@ -846,35 +858,35 @@ class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation /
         default_sampler = base_args.get("sampler_name", generator.default_params.get("sampler_name", ""))
 
         self.steps_input = discord.ui.TextInput(
-            label="Steps",
+            label=pick_str(ui_lang, ja="ステップ数", en="Steps"),
             placeholder="20",
             default=str(default_steps),
             required=False,
             max_length=4,
         )
         self.cfg_input = discord.ui.TextInput(
-            label="CFG Scale",
+            label=pick_str(ui_lang, ja="CFG スケール", en="CFG Scale"),
             placeholder="7.0",
             default=str(default_cfg),
             required=False,
             max_length=5,
         )
         self.size_input = discord.ui.TextInput(
-            label="Size (WIDTHxHEIGHT)",
+            label=pick_str(ui_lang, ja="サイズ (横x縦)", en="Size (WIDTHxHEIGHT)"),
             placeholder=generator.default_size,
             default=str(default_size),
             required=False,
             max_length=15,
         )
         self.seed_input = discord.ui.TextInput(
-            label="Seed (-1 for random)",
+            label=pick_str(ui_lang, ja="シード (-1 でランダム)", en="Seed (-1 for random)"),
             placeholder="-1",
             default=str(default_seed),
             required=False,
             max_length=12,
         )
         self.sampler_input = discord.ui.TextInput(
-            label="Sampler (optional)",
+            label=pick_str(ui_lang, ja="サンプラー（任意）", en="Sampler (optional)"),
             placeholder=default_sampler or "e.g. DPM++ 2M Karras",
             default=default_sampler or "",
             required=False,
@@ -889,8 +901,13 @@ class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation /
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         if not self.parent_view._is_authorized(interaction):
+            msg_lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "❌ Only the original requester can configure image generation. / 元のリクエストしたユーザーのみ設定できます。",
+                pick_str(
+                    msg_lang,
+                    ja="❌ 元のリクエストしたユーザーのみ設定できます。",
+                    en="❌ Only the original requester can configure image generation.",
+                ),
                 ephemeral=False,
             )
             return
@@ -904,7 +921,13 @@ class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation /
             try:
                 return int(value.strip())
             except ValueError:
-                errors.append(f"{field}: invalid integer")
+                errors.append(
+                    pick_str(
+                        self.lang,
+                        ja=f"{field}: 整数が不正です",
+                        en=f"{field}: invalid integer",
+                    )
+                )
                 return None
 
         def parse_float(value: str, field: str) -> Optional[float]:
@@ -913,7 +936,13 @@ class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation /
             try:
                 return float(value.strip())
             except ValueError:
-                errors.append(f"{field}: invalid number")
+                errors.append(
+                    pick_str(
+                        self.lang,
+                        ja=f"{field}: 数値が不正です",
+                        en=f"{field}: invalid number",
+                    )
+                )
                 return None
 
         if (steps := parse_int(self.steps_input.value, "Steps")) is not None:
@@ -931,7 +960,11 @@ class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation /
 
         if errors:
             await interaction.response.send_message(
-                "❌ Invalid input:\n" + "\n".join(errors),
+                pick_str(
+                    self.lang,
+                    ja="❌ 入力が不正です:\n" + "\n".join(errors),
+                    en="❌ Invalid input:\n" + "\n".join(errors),
+                ),
                 ephemeral=False,
             )
             return
@@ -945,8 +978,13 @@ class ImageGenerationModal(discord.ui.Modal, title="Configure Image Generation /
 
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         logger.error("Error in ImageGenerationModal: %s", error, exc_info=True)
+        msg_lang = resolve_interaction_lang(interaction)
         await interaction.response.send_message(
-            "❌ An unexpected error occurred while processing the modal. / モーダル処理中に予期しないエラーが発生しました。",
+            pick_str(
+                msg_lang,
+                ja="❌ モーダル処理中に予期しないエラーが発生しました。",
+                en="❌ An unexpected error occurred while processing the modal.",
+            ),
             ephemeral=True,
         )
 
@@ -1016,4 +1054,9 @@ class ImageGenerationSetupView(discord.ui.View):
                 ephemeral=False,
             )
             return
-        await interaction.response.send_modal(ImageGenerationModal(self))
+        await interaction.response.send_modal(
+            ImageGenerationModal(
+                self,
+                lang=resolve_interaction_lang(interaction),
+            )
+        )

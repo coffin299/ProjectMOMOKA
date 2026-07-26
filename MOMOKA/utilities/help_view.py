@@ -13,6 +13,15 @@ from MOMOKA.utilities.donation import (
     help_donation_body,
     make_help_link_button,
 )
+from MOMOKA.utilities.locale import lang_from_discord_locale, pick_str
+
+# 後方互換: 他モジュールが help_view から import しても動くように再公開する
+__all__ = (
+    "HelpLayoutView",
+    "InviteLayoutView",
+    "lang_from_discord_locale",
+    "resolve_invite_urls",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,22 +79,6 @@ def _is_companion(bot: commands.Bot) -> bool:
     """companion（ARONA）ロールかどうか。"""
     # bot_role 属性を読む（未設定時は primary）
     return getattr(bot, "bot_role", "primary") == "companion"
-
-
-def lang_from_discord_locale(locale: Any) -> str:
-    """Discord locale から help 用言語コード（ja / en）を返す。"""
-    # 未指定は英語
-    if locale is None:
-        return "en"
-    # Locale enum 等は value を優先する
-    raw = getattr(locale, "value", None)
-    # value が無ければ文字列化
-    key = str(raw if raw is not None else locale).strip().lower()
-    # ja* なら日本語
-    if key.startswith("ja"):
-        return "ja"
-    # それ以外は英語
-    return "en"
 
 
 class HelpLayoutView(discord.ui.LayoutView):
@@ -674,11 +667,13 @@ class HelpLayoutView(discord.ui.LayoutView):
 class InviteLayoutView(discord.ui.LayoutView):
     """ /invite 用 LayoutView（PLANA / ARONA リンク）。"""
 
-    def __init__(self, bot: commands.Bot) -> None:
+    def __init__(self, bot: commands.Bot, *, lang: str = "en") -> None:
         # 長時間表示
         super().__init__(timeout=None)
         # Bot 参照
         self.bot = bot
+        # UI 言語を正規化する
+        self.lang = "ja" if lang == "ja" else "en"
         # 招待 URL 解決
         self.plana_invite, self.arona_invite = resolve_invite_urls(bot)
         # UI 構築
@@ -691,23 +686,37 @@ class InviteLayoutView(discord.ui.LayoutView):
         # 有効判定
         plana_ok = _is_valid_invite_url(self.plana_invite)
         arona_ok = _is_valid_invite_url(self.arona_invite)
-        # 本文（日英）
+        # 本文（単一言語）
         if plana_ok or arona_ok:
-            body = (
-                "### 💌 Invite PLANA / ARONA\n"
-                "下のボタンから Bot をサーバーに招待できます。\n"
-                "Use the buttons below to invite the bots to your server.\n\n"
-                "• **PLANA** — フル機能（LLM / 音楽 / TTS / Link Fix / 通知 など）\n"
-                "• **ARONA** — コンパニオン（LLM / 音楽 / ユーティリティ）"
+            body = pick_str(
+                self.lang,
+                ja=(
+                    "### 💌 PLANA / ARONA を招待\n"
+                    "下のボタンから Bot をサーバーに招待できます。\n\n"
+                    "• **PLANA** — フル機能（LLM / 音楽 / TTS / Link Fix / 通知 など）\n"
+                    "• **ARONA** — コンパニオン（LLM / 音楽 / ユーティリティ）"
+                ),
+                en=(
+                    "### 💌 Invite PLANA / ARONA\n"
+                    "Use the buttons below to invite the bots to your server.\n\n"
+                    "• **PLANA** — Full features (LLM / music / TTS / Link Fix / notifications, etc.)\n"
+                    "• **ARONA** — Companion (LLM / music / utilities)"
+                ),
             )
         else:
-            body = (
-                "### 💌 Invite\n"
-                "招待 URL が `bots.plana.invite_url` / `bots.arona.invite_url` に"
-                "正しく設定されていません。管理者にご連絡ください。\n\n"
-                "Invite URLs are not set correctly in "
-                "`bots.plana.invite_url` / `bots.arona.invite_url`. "
-                "Please contact the bot administrator."
+            body = pick_str(
+                self.lang,
+                ja=(
+                    "### 💌 招待\n"
+                    "招待 URL が `bots.plana.invite_url` / `bots.arona.invite_url` に"
+                    "正しく設定されていません。管理者にご連絡ください。"
+                ),
+                en=(
+                    "### 💌 Invite\n"
+                    "Invite URLs are not set correctly in "
+                    "`bots.plana.invite_url` / `bots.arona.invite_url`. "
+                    "Please contact the bot administrator."
+                ),
             )
         # コンテナ
         container = discord.ui.Container(accent_color=discord.Color.og_blurple())
@@ -720,7 +729,11 @@ class InviteLayoutView(discord.ui.LayoutView):
             if plana_ok:
                 row.add_item(
                     discord.ui.Button(
-                        label="Invite PLANA",
+                        label=pick_str(
+                            self.lang,
+                            ja="PLANA を招待",
+                            en="Invite PLANA",
+                        ),
                         style=discord.ButtonStyle.link,
                         url=self.plana_invite,
                         emoji="💌",
@@ -730,7 +743,11 @@ class InviteLayoutView(discord.ui.LayoutView):
             if arona_ok:
                 row.add_item(
                     discord.ui.Button(
-                        label="Invite ARONA",
+                        label=pick_str(
+                            self.lang,
+                            ja="ARONA を招待",
+                            en="Invite ARONA",
+                        ),
                         style=discord.ButtonStyle.link,
                         url=self.arona_invite,
                         emoji="🎵",

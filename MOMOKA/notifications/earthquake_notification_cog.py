@@ -1242,8 +1242,8 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         if sent_count == 0 and (failed_count > 0 or skipped_count > 0):
             logger.warning(f"⚠️ {info_type}の通知が1件も送信されませんでした")
 
-    @app_commands.command(name="earthquake_channel", description="地震・津波情報の通知チャンネルを設定します")
-    @app_commands.describe(channel="通知を送信するチャンネル", info_type="通知したい情報の種類")
+    @app_commands.command(name="earthquake_channel", description="Set the notification channel for earthquake/tsunami alerts.")
+    @app_commands.describe(channel="Channel to send notifications to.", info_type="Type of alert to notify.")
     async def set_channel(self, interaction: discord.Interaction, channel: discord.TextChannel,
                           info_type: Literal["緊急地震速報", "地震情報", "津波予報", "すべて"]):
         try:
@@ -1269,7 +1269,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             await interaction.response.send_message(self.exception_handler.get_user_friendly_message(e),
                                                     ephemeral=False)
 
-    @app_commands.command(name="earthquake_status", description="地震・津波情報システムの状態を確認します")
+    @app_commands.command(name="earthquake_status", description="Check earthquake/tsunami system status.")
     async def status_system(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False)
@@ -1338,11 +1338,11 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             else:
                 await interaction.followup.send(msg)
 
-    @app_commands.command(name="earthquake_test", description="地震・津波情報のテスト通知を送信します")
+    @app_commands.command(name="earthquake_test", description="Send a test earthquake/tsunami notification.")
     @app_commands.describe(
-        info_type="テストしたい情報の種類",
-        max_scale="テストしたい最大震度",
-        tsunami_level="テストしたい津波レベル"
+        info_type="Alert type to test.",
+        max_scale="Maximum intensity for the test.",
+        tsunami_level="Tsunami warning level for the test."
     )
     async def test_notification(
             self,
@@ -1459,8 +1459,8 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
         return embed
 
-    @app_commands.command(name="earthquake_remove", description="地震・津波情報の通知設定を削除します")
-    @app_commands.describe(info_type="削除したい通知設定")
+    @app_commands.command(name="earthquake_remove", description="Remove earthquake/tsunami notification settings.")
+    @app_commands.describe(info_type="Notification setting to remove.")
     async def remove_channel(
             self,
             interaction: discord.Interaction,
@@ -1527,7 +1527,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 ephemeral=False
             )
 
-    @app_commands.command(name="earthquake_help", description="このシステムのヘルプを表示します")
+    @app_commands.command(name="earthquake_help", description="Show help for this system.")
     async def help_system(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="📚 地震・津波情報システム ヘルプ",
@@ -1553,11 +1553,11 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             inline=False
         )
 
-    @app_commands.command(name="earthquake_map", description="最近の地震を日本地図上に表示します")
+    @app_commands.command(name="earthquake_map", description="Display recent earthquakes on a map of Japan.")
     @app_commands.describe(
-        limit="表示する地震の数（1-50）",
-        min_scale="表示する最小震度",
-        hours="過去何時間以内の地震を表示（1-168時間=7日）"
+        limit="Number of earthquakes to show (1-50).",
+        min_scale="Minimum intensity to display.",
+        hours="Show earthquakes within the past N hours (1-168 = 7 days)."
     )
     async def show_earthquake_map(
             self,
@@ -1660,10 +1660,10 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._generate_map_sync, quakes, min_scale, hours)
 
-    @app_commands.command(name="earthquake_history", description="最近の地震情報を表示します")
+    @app_commands.command(name="earthquake_history", description="Display recent earthquake information.")
     @app_commands.describe(
-        limit="表示する地震の数（1-20）",
-        min_scale="表示する最小震度"
+        limit="Number of earthquakes to show (1-20).",
+        min_scale="Minimum intensity to display."
     )
     async def show_history(
             self,
@@ -1788,7 +1788,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             self.exception_handler.log_generic_error(e, "履歴表示コマンド")
             await interaction.followup.send(self.exception_handler.get_user_friendly_message(e))
 
-    @app_commands.command(name="earthquake_debug", description="通知設定の詳細診断")
+    @app_commands.command(name="earthquake_debug", description="Detailed diagnosis of notification settings.")
     async def debug_config(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=False)

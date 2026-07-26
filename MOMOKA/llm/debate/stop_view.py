@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Callable, Optional, Set
 import discord
 
 from MOMOKA.llm.debate.accents import initiator_accent_color
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 if TYPE_CHECKING:
     from MOMOKA.llm.debate.orchestrator import DebateSession
@@ -24,6 +25,7 @@ class DebateStopView(discord.ui.LayoutView):
         admin_ids: Set[int],
         on_stop: Callable,
         timeout: Optional[float] = None,
+        lang: Optional[str] = None,
     ) -> None:
         # LayoutView は長時間表示するため timeout=None
         super().__init__(timeout=timeout)
@@ -33,6 +35,10 @@ class DebateStopView(discord.ui.LayoutView):
         self.admin_ids = admin_ids
         # 中止コールバック
         self.on_stop = on_stop
+        # セッション保存言語があればそれを優先する
+        session_lang = getattr(session, "lang", None)
+        # 明示 lang → session.lang → en
+        self.lang = "ja" if (lang or session_lang or "en") == "ja" else "en"
         # UI を組み立てる
         self._rebuild()
 
@@ -47,26 +53,44 @@ class DebateStopView(discord.ui.LayoutView):
         max_r = self.session.max_rounds
         # 状態に応じた本文
         if status == "cancelled":
-            body = (
-                f"**討論を中断しました / Debate cancelled**\n"
-                f"テーマ / Topic: {topic}"
+            body = pick_str(
+                self.lang,
+                ja=f"**討論を中断しました**\nテーマ: {topic}",
+                en=f"**Debate cancelled**\nTopic: {topic}",
             )
             accent = discord.Color.dark_grey()
             show_button = False
         elif status == "finished":
-            body = (
-                f"**討論終了 / Debate finished**\n"
-                f"テーマ / Topic: {topic}\n"
-                f"Rounds: {max_r}/{max_r}"
+            body = pick_str(
+                self.lang,
+                ja=(
+                    f"**討論終了**\n"
+                    f"テーマ: {topic}\n"
+                    f"ラウンド: {max_r}/{max_r}"
+                ),
+                en=(
+                    f"**Debate finished**\n"
+                    f"Topic: {topic}\n"
+                    f"Rounds: {max_r}/{max_r}"
+                ),
             )
             accent = discord.Color.green()
             show_button = False
         else:
-            body = (
-                f"**討論中 / Debate in progress**\n"
-                f"テーマ / Topic: {topic}\n"
-                f"Round: {round_i}/{max_r}\n"
-                f"中止する場合は下のボタンを押してください。 / Press the button below to stop."
+            body = pick_str(
+                self.lang,
+                ja=(
+                    f"**討論中**\n"
+                    f"テーマ: {topic}\n"
+                    f"ラウンド: {round_i}/{max_r}\n"
+                    f"中止する場合は下のボタンを押してください。"
+                ),
+                en=(
+                    f"**Debate in progress**\n"
+                    f"Topic: {topic}\n"
+                    f"Round: {round_i}/{max_r}\n"
+                    f"Press the button below to stop."
+                ),
             )
             # 進行中は起動 Bot 色（PLANA 紫 / ARONA 水色）
             accent = initiator_accent_color(self.session.initiator_bot_id)
@@ -81,7 +105,11 @@ class DebateStopView(discord.ui.LayoutView):
             row = discord.ui.ActionRow()
             # 中止ボタン
             btn = discord.ui.Button(
-                label="討論を中止 / Stop debate",
+                label=pick_str(
+                    self.lang,
+                    ja="討論を中止",
+                    en="Stop debate",
+                ),
                 style=discord.ButtonStyle.danger,
                 custom_id=f"debate_stop:{self.session.session_id}",
             )
@@ -100,18 +128,27 @@ class DebateStopView(discord.ui.LayoutView):
         uid = interaction.user.id
         # 許可判定
         allowed = uid == self.session.starter_user_id or uid in self.admin_ids
+        # 拒否メッセージは押した人の locale を優先する
+        msg_lang = resolve_interaction_lang(interaction)
         # 拒否なら ephemeral
         if not allowed:
             await interaction.response.send_message(
-                "討論の開始者または管理者のみ中止できます。\n"
-                "Only the starter or an admin can stop this debate.",
+                pick_str(
+                    msg_lang,
+                    ja="討論の開始者または管理者のみ中止できます。",
+                    en="Only the starter or an admin can stop this debate.",
+                ),
                 ephemeral=True,
             )
             return
         # 既に終了済みなら何もしない
         if self.session.status in ("cancelled", "finished"):
             await interaction.response.send_message(
-                "この討論は既に終了しています。",
+                pick_str(
+                    msg_lang,
+                    ja="この討論は既に終了しています。",
+                    en="This debate has already ended.",
+                ),
                 ephemeral=True,
             )
             return

@@ -19,6 +19,7 @@ from MOMOKA.link_fix.presets import (
     resolve_match_domains,
 )
 from MOMOKA.link_fix.settings_store import LinkFixSettingsStore
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 logger = logging.getLogger(__name__)
 
@@ -34,32 +35,50 @@ class _Page(str, Enum):
     SITE_DETAIL = "site_detail"
 
 
-class CustomFixDomainModal(discord.ui.Modal, title="Custom fix domain"):
+class CustomFixDomainModal(discord.ui.Modal):
     """任意の Fix 先ドメイン入力。"""
 
-    domain = discord.ui.TextInput(
-        label="Fix destination domain",
-        placeholder="example.com",
-        required=True,
-        max_length=120,
-    )
-
     def __init__(self, parent: "LinkFixSettingsView") -> None:
-        # Modal を初期化する
-        super().__init__()
+        # 親 View の言語を使う
+        lang = getattr(parent, "lang", "en")
+        # Modal タイトルを言語別に設定する
+        super().__init__(
+            title=pick_str(lang, ja="カスタム Fix ドメイン", en="Custom fix domain")
+        )
         # 親 View を保持する
         self.parent = parent
+        # 言語を保持する
+        self.lang = lang
+        # 入力欄を動的に追加する
+        self.domain = discord.ui.TextInput(
+            label=pick_str(lang, ja="Fix 先ドメイン", en="Fix destination domain"),
+            placeholder="example.com",
+            required=True,
+            max_length=120,
+        )
+        # Modal に載せる
+        self.add_item(self.domain)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         # サイト未選択なら拒否する
         if not self.parent.site_id:
-            await interaction.response.send_message("No site selected.", ephemeral=True)
+            await interaction.response.send_message(
+                pick_str(
+                    self.lang,
+                    ja="サイトが選択されていません。",
+                    en="No site selected.",
+                ),
+                ephemeral=True,
+            )
             return
         # 正規化する
         normalized = normalize_domain(str(self.domain.value))
         # 不正ならエラー
         if not normalized:
-            await interaction.response.send_message("Invalid domain.", ephemeral=True)
+            await interaction.response.send_message(
+                pick_str(self.lang, ja="無効なドメインです。", en="Invalid domain."),
+                ephemeral=True,
+            )
             return
         # 保存する
         ok = self.parent.store.set_fix_domain(
@@ -67,7 +86,14 @@ class CustomFixDomainModal(discord.ui.Modal, title="Custom fix domain"):
         )
         # 失敗時
         if not ok:
-            await interaction.response.send_message("Failed to save domain.", ephemeral=True)
+            await interaction.response.send_message(
+                pick_str(
+                    self.lang,
+                    ja="ドメインの保存に失敗しました。",
+                    en="Failed to save domain.",
+                ),
+                ephemeral=True,
+            )
             return
         # UI を再構築する
         self.parent._rebuild()
@@ -75,29 +101,47 @@ class CustomFixDomainModal(discord.ui.Modal, title="Custom fix domain"):
         await interaction.response.edit_message(view=self.parent)
 
 
-class EditMatchDomainsModal(discord.ui.Modal, title="Edit match domains"):
+class EditMatchDomainsModal(discord.ui.Modal):
     """Fix 元（マッチ）ドメインのカンマ区切り編集。"""
 
-    domains = discord.ui.TextInput(
-        label="Source domains (comma-separated)",
-        style=discord.TextStyle.paragraph,
-        placeholder="x.com, twitter.com",
-        required=True,
-        max_length=500,
-    )
-
     def __init__(self, parent: "LinkFixSettingsView", initial: str) -> None:
-        # Modal を初期化する
-        super().__init__()
+        # 親 View の言語を使う
+        lang = getattr(parent, "lang", "en")
+        # Modal タイトル
+        super().__init__(
+            title=pick_str(lang, ja="マッチ元ドメインを編集", en="Edit match domains")
+        )
         # 親 View
         self.parent = parent
-        # 初期値を入れる
-        self.domains.default = initial
+        # 言語
+        self.lang = lang
+        # 入力欄
+        self.domains = discord.ui.TextInput(
+            label=pick_str(
+                lang,
+                ja="元ドメイン（カンマ区切り）",
+                en="Source domains (comma-separated)",
+            ),
+            style=discord.TextStyle.paragraph,
+            placeholder="x.com, twitter.com",
+            required=True,
+            max_length=500,
+            default=initial,
+        )
+        # Modal に載せる
+        self.add_item(self.domains)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         # サイト未選択
         if not self.parent.site_id:
-            await interaction.response.send_message("No site selected.", ephemeral=True)
+            await interaction.response.send_message(
+                pick_str(
+                    self.lang,
+                    ja="サイトが選択されていません。",
+                    en="No site selected.",
+                ),
+                ephemeral=True,
+            )
             return
         # パースする
         parsed, err = parse_domain_list(str(self.domains.value))
@@ -111,7 +155,14 @@ class EditMatchDomainsModal(discord.ui.Modal, title="Edit match domains"):
         )
         # 失敗
         if not ok:
-            await interaction.response.send_message("Failed to save domains.", ephemeral=True)
+            await interaction.response.send_message(
+                pick_str(
+                    self.lang,
+                    ja="ドメインの保存に失敗しました。",
+                    en="Failed to save domains.",
+                ),
+                ephemeral=True,
+            )
             return
         # UI 更新
         self.parent._rebuild()
@@ -127,6 +178,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         store: LinkFixSettingsStore,
         guild_id: int,
         *,
+        lang: str = "en",
         timeout: Optional[float] = 600,
     ) -> None:
         # タイムアウト付きで初期化する
@@ -137,6 +189,8 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         self.store = store
         # 対象ギルド
         self.guild_id = guild_id
+        # UI 言語
+        self.lang = "ja" if lang == "ja" else "en"
         # bot.config
         self.bot_config: Dict[str, Any] = getattr(bot, "config", None) or {}
         # 現在ページ
@@ -177,14 +231,28 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # 有効サイト数
         on_count, total = self.store.count_enabled_sites(self.guild_id)
         # 状態文言
-        status = "ENABLED" if enabled else "DISABLED"
+        status = pick_str(
+            self.lang,
+            ja="有効" if enabled else "無効",
+            en="ENABLED" if enabled else "DISABLED",
+        )
         # 本文
-        body = (
-            "### Link Fix Settings\n"
-            f"**Feature:** `{status}`\n"
-            f"**Sites enabled:** `{on_count}/{total}`\n\n"
-            "Suppress original social embeds and quote-replace with fixer URLs.\n"
-            "Default: **disabled**. Toggle below or open **Sites**."
+        body = pick_str(
+            self.lang,
+            ja=(
+                "### Link Fix 設定\n"
+                f"**機能:** `{status}`\n"
+                f"**有効サイト:** `{on_count}/{total}`\n\n"
+                "元の SNS embed を抑制し、Fixer URL で引用置換します。\n"
+                "デフォルトは **無効**。下で切替えるか **サイト** を開いてください。"
+            ),
+            en=(
+                "### Link Fix Settings\n"
+                f"**Feature:** `{status}`\n"
+                f"**Sites enabled:** `{on_count}/{total}`\n\n"
+                "Suppress original social embeds and quote-replace with fixer URLs.\n"
+                "Default: **disabled**. Toggle below or open **Sites**."
+            ),
         )
         # TextDisplay
         container.add_item(discord.ui.TextDisplay(body))
@@ -194,7 +262,11 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         master = discord.ui.ActionRow()
         # Enable / Disable トグル
         toggle = discord.ui.Button(
-            label="Disable Feature" if enabled else "Enable Feature",
+            label=pick_str(
+                self.lang,
+                ja="機能を無効化" if enabled else "機能を有効化",
+                en="Disable Feature" if enabled else "Enable Feature",
+            ),
             style=discord.ButtonStyle.danger if enabled else discord.ButtonStyle.success,
             custom_id="lf_toggle_feature",
         )
@@ -202,7 +274,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         master.add_item(toggle)
         # 全サイト一括有効化
         enable_all = discord.ui.Button(
-            label="Enable All Sites",
+            label=pick_str(self.lang, ja="全サイト有効", en="Enable All Sites"),
             style=discord.ButtonStyle.success,
             custom_id="lf_enable_all_sites",
         )
@@ -210,7 +282,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         master.add_item(enable_all)
         # 全サイト一括無効化
         disable_all = discord.ui.Button(
-            label="Disable All Sites",
+            label=pick_str(self.lang, ja="全サイト無効", en="Disable All Sites"),
             style=discord.ButtonStyle.danger,
             custom_id="lf_disable_all_sites",
         )
@@ -222,7 +294,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         nav = discord.ui.ActionRow()
         # Sites へ
         to_sites = discord.ui.Button(
-            label="Sites",
+            label=pick_str(self.lang, ja="サイト", en="Sites"),
             style=discord.ButtonStyle.primary,
             custom_id="lf_goto_sites",
         )
@@ -230,7 +302,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         nav.add_item(to_sites)
         # Reset
         reset = discord.ui.Button(
-            label="Reset Guild",
+            label=pick_str(self.lang, ja="ギルドをリセット", en="Reset Guild"),
             style=discord.ButtonStyle.secondary,
             custom_id="lf_reset_guild",
         )
@@ -252,8 +324,12 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         chunk = ids[start : start + _SITES_PER_PAGE]
         # ヘッダ
         lines = [
-            "### Link Fix — Sites",
-            f"Page `{self.sites_page + 1}/{pages}`",
+            pick_str(self.lang, ja="### Link Fix — サイト", en="### Link Fix — Sites"),
+            pick_str(
+                self.lang,
+                ja=f"ページ `{self.sites_page + 1}/{pages}`",
+                en=f"Page `{self.sites_page + 1}/{pages}`",
+            ),
             "",
         ]
         # 各サイトの状態行
@@ -285,7 +361,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
             row.add_item(btn)
             # Configure
             cfg = discord.ui.Button(
-                label="Configure",
+                label=pick_str(self.lang, ja="設定", en="Configure"),
                 style=discord.ButtonStyle.primary,
                 custom_id=f"lf_site_cfg:{sid}",
             )
@@ -296,7 +372,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         bulk = discord.ui.ActionRow()
         # 全サイト有効化
         enable_all = discord.ui.Button(
-            label="Enable All",
+            label=pick_str(self.lang, ja="すべて有効", en="Enable All"),
             style=discord.ButtonStyle.success,
             custom_id="lf_sites_enable_all",
         )
@@ -304,7 +380,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         bulk.add_item(enable_all)
         # 全サイト無効化
         disable_all = discord.ui.Button(
-            label="Disable All",
+            label=pick_str(self.lang, ja="すべて無効", en="Disable All"),
             style=discord.ButtonStyle.danger,
             custom_id="lf_sites_disable_all",
         )
@@ -314,7 +390,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # ナビ行
         nav = discord.ui.ActionRow()
         prev_btn = discord.ui.Button(
-            label="◀ Prev",
+            label=pick_str(self.lang, ja="◀ 前へ", en="◀ Prev"),
             style=discord.ButtonStyle.secondary,
             custom_id="lf_sites_prev",
             disabled=self.sites_page <= 0,
@@ -322,14 +398,14 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         prev_btn.callback = self._sites_prev
         nav.add_item(prev_btn)
         back = discord.ui.Button(
-            label="Overview",
+            label=pick_str(self.lang, ja="概要", en="Overview"),
             style=discord.ButtonStyle.secondary,
             custom_id="lf_back_overview",
         )
         back.callback = self._goto_overview
         nav.add_item(back)
         next_btn = discord.ui.Button(
-            label="Next ▶",
+            label=pick_str(self.lang, ja="次へ ▶", en="Next ▶"),
             style=discord.ButtonStyle.secondary,
             custom_id="lf_sites_next",
             disabled=self.sites_page >= pages - 1,
@@ -352,12 +428,22 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         sources = resolve_match_domains(self.bot_config, sid, guild_site)
         on = self.store.is_site_enabled(self.guild_id, sid)
         # 本文
-        body = (
-            f"### {label}\n"
-            f"**Status:** `{'ON' if on else 'OFF'}`\n"
-            f"**Fix destination:** `{fix}`\n"
-            f"**Match sources:** `{', '.join(sources)}`\n\n"
-            "Pick a fixer denomination below, or set a custom domain."
+        body = pick_str(
+            self.lang,
+            ja=(
+                f"### {label}\n"
+                f"**状態:** `{'ON' if on else 'OFF'}`\n"
+                f"**Fix 先:** `{fix}`\n"
+                f"**マッチ元:** `{', '.join(sources)}`\n\n"
+                "下で Fixer 宗派を選ぶか、カスタムドメインを設定できます。"
+            ),
+            en=(
+                f"### {label}\n"
+                f"**Status:** `{'ON' if on else 'OFF'}`\n"
+                f"**Fix destination:** `{fix}`\n"
+                f"**Match sources:** `{', '.join(sources)}`\n\n"
+                "Pick a fixer denomination below, or set a custom domain."
+            ),
         )
         container.add_item(discord.ui.TextDisplay(body))
         container.add_item(discord.ui.Separator())
@@ -376,13 +462,21 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # Custom
         options.append(
             discord.SelectOption(
-                label="Custom…",
+                label=pick_str(self.lang, ja="カスタム…", en="Custom…"),
                 value="custom",
-                description="Enter any fix domain",
+                description=pick_str(
+                    self.lang,
+                    ja="任意の Fix ドメインを入力",
+                    en="Enter any fix domain",
+                ),
             )
         )
         select = discord.ui.Select(
-            placeholder="Fix destination (denomination)",
+            placeholder=pick_str(
+                self.lang,
+                ja="Fix 先（宗派）",
+                en="Fix destination (denomination)",
+            ),
             options=options,
             custom_id=f"lf_fix_select:{sid}",
             min_values=1,
@@ -395,14 +489,14 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # マッチ元編集行
         src_row = discord.ui.ActionRow()
         edit_src = discord.ui.Button(
-            label="Edit sources",
+            label=pick_str(self.lang, ja="マッチ元を編集", en="Edit sources"),
             style=discord.ButtonStyle.primary,
             custom_id="lf_edit_sources",
         )
         edit_src.callback = self._edit_sources
         src_row.add_item(edit_src)
         reset_src = discord.ui.Button(
-            label="Reset sources",
+            label=pick_str(self.lang, ja="マッチ元をリセット", en="Reset sources"),
             style=discord.ButtonStyle.secondary,
             custom_id="lf_reset_sources",
         )
@@ -412,7 +506,7 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # 戻る
         back_row = discord.ui.ActionRow()
         back = discord.ui.Button(
-            label="◀ Back to Sites",
+            label=pick_str(self.lang, ja="◀ サイト一覧へ", en="◀ Back to Sites"),
             style=discord.ButtonStyle.secondary,
             custom_id="lf_back_sites",
         )
@@ -456,8 +550,14 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         perms = getattr(interaction.user, "guild_permissions", None)
         # 無ければ拒否
         if perms is None or not perms.manage_guild:
+            # 押した人の locale を優先する
+            msg_lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "Manage Server permission required.",
+                pick_str(
+                    msg_lang,
+                    ja="サーバー管理権限が必要です。",
+                    en="Manage Server permission required.",
+                ),
                 ephemeral=True,
             )
             return False
@@ -568,7 +668,14 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if not await self._ensure_manage(interaction):
             return
         if not self.site_id:
-            await interaction.response.send_message("No site selected.", ephemeral=True)
+            await interaction.response.send_message(
+                pick_str(
+                    self.lang,
+                    ja="サイトが選択されていません。",
+                    en="No site selected.",
+                ),
+                ephemeral=True,
+            )
             return
         guild_site = self.store.get_site(self.guild_id, self.site_id)
         sources = resolve_match_domains(self.bot_config, self.site_id, guild_site)

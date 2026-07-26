@@ -26,6 +26,7 @@ from MOMOKA.link_fix.websites import (
     format_reply_line,
     match_urls,
 )
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,7 @@ class LinkFixCog(commands.Cog):
 
     @app_commands.command(
         name="linkfix",
-        description="Configure Link Fix (social embed replacement). / Link Fix（SNS埋め込み置換）を設定します",
+        description="Configure Link Fix (social embed replacement).",
     )
     @app_commands.default_permissions(manage_guild=True)
     @app_commands.guild_only()
@@ -281,24 +282,38 @@ class LinkFixCog(commands.Cog):
         """ギルド向け Components V2 設定パネルを開く。"""
         # ギルド必須
         if interaction.guild is None:
+            lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "This command can only be used in a server.",
+                pick_str(
+                    lang,
+                    ja="このコマンドはサーバー内でのみ使えます。",
+                    en="This command can only be used in a server.",
+                ),
                 ephemeral=True,
             )
             return
         # Manage Server
         perms = getattr(interaction.user, "guild_permissions", None)
         if perms is None or not perms.manage_guild:
+            # 権限エラーも app → guild → en
+            lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "Manage Server permission required.",
+                pick_str(
+                    lang,
+                    ja="サーバー管理権限が必要です。",
+                    en="Manage Server permission required.",
+                ),
                 ephemeral=True,
             )
             return
+        # app → guild → en で設定パネル言語を決める
+        lang = resolve_interaction_lang(interaction)
         # View を作る
         view = LinkFixSettingsView(
             self.bot,
             self.store,
             interaction.guild.id,
+            lang=lang,
         )
         # ephemeral で送る
         await interaction.response.send_message(view=view, ephemeral=True)

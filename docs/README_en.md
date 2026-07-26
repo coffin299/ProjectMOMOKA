@@ -37,7 +37,7 @@
 - 🎵 **Music playback** — YouTube, Spotify, Google Drive, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
 - 🔗 **Link Fix** — Suppress original social embeds and quote-replace via fixer proxies (`/linkfix`, **PLANA only**)
-- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging) and `/invite` (Components V2), timers, media download (`/download_video` / `/download_audio`, Components V2), and more
+- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en) and `/invite` (Components V2), timers, media download (`/download_video` / `/download_audio`, Components V2), and more
 
 ---
 
@@ -104,6 +104,10 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 ### 8. Utilities
 
 Dice, timers, server/user info, gacha, etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
+
+**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting/debate panels, media download, `/feedback` Modal, `/match_time` Modal, image-generation Modal, and related surfaces.
+
+**Slash command descriptions:** Shown according to the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian) via `configs/commands_i18n_config.yaml`. Missing translations and unsupported locales fall back to English. Command names stay in English.
 
 #### Media download (Components V2)
 
@@ -286,8 +290,8 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 | Command | Description |
 |---------|-------------|
-| `/help` | Help (Components V2, 🇯🇵/🇺🇸 toggle + paging) |
-| `/invite` | PLANA / ARONA invites (Components V2) |
+| `/help` | Help (Components V2; app→guild→en initial language; 🇯🇵/🇺🇸 toggle + paging) |
+| `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
 | `/download_video` `/download_audio` | Media download (Components V2, Google Drive share) |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | Info |
 | `/roll` `/diceroll` `/check` `/gacha` `/timer` `/meow` `/support` `/feedback` | Misc |

@@ -16,6 +16,7 @@ from MOMOKA.llm.concurrency import debate_limiter
 from MOMOKA.llm.debate.accents import initiator_accent_color
 from MOMOKA.llm.debate.channel_lock import channel_lock
 from MOMOKA.llm.debate.stop_view import DebateStopView
+from MOMOKA.utilities.locale import resolve_guild_lang
 
 if TYPE_CHECKING:
     from discord.ext import commands
@@ -76,6 +77,8 @@ class DebateSession:
     initiator_bot_id: str = "plana"
     # 直前の投稿（次ターンの Discord reply 先）
     last_post: Optional[discord.Message] = None
+    # パネル UI 言語（guild locale → en）
+    lang: str = "en"
 
 
 class DebateOrchestrator:
@@ -156,6 +159,8 @@ class DebateOrchestrator:
         pos_a = position_arona or "optimistic / proactive perspective"
         # セッション開始時の時計を固定する（ターン間ズレ防止）
         frozen_date, frozen_time = _freeze_clock()
+        # パネル UI 言語（メッセージ起点のため guild → en）
+        ui_lang = resolve_guild_lang(guild)
         # セッション作成
         session = DebateSession(
             session_id=uuid.uuid4().hex[:12],
@@ -168,6 +173,7 @@ class DebateOrchestrator:
             frozen_date=frozen_date,
             frozen_time=frozen_time,
             initiator_bot_id=initiator,
+            lang=ui_lang,
         )
         try:
             # パネル View を作る（開会文・中止案内はパネル内に集約し、通常メッセージは送らない）
@@ -175,6 +181,7 @@ class DebateOrchestrator:
                 session=session,
                 admin_ids=self.admin_ids,
                 on_stop=self._cancel_session,
+                lang=ui_lang,
             )
             # パネル投稿（起動 Bot の Client 経由）
             panel = await channel.send(view=view)
@@ -277,11 +284,12 @@ class DebateOrchestrator:
         # メッセージが無ければスキップ
         if session.panel_message is None:
             return
-        # 新しい View
+        # 新しい View（セッション保存言語を維持）
         view = DebateStopView(
             session=session,
             admin_ids=self.admin_ids,
             on_stop=self._cancel_session,
+            lang=getattr(session, "lang", "en"),
         )
         try:
             await session.panel_message.edit(view=view)

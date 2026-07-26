@@ -21,6 +21,7 @@ from googleapiclient.http import MediaFileUpload
 
 from MOMOKA.media_downloader.error.errors import YTDLPExceptionHandler
 from MOMOKA.music.plugins.ytdlp_wrapper import apply_youtube_ejs_opts
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 # --- 設定項目 ---
 CLIENT_SECRETS_FILE = "client_secrets.json"
@@ -104,6 +105,7 @@ class DownloadReadyLayoutView(discord.ui.LayoutView):
         download_link: str,
         expire_minutes: int,
         thumbnail_url: Optional[str] = None,
+        lang: str = "en",
         timeout: Optional[float] = None,
     ) -> None:
         # 完了メッセージは明示削除まで残す
@@ -113,6 +115,8 @@ class DownloadReadyLayoutView(discord.ui.LayoutView):
         self.download_link = download_link
         self.expire_minutes = expire_minutes
         self.thumbnail_url = thumbnail_url
+        # UI 言語
+        self.lang = "ja" if lang == "ja" else "en"
         # UI を組み立てる
         self._rebuild()
 
@@ -122,14 +126,21 @@ class DownloadReadyLayoutView(discord.ui.LayoutView):
         self.clear_items()
         # 成功色のコンテナ
         container = discord.ui.Container(accent_color=_ACCENT_READY)
-        # 見出し＋説明本文
-        body = (
-            f"### ✅ ダウンロード準備完了 / Download Ready\n"
-            f"**{self.title}**\n\n"
-            f"以下のリンクからダウンロードしてください。\n"
-            f"Please download from the link below.\n\n"
-            f"このリンクは**約{self.expire_minutes}分後**に無効になります。\n"
-            f"This link will expire in **about {self.expire_minutes} minutes**."
+        # 見出し＋説明本文（単一言語）
+        body = pick_str(
+            self.lang,
+            ja=(
+                f"### ✅ ダウンロード準備完了\n"
+                f"**{self.title}**\n\n"
+                f"以下のリンクからダウンロードしてください。\n\n"
+                f"このリンクは**約{self.expire_minutes}分後**に無効になります。"
+            ),
+            en=(
+                f"### ✅ Download Ready\n"
+                f"**{self.title}**\n\n"
+                f"Please download from the link below.\n\n"
+                f"This link will expire in **about {self.expire_minutes} minutes**."
+            ),
         )
         # サムネがあれば Section（accessory 必須）を使う
         if self.thumbnail_url and str(self.thumbnail_url).strip():
@@ -146,7 +157,7 @@ class DownloadReadyLayoutView(discord.ui.LayoutView):
         row = discord.ui.ActionRow()
         row.add_item(
             discord.ui.Button(
-                label="ダウンロード / Download",
+                label=pick_str(self.lang, ja="ダウンロード", en="Download"),
                 style=discord.ButtonStyle.link,
                 url=self.download_link,
                 emoji="📥",
@@ -160,11 +171,20 @@ class DownloadReadyLayoutView(discord.ui.LayoutView):
 class VideoFormatSelect(discord.ui.Select):
     """動画フォーマット選択セレクト（音声は後段で自動結合）。"""
 
-    def __init__(self, cog_instance: "YtdlpGdriveCog", info: Dict[str, Any], url: str) -> None:
+    def __init__(
+        self,
+        cog_instance: "YtdlpGdriveCog",
+        info: Dict[str, Any],
+        url: str,
+        *,
+        lang: str = "en",
+    ) -> None:
         # Cog・メタ・URL を保持する
         self.cog = cog_instance
         self.info = info
         self.url = url
+        # UI 言語
+        self.lang = "ja" if lang == "ja" else "en"
         # 選択肢リスト
         options = []
         # 映像ありフォーマットを解像度・bitrate 降順で並べる
@@ -193,14 +213,26 @@ class VideoFormatSelect(discord.ui.Select):
         if not options:
             options = [
                 discord.SelectOption(
-                    label="利用可能なフォーマットなし / No formats",
+                    label=pick_str(
+                        self.lang,
+                        ja="利用可能なフォーマットなし",
+                        en="No formats",
+                    ),
                     value="none",
-                    description="No downloadable video formats found",
+                    description=pick_str(
+                        self.lang,
+                        ja="ダウンロード可能な動画形式がありません",
+                        en="No downloadable video formats found",
+                    ),
                 )
             ]
         # Select 本体を初期化する
         super().__init__(
-            placeholder="動画フォーマットを選択 / Select a video format...",
+            placeholder=pick_str(
+                self.lang,
+                ja="動画フォーマットを選択...",
+                en="Select a video format...",
+            ),
             min_values=1,
             max_values=1,
             options=options,
@@ -208,21 +240,35 @@ class VideoFormatSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction) -> None:
         """選択後にダウンロード→結合→GDrive アップロードする。"""
+        # 押した人の locale を優先する（無ければ作成時言語）
+        lang = resolve_interaction_lang(interaction) or self.lang
         # 無効値ならエラー表示へ
         if self.values[0] == "none":
             err_view = StatusLayoutView(
-                "### ❌ エラー / Error\n利用可能な動画フォーマットがありません。\nNo downloadable video formats found.",
+                pick_str(
+                    lang,
+                    ja="### ❌ エラー\n利用可能な動画フォーマットがありません。",
+                    en="### ❌ Error\nNo downloadable video formats found.",
+                ),
                 accent=_ACCENT_ERROR,
             )
             await interaction.response.edit_message(view=err_view)
             return
         # 進捗 LayoutView に切り替える
         progress = StatusLayoutView(
-            f"### 📥 ダウンロード中 / Downloading\n"
-            f"**{interaction.user.display_name}** がフォーマットを選択しました。\n"
-            f"**{interaction.user.display_name}** has selected a format.\n\n"
-            f"ダウンロードと音声結合を開始します...\n"
-            f"Starting download and audio merge...",
+            pick_str(
+                lang,
+                ja=(
+                    f"### 📥 ダウンロード中\n"
+                    f"**{interaction.user.display_name}** がフォーマットを選択しました。\n\n"
+                    f"ダウンロードと音声結合を開始します..."
+                ),
+                en=(
+                    f"### 📥 Downloading\n"
+                    f"**{interaction.user.display_name}** has selected a format.\n\n"
+                    f"Starting download and audio merge..."
+                ),
+            ),
             accent=_ACCENT_PROGRESS,
         )
         # 元メッセージを V2 進捗表示へ更新する
@@ -259,15 +305,26 @@ class VideoFormatSelect(discord.ui.Select):
 
             # 結合失敗
             if not downloaded_file_path:
-                progress.update(self.cog.exception_handler.get_merge_error(), accent=_ACCENT_ERROR)
+                progress.update(
+                    self.cog.exception_handler.get_merge_error(lang=lang),
+                    accent=_ACCENT_ERROR,
+                )
                 await interaction.edit_original_response(content=None, embed=None, view=progress)
                 return
 
             # アップロード進捗へ更新
             progress.update(
-                f"### 🔼 アップロード中 / Uploading\n"
-                f"**{video_title}** を Google Drive にアップロードしています...\n"
-                f"Uploading **{video_title}** to Google Drive...",
+                pick_str(
+                    lang,
+                    ja=(
+                        f"### 🔼 アップロード中\n"
+                        f"**{video_title}** を Google Drive にアップロードしています..."
+                    ),
+                    en=(
+                        f"### 🔼 Uploading\n"
+                        f"Uploading **{video_title}** to Google Drive..."
+                    ),
+                ),
                 accent=_ACCENT_PROGRESS,
             )
             await interaction.edit_original_response(content=None, embed=None, view=progress)
@@ -282,7 +339,10 @@ class VideoFormatSelect(discord.ui.Select):
             )
             # アップロード失敗
             if not download_link:
-                progress.update(self.cog.exception_handler.get_upload_error(), accent=_ACCENT_ERROR)
+                progress.update(
+                    self.cog.exception_handler.get_upload_error(lang=lang),
+                    accent=_ACCENT_ERROR,
+                )
                 await interaction.edit_original_response(content=None, embed=None, view=progress)
                 return
 
@@ -294,6 +354,7 @@ class VideoFormatSelect(discord.ui.Select):
                 download_link=download_link,
                 expire_minutes=minutes,
                 thumbnail_url=self.info.get("thumbnail"),
+                lang=lang,
             )
             # 完了表示へ差し替え
             await interaction.edit_original_response(content=None, embed=None, view=ready)
@@ -301,7 +362,10 @@ class VideoFormatSelect(discord.ui.Select):
             asyncio.create_task(self.cog.schedule_gdrive_deletion(file_id))
         except Exception as e:
             # 例外メッセージをエラー LayoutView で表示
-            progress.update(self.cog.exception_handler.handle_exception(e), accent=_ACCENT_ERROR)
+            progress.update(
+                self.cog.exception_handler.handle_exception(e, lang=lang),
+                accent=_ACCENT_ERROR,
+            )
             await interaction.edit_original_response(content=None, embed=None, view=progress)
         finally:
             # 一時ファイル掃除
@@ -323,6 +387,7 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         info: Dict[str, Any],
         url: str,
         *,
+        lang: str = "en",
         timeout: float = 300.0,
     ) -> None:
         # 選択待ちタイムアウト
@@ -331,6 +396,8 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         self.cog = cog_instance
         self.info = info
         self.url = url
+        # UI 言語
+        self.lang = "ja" if lang == "ja" else "en"
         # UI を組み立てる
         self._rebuild()
 
@@ -341,14 +408,18 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         # コンテナ
         container = discord.ui.Container(accent_color=_ACCENT_SELECT)
         # メタ情報を取り出す
-        video_title = self.info.get("title", "不明なタイトル / Unknown title")
+        video_title = self.info.get(
+            "title",
+            pick_str(self.lang, ja="不明なタイトル", en="Unknown title"),
+        )
         thumbnail_url = self.info.get("thumbnail")
         uploader = self.info.get("uploader", "N/A")
         duration_str = _format_duration(self.info.get("duration"))
         # 見出し本文
-        title_text = (
-            f"### 🎬 {video_title}\n"
-            f"[元ページを開く / Open source]({self.url})"
+        title_text = pick_str(
+            self.lang,
+            ja=f"### 🎬 {video_title}\n[元ページを開く]({self.url})",
+            en=f"### 🎬 {video_title}\n[Open source]({self.url})",
         )
         # サムネ付きなら Section
         if thumbnail_url and str(thumbnail_url).strip():
@@ -361,18 +432,27 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
         else:
             container.add_item(discord.ui.TextDisplay(title_text))
         # チャンネル・再生時間・案内
-        meta_text = (
-            f"**チャンネル / Channel:** {uploader}\n"
-            f"**再生時間 / Duration:** `{duration_str}`\n\n"
-            f"ダウンロードしたい動画のフォーマットを選択してください。\n"
-            f"（選択後に最良の音声と自動結合します）\n"
-            f"Please select a video format to download.\n"
-            f"(Best audio will be merged automatically.)"
+        meta_text = pick_str(
+            self.lang,
+            ja=(
+                f"**チャンネル:** {uploader}\n"
+                f"**再生時間:** `{duration_str}`\n\n"
+                f"ダウンロードしたい動画のフォーマットを選択してください。\n"
+                f"（選択後に最良の音声と自動結合します）"
+            ),
+            en=(
+                f"**Channel:** {uploader}\n"
+                f"**Duration:** `{duration_str}`\n\n"
+                f"Please select a video format to download.\n"
+                f"(Best audio will be merged automatically.)"
+            ),
         )
         container.add_item(discord.ui.TextDisplay(meta_text))
         # セレクトを ActionRow に載せる
         select_row = discord.ui.ActionRow()
-        select_row.add_item(VideoFormatSelect(self.cog, self.info, self.url))
+        select_row.add_item(
+            VideoFormatSelect(self.cog, self.info, self.url, lang=self.lang)
+        )
         container.add_item(select_row)
         # ルートへ追加
         self.add_item(container)
@@ -461,11 +541,11 @@ class YtdlpGdriveCog(commands.Cog):
 
     @app_commands.command(
         name="download_audio",
-        description="Downloads audio and shares it via Google Drive. / 音声をダウンロードし、Google Drive経由で共有します。",
+        description="Downloads audio and shares it via Google Drive.",
     )
     @app_commands.describe(
-        query="YouTube URL or search query. / YouTubeのURLまたは検索キーワード",
-        audio_format="Output audio format. / 出力する音声フォーマット",
+        query="YouTube URL or search query.",
+        audio_format="Output audio format.",
     )
     @app_commands.choices(
         audio_format=[
@@ -477,9 +557,13 @@ class YtdlpGdriveCog(commands.Cog):
         ]
     )
     async def download_audio(self, interaction: discord.Interaction, query: str, audio_format: str):
+        # app → guild → en
+        lang = resolve_interaction_lang(interaction)
         # GDrive 未初期化なら即エラー
         if not self.gdrive_uploader.service:
-            await interaction.response.send_message(self.exception_handler.get_gdrive_init_error())
+            await interaction.response.send_message(
+                self.exception_handler.get_gdrive_init_error(lang=lang)
+            )
             return
         # 思考表示で遅延応答
         await interaction.response.defer(thinking=True)
@@ -509,7 +593,13 @@ class YtdlpGdriveCog(commands.Cog):
         temp_original_file_path = None
         message = None
         # 進捗用 LayoutView（後で差し替え）
-        progress = StatusLayoutView("### 📥 準備中 / Preparing\n情報を取得しています...\nFetching info...")
+        progress = StatusLayoutView(
+            pick_str(
+                lang,
+                ja="### 📥 準備中\n情報を取得しています...",
+                en="### 📥 Preparing\nFetching info...",
+            )
+        )
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 # メタ取得（ダウンロードなし）
@@ -520,9 +610,17 @@ class YtdlpGdriveCog(commands.Cog):
                 video_title = info.get("title", "audio")
                 # 進捗本文を更新
                 progress.update(
-                    f"### 📥 ダウンロード中 / Downloading\n"
-                    f"**{video_title}** をダウンロード・変換しています...\n"
-                    f"Downloading & converting **{video_title}**..."
+                    pick_str(
+                        lang,
+                        ja=(
+                            f"### 📥 ダウンロード中\n"
+                            f"**{video_title}** をダウンロード・変換しています..."
+                        ),
+                        en=(
+                            f"### 📥 Downloading\n"
+                            f"Downloading & converting **{video_title}**..."
+                        ),
+                    )
                 )
                 # 初回送信（V2）
                 message = await interaction.followup.send(view=progress)
@@ -532,14 +630,25 @@ class YtdlpGdriveCog(commands.Cog):
                 await asyncio.to_thread(ydl.download, [query])
             # 変換結果が無い
             if not os.path.exists(output_path):
-                progress.update(self.exception_handler.get_conversion_error(), accent=_ACCENT_ERROR)
+                progress.update(
+                    self.exception_handler.get_conversion_error(lang=lang),
+                    accent=_ACCENT_ERROR,
+                )
                 await message.edit(view=progress)
                 return
             # アップロード進捗
             progress.update(
-                f"### 🔼 アップロード中 / Uploading\n"
-                f"**{video_title}** を Google Drive にアップロードしています...\n"
-                f"Uploading **{video_title}** to Google Drive..."
+                pick_str(
+                    lang,
+                    ja=(
+                        f"### 🔼 アップロード中\n"
+                        f"**{video_title}** を Google Drive にアップロードしています..."
+                    ),
+                    en=(
+                        f"### 🔼 Uploading\n"
+                        f"Uploading **{video_title}** to Google Drive..."
+                    ),
+                )
             )
             await message.edit(view=progress)
             upload_filename = f"{video_title}.{audio_format}"
@@ -548,7 +657,10 @@ class YtdlpGdriveCog(commands.Cog):
             )
             # アップロード失敗
             if not download_link:
-                progress.update(self.exception_handler.get_upload_error(), accent=_ACCENT_ERROR)
+                progress.update(
+                    self.exception_handler.get_upload_error(lang=lang),
+                    accent=_ACCENT_ERROR,
+                )
                 await message.edit(view=progress)
                 return
 
@@ -559,14 +671,22 @@ class YtdlpGdriveCog(commands.Cog):
                 download_link=download_link,
                 expire_minutes=minutes,
                 thumbnail_url=info.get("thumbnail"),
+                lang=lang,
             )
             await message.edit(view=ready)
             # 期限後削除
             asyncio.create_task(self.schedule_gdrive_deletion(file_id))
         except Exception as e:
             # エラー文言
-            error_msg = self.exception_handler.handle_exception(e)
-            err_view = StatusLayoutView(f"### ❌ エラー / Error\n{error_msg}", accent=_ACCENT_ERROR)
+            error_msg = self.exception_handler.handle_exception(e, lang=lang)
+            err_view = StatusLayoutView(
+                pick_str(
+                    lang,
+                    ja=f"### ❌ エラー\n{error_msg}",
+                    en=f"### ❌ Error\n{error_msg}",
+                ),
+                accent=_ACCENT_ERROR,
+            )
             if message:
                 await message.edit(view=err_view)
             else:
@@ -581,13 +701,17 @@ class YtdlpGdriveCog(commands.Cog):
 
     @app_commands.command(
         name="download_video",
-        description="Downloads a video and shares it via Google Drive. / 動画をダウンロードし、Google Drive経由で共有します。",
+        description="Downloads a video and shares it via Google Drive.",
     )
-    @app_commands.describe(query="URL or search query of the video. / ダウンロードしたい動画のURLまたは検索キーワード")
+    @app_commands.describe(query="URL or search query of the video.")
     async def download_video(self, interaction: discord.Interaction, query: str):
+        # app → guild → en
+        lang = resolve_interaction_lang(interaction)
         # GDrive 未初期化なら即エラー
         if not self.gdrive_uploader.service:
-            await interaction.response.send_message(self.exception_handler.get_gdrive_init_error())
+            await interaction.response.send_message(
+                self.exception_handler.get_gdrive_init_error(lang=lang)
+            )
             return
         # 思考表示で遅延応答
         await interaction.response.defer(thinking=True)
@@ -604,12 +728,16 @@ class YtdlpGdriveCog(commands.Cog):
             # 元ページ URL
             video_url = info.get("webpage_url", query)
             # Components V2 の選択 UI
-            view = VideoSelectLayoutView(self, info, video_url)
+            view = VideoSelectLayoutView(self, info, video_url, lang=lang)
             await interaction.followup.send(view=view)
         except Exception as e:
             # エラー LayoutView
             err_view = StatusLayoutView(
-                f"### ❌ エラー / Error\n{self.exception_handler.handle_exception(e)}",
+                pick_str(
+                    lang,
+                    ja=f"### ❌ エラー\n{self.exception_handler.handle_exception(e, lang=lang)}",
+                    en=f"### ❌ Error\n{self.exception_handler.handle_exception(e, lang=lang)}",
+                ),
                 accent=_ACCENT_ERROR,
             )
             await interaction.followup.send(view=err_view)

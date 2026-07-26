@@ -577,11 +577,11 @@ class R6SiegeTrackerExtended(commands.Cog):
 
     @app_commands.command(
         name="r6s-stats",
-        description="Display comprehensive R6 Siege player statistics. / R6 Siegeの詳細なプレイヤー統計を表示"
+        description="Display comprehensive R6 Siege player statistics."
     )
     @app_commands.describe(
-        username="Player username (Ubisoft Connect name). / プレイヤー名（Ubisoft Connect名）",
-        platform="Platform. / プラットフォーム"
+        username="Player username (Ubisoft Connect name).",
+        platform="Platform."
     )
     @handle_api_errors
     async def r6s_stats(
@@ -603,11 +603,11 @@ class R6SiegeTrackerExtended(commands.Cog):
         message = await interaction.followup.send(embed=embeds[0], view=view)
         view.message = message
 
-    @app_commands.command(name="r6s-compare", description="Compare two players' statistics. / 2人のプレイヤー統計を比較")
+    @app_commands.command(name="r6s-compare", description="Compare two players' statistics.")
     @app_commands.describe(
-        player1="First player username. / 1人目のプレイヤー名",
-        player2="Second player username. / 2人目のプレイヤー名",
-        platform="Platform (both players must be on same platform). / プラットフォーム（同一必須）"
+        player1="First player username.",
+        player2="Second player username.",
+        platform="Platform (both players must be on same platform)."
     )
     @handle_api_errors
     async def r6s_compare(
@@ -666,10 +666,10 @@ class R6SiegeTrackerExtended(commands.Cog):
         embed.set_footer(text="Powered by R6Data API • Current Season Stats")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="r6s-operator", description="Search Rainbow Six Siege operator information. / R6オペレーター情報を検索")
+    @app_commands.command(name="r6s-operator", description="Search Rainbow Six Siege operator information.")
     @app_commands.describe(
-        name="Operator name (e.g., Ash, Thermite). / オペレーター名（例: Ash, Thermite）",
-        role="Filter by role. / ロールで絞り込み"
+        name="Operator name (e.g., Ash, Thermite).",
+        role="Filter by role."
     )
     @handle_api_errors
     async def r6s_operator(
@@ -722,7 +722,7 @@ class R6SiegeTrackerExtended(commands.Cog):
         embed.set_footer(text="Powered by R6Data API")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="r6s-server-status", description="Check Rainbow Six Siege server status. / R6サーバーステータスを確認")
+    @app_commands.command(name="r6s-server-status", description="Check Rainbow Six Siege server status.")
     @handle_api_errors
     async def r6s_server_status(self, interaction: discord.Interaction) -> None:
         """Get R6 Siege server status"""
@@ -758,9 +758,9 @@ class R6SiegeTrackerExtended(commands.Cog):
         embed.set_footer(text="Powered by R6Data.eu API")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="r6s-search", description="Search for operators, weapons, maps, and more. / オペレーター・武器・マップ等を検索")
+    @app_commands.command(name="r6s-search", description="Search for operators, weapons, maps, and more.")
     @app_commands.describe(
-        query="Search query (e.g., 'Ash', 'R4-C', 'Oregon'). / 検索キーワード"
+        query="Search query (e.g., 'Ash', 'R4-C', 'Oregon')."
     )
     @handle_api_errors
     async def r6s_search(
@@ -810,9 +810,9 @@ class R6SiegeTrackerExtended(commands.Cog):
         embed.set_footer(text="Powered by R6Data API • Use specific commands for detailed info")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="r6s-map", description="Get information about Rainbow Six Siege maps. / R6マップ情報を取得")
+    @app_commands.command(name="r6s-map", description="Get information about Rainbow Six Siege maps.")
     @app_commands.describe(
-        name="Map name (e.g., 'Oregon', 'Clubhouse'). / マップ名（例: Oregon, Clubhouse）"
+        name="Map name (e.g., 'Oregon', 'Clubhouse')."
     )
     @handle_api_errors
     async def r6s_map(
@@ -859,9 +859,9 @@ class R6SiegeTrackerExtended(commands.Cog):
         embed.set_footer(text="Powered by R6Data API")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="r6s-weapon", description="Get information about weapons. / 武器情報を取得")
+    @app_commands.command(name="r6s-weapon", description="Get information about weapons.")
     @app_commands.describe(
-        name="Weapon name (e.g., 'R4-C', 'AK-12'). / 武器名（例: R4-C, AK-12）"
+        name="Weapon name (e.g., 'R4-C', 'AK-12')."
     )
     @handle_api_errors
     async def r6s_weapon(
@@ -911,7 +911,7 @@ class R6SiegeTrackerExtended(commands.Cog):
         embed.set_footer(text="Powered by R6Data API")
         await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="r6s-clear-cache", description="Clear API response cache (Admin only). / APIキャッシュをクリア（管理者専用）")
+    @app_commands.command(name="r6s-clear-cache", description="Clear API response cache (Admin only).")
     @app_commands.default_permissions(administrator=True)
     async def r6s_clear_cache(self, interaction: discord.Interaction) -> None:
         """Clear the API cache"""

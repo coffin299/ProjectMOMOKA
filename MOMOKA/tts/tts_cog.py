@@ -290,10 +290,10 @@ class TTSCog(commands.Cog, name="tts_cog"):
             self._save_speech_settings()
             return
 
-    tts_group = app_commands.Group(name="tts", description="TTS-related commands. / TTS関連のコマンド")
+    tts_group = app_commands.Group(name="tts", description="TTS-related commands.")
 
-    @tts_group.command(name="volume", description="Set TTS volume (0-200%). / TTSの音量を設定します (0-200%)")
-    @app_commands.describe(volume="Volume (integer from 0 to 200). / 音量 (0から200の整数)")
+    @tts_group.command(name="volume", description="Set TTS volume (0-200%).")
+    @app_commands.describe(volume="Volume (integer from 0 to 200).")
     async def tts_volume(self, interaction: discord.Interaction, volume: app_commands.Range[int, 0, 200]):
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         float_volume = volume / 100.0
@@ -313,9 +313,9 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         await interaction.response.send_message(f"🔊 TTSの音量を **{volume}%** に設定しました。")
 
-    speech_group = app_commands.Group(name="speech", description="Text channel read-aloud commands. / テキストチャンネルの読み上げに関するコマンド")
+    speech_group = app_commands.Group(name="speech", description="Text channel read-aloud commands.")
 
-    @speech_group.command(name="enable", description="Enable message read-aloud for this channel. / このチャンネルのメッセージ読み上げを有効にします")
+    @speech_group.command(name="enable", description="Enable message read-aloud for this channel.")
     async def enable_speech(self, interaction: discord.Interaction):
         if not interaction.user.voice or not interaction.user.voice.channel:
             return await interaction.response.send_message("❌ ボイスチャンネルに接続してから実行してください。", ephemeral=True)
@@ -343,7 +343,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
         embed = discord.Embed(title="🔊 VC読み上げ開始", description=f"対象: {interaction.channel.mention}, {vc.mention}", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
 
-    @speech_group.command(name="disable", description="Disable message read-aloud. / メッセージ読み上げを無効にします")
+    @speech_group.command(name="disable", description="Disable message read-aloud.")
     async def disable_speech(self, interaction: discord.Interaction):
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         if guild_settings.get("speech_channel_id") is None:
@@ -355,7 +355,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
             await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("✅ 読み上げを無効にしました。")
 
-    @speech_group.command(name="skip", description="Skip the current read-aloud. / 現在の読み上げをスキップします")
+    @speech_group.command(name="skip", description="Skip the current read-aloud.")
     async def skip_speech(self, interaction: discord.Interaction):
         voice_client = interaction.guild.voice_client
         if not voice_client:
@@ -376,9 +376,9 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         await interaction.response.send_message("✅ スキップしました。" if skipped else "❌ スキップ対象がありません。", ephemeral=not skipped)
 
-    autojoin_group = app_commands.Group(name="autojoin", description="Auto-join voice channel commands. / VCへの自動参加に関するコマンド")
+    autojoin_group = app_commands.Group(name="autojoin", description="Auto-join voice channel commands.")
 
-    @autojoin_group.command(name="enable", description="Auto-join VC when you join. / あなたがVCに参加した際、BOTも自動で参加するようにします")
+    @autojoin_group.command(name="enable", description="Auto-join VC when you join.")
     async def enable_auto_join(self, interaction: discord.Interaction):
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         auto_join_users = guild_settings.setdefault("auto_join_users", [])
@@ -388,7 +388,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self._save_speech_settings()
         await interaction.response.send_message("✅ 自動参加を有効にしました。")
 
-    @autojoin_group.command(name="disable", description="Disable bot auto-join. / BOTの自動参加設定を解除します")
+    @autojoin_group.command(name="disable", description="Disable bot auto-join.")
     async def disable_auto_join(self, interaction: discord.Interaction):
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         auto_join_users = guild_settings.get("auto_join_users", [])
@@ -398,8 +398,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self._save_speech_settings()
         await interaction.response.send_message("✅ 自動参加を解除しました。")
 
-    @app_commands.command(name="say", description="Read text aloud with TTS. / テキストを音声で読み上げます")
-    @app_commands.describe(text="Text to read aloud. / 読み上げるテキスト", model_id="Model ID. / モデルID", style="Style name. / スタイル名", style_weight="Style weight. / スタイルの強さ", speed="Speech speed. / 話速")
+    @app_commands.command(name="say", description="Read text aloud with TTS.")
+    @app_commands.describe(text="Text to read aloud.", model_id="Model ID.", style="Style name.", style_weight="Style weight.", speed="Speech speed.")
     async def say(self, interaction: discord.Interaction, text: str, model_id: Optional[int] = None, style: Optional[str] = None, style_weight: Optional[float] = None, speed: Optional[float] = None):
         if not self.config.get('enable_say_command', True):
             return await interaction.response.send_message("読み上げコマンドは無効です。", ephemeral=True)
@@ -457,10 +457,10 @@ class TTSCog(commands.Cog, name="tts_cog"):
             text = text.replace(word, self.speech_dictionary[word])
         return text
 
-    dictionary_group = app_commands.Group(name="dictionary", description="Manage the read-aloud dictionary. / 読み上げ辞書の管理")
+    dictionary_group = app_commands.Group(name="dictionary", description="Manage the read-aloud dictionary.")
 
-    @dictionary_group.command(name="add", description="Add a word to the read-aloud dictionary. / 読み上げ辞書に単語を追加します")
-    @app_commands.describe(word="Word to register. / 登録する単語", reading="How to read it. / 読み方")
+    @dictionary_group.command(name="add", description="Add a word to the read-aloud dictionary.")
+    @app_commands.describe(word="Word to register.", reading="How to read it.")
     async def add_dictionary(self, interaction: discord.Interaction, word: str, reading: str):
         is_update = word in self.speech_dictionary
         old_reading = self.speech_dictionary.get(word)
@@ -473,8 +473,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
         embed.add_field(name="読み方", value=f"`{reading}`", inline=True)
         await interaction.response.send_message(embed=embed)
 
-    @dictionary_group.command(name="remove", description="Remove a word from the read-aloud dictionary. / 読み上げ辞書から単語を削除します")
-    @app_commands.describe(word="Word to remove. / 削除する単語")
+    @dictionary_group.command(name="remove", description="Remove a word from the read-aloud dictionary.")
+    @app_commands.describe(word="Word to remove.")
     async def remove_dictionary(self, interaction: discord.Interaction, word: str):
         if word not in self.speech_dictionary:
             return await interaction.response.send_message(f"❌ `{word}` は辞書にありません。", ephemeral=True)
@@ -485,7 +485,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
         embed.add_field(name="単語", value=f"`{word}`", inline=True).add_field(name="読み方", value=f"`{reading}`", inline=True)
         await interaction.response.send_message(embed=embed)
 
-    @dictionary_group.command(name="list", description="List registered dictionary entries. / 登録されている辞書の一覧を表示します")
+    @dictionary_group.command(name="list", description="List registered dictionary entries.")
     async def list_dictionary(self, interaction: discord.Interaction):
         if not self.speech_dictionary:
             return await interaction.response.send_message("📖 辞書は空です。", ephemeral=True)
@@ -495,8 +495,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
         embed = discord.Embed(title="📖 読み上げ辞書", description=description, color=discord.Color.blue())
         await interaction.response.send_message(embed=embed)
 
-    @dictionary_group.command(name="search", description="Search the dictionary for a word. / 辞書から単語を検索します")
-    @app_commands.describe(query="Word to search (partial match). / 検索する単語（部分一致）")
+    @dictionary_group.command(name="search", description="Search the dictionary for a word.")
+    @app_commands.describe(query="Word to search (partial match).")
     async def search_dictionary(self, interaction: discord.Interaction, query: str):
         results = {w: r for w, r in self.speech_dictionary.items() if query.lower() in w.lower()}
         if not results:

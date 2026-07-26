@@ -33,7 +33,7 @@ class ImageCommandsCog(commands.Cog, name="画像検索"):
         await self.http_session.close()
         logger.info("ImageCommandsCog: aiohttpセッションを閉じました。")
 
-    @app_commands.command(name="meow", description="Displays a cute cat picture. / 可愛い猫の画像を表示します。")
+    @app_commands.command(name="meow", description="Displays a cute cat picture.")
     async def meow_command(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         try:
@@ -67,8 +67,8 @@ class ImageCommandsCog(commands.Cog, name="画像検索"):
         except Exception as e:
             await errors.handle_meow_unexpected_error(interaction, e)
 
-    @app_commands.command(name="yandere-safe", description="Search safe images from Yandere (rating:safe). / Yandereから安全な画像を検索します (rating:safe)")
-    @app_commands.describe(query="Search tags (space separated). / 検索タグ (スペース区切り)")
+    @app_commands.command(name="yandere-safe", description="Search safe images from Yandere (rating:safe).")
+    @app_commands.describe(query="Search tags (space separated).")
     async def yandere_safe_command(self, interaction: discord.Interaction, query: str = ""):
         await interaction.response.defer(ephemeral=False)
         try:
@@ -126,8 +126,8 @@ class ImageCommandsCog(commands.Cog, name="画像検索"):
             await interaction.followup.send("予期しないエラーが発生しました。", ephemeral=False)
             logger.error(f"/yandere-safe: Unexpected error - {e}")
 
-    @app_commands.command(name="danbooru-safe", description="Search safe images from Danbooru (rating:general). / Danbooruから安全な画像を検索します (rating:general)")
-    @app_commands.describe(query="Search tags (space separated). / 検索タグ (スペース区切り)")
+    @app_commands.command(name="danbooru-safe", description="Search safe images from Danbooru (rating:general).")
+    @app_commands.describe(query="Search tags (space separated).")
     async def danbooru_safe_command(self, interaction: discord.Interaction, query: str = ""):
         await interaction.response.defer(ephemeral=False)
         try:

@@ -46,6 +46,7 @@ from MOMOKA.llm.debate.channel_lock import channel_lock
 from MOMOKA.llm.concurrency import chat_limiter
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
 from MOMOKA.utilities.restart_notice import RESTART_NOTICE_TEXT
+from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
 from MOMOKA.utilities.feedback import (
     create_support_report_view,
     support_footer_text,
@@ -336,23 +337,38 @@ class LLMCog(commands.Cog, name="LLM"):
                 # 送信失敗
                 return None
 
-    def _create_waiting_view(self, model_name: str) -> WaitingLayoutView:
+    def _create_waiting_view(
+        self,
+        model_name: str,
+        *,
+        lang: str = "en",
+    ) -> WaitingLayoutView:
         """応答待機中の Components V2（Tips + 控えめ Ko-fi）。"""
+        # UI 言語を正規化する
+        ui_lang = "ja" if lang == "ja" else "en"
         # tip 再利用用（モデル切替時に同じ tip を維持する）
         tip_data: Optional[Dict[str, Any]] = None
         # Tips が無ければ簡易本文
         if self.tips_manager:
-            body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(model_name)
+            body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
+                model_name,
+                lang=ui_lang,
+            )
         else:
-            body = f"### ⏳ Waiting for '{model_name}' response..."
+            body = (
+                f"### ⏳ '{model_name}' の応答を待っています..."
+                if ui_lang == "ja"
+                else f"### ⏳ Waiting for '{model_name}' response..."
+            )
             accent = discord.Color.orange()
-        # LayoutView を返す（試行中モデル名と tip を保持）
+        # LayoutView を返す（試行中モデル名と tip・言語を保持）
         return WaitingLayoutView(
             body=body,
             accent=accent,
             bot=self.bot,
             tip_data=tip_data,
             model_name=model_name,
+            lang=ui_lang,
         )
 
     async def _refresh_waiting_view_for_model(
@@ -366,12 +382,15 @@ class LLMCog(commands.Cog, name="LLM"):
         """待機 UI の試行中モデル名を差し替え、必要ならフォールバック案内を付ける。"""
         # 再利用する tip（無ければ新規抽選）
         tip_data = getattr(waiting_view, "tip_data", None)
+        # View に保存した UI 言語を使う
+        ui_lang = getattr(waiting_view, "lang", "en") or "en"
         # TipsManager があれば本文を再構築する
         if self.tips_manager:
             body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
                 model_name,
                 tip_data=tip_data,
                 fallback_from=fallback_from,
+                lang=ui_lang,
             )
         else:
             # Tips 無し時の簡易本文
@@ -379,9 +398,17 @@ class LLMCog(commands.Cog, name="LLM"):
             if fallback_from:
                 notice = (
                     f"\n⚠️ `{fallback_from}` のクォータ/API制限のため、`{model_name}` に切り替え中..."
-                    f"\n⚠️ Switching to `{model_name}` because `{fallback_from}` hit quota/API limits..."
+                    if ui_lang == "ja"
+                    else (
+                        f"\n⚠️ Switching to `{model_name}` because "
+                        f"`{fallback_from}` hit quota/API limits..."
+                    )
                 )
-            body = f"### ⏳ Waiting for '{model_name}' response...{notice}"
+            body = (
+                f"### ⏳ '{model_name}' の応答を待っています...{notice}"
+                if ui_lang == "ja"
+                else f"### ⏳ Waiting for '{model_name}' response...{notice}"
+            )
             accent = waiting_view.accent
         # View 内部状態を更新して再構築する
         waiting_view.update_body(
@@ -1602,8 +1629,10 @@ class LLMCog(commands.Cog, name="LLM"):
         sent_message = None
         try:
             model_name = client.model_name_for_api_calls
+            # メッセージ起点: guild locale → en
+            ui_lang = resolve_guild_lang(message.guild)
             # 待機は Components V2（Tips + 控えめ寄付ボタン）
-            waiting_view = self._create_waiting_view(model_name)
+            waiting_view = self._create_waiting_view(model_name, lang=ui_lang)
             # 権限不足でも例外を外へ出さない送信ヘルパーで待機メッセージを出す
             sent_message = await self._safe_reply(
                 message,
@@ -2731,9 +2760,9 @@ class LLMCog(commands.Cog, name="LLM"):
             self.model_reset_tasks.pop(channel_id, None)
 
     @app_commands.command(name="chat",
-                          description="Chat with the AI without needing to mention. / AIと対話します。メンション不要で会話できます。")
-    @app_commands.describe(message="The message you want to send to the AI. / AIに送信したいメッセージ",
-                           image_url="URL of an image (optional). / 画像のURL（オプション）")
+                          description="Chat with the AI without needing to mention.")
+    @app_commands.describe(message="The message you want to send to the AI.",
+                           image_url="URL of an image (optional).")
     async def chat_slash(self, interaction: discord.Interaction, message: str, image_url: str = None):
         await interaction.response.defer(ephemeral=False)
         temp_message = None
@@ -2800,8 +2829,10 @@ class LLMCog(commands.Cog, name="LLM"):
                     return
             try:
                 model_name = llm_client.model_name_for_api_calls
+                # /chat: app → guild → en
+                ui_lang = resolve_interaction_lang(interaction)
                 # 待機は Components V2（Tips + 控えめ寄付）
-                waiting_view = self._create_waiting_view(model_name)
+                waiting_view = self._create_waiting_view(model_name, lang=ui_lang)
                 temp_message = await interaction.followup.send(
                     view=waiting_view, ephemeral=False, wait=True
                 )
@@ -2869,8 +2900,8 @@ class LLMCog(commands.Cog, name="LLM"):
                 current.lower() in model.lower()][:25]
 
     @app_commands.command(name="switch-models",
-                          description="Switches the AI model used for this channel. / このチャンネルで使用するAIモデルを切り替えます。")
-    @app_commands.describe(model="Select the model you want to use. / 使用したいモデルを選択してください。")
+                          description="Switches the AI model used for this channel.")
+    @app_commands.describe(model="Select the model you want to use.")
     @app_commands.autocomplete(model=model_autocomplete)
     async def switch_model_slash(self, interaction: discord.Interaction, model: str):
         await interaction.response.defer(ephemeral=False)
@@ -2926,7 +2957,7 @@ class LLMCog(commands.Cog, name="LLM"):
             await interaction.followup.send(embed=embed, view=self._create_support_view())
 
     @app_commands.command(name="switch-models-default-server",
-                          description="Resets the AI model for this channel to the server default. / このチャンネルのAIモデルをサーバーのデフォルト設定に戻します。")
+                          description="Resets the AI model for this channel to the server default.")
     async def reset_model_slash(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         channel_id = interaction.channel_id
@@ -2987,9 +3018,9 @@ class LLMCog(commands.Cog, name="LLM"):
         return [app_commands.Choice(name=model, value=model) for model in filtered][:25]
 
     @app_commands.command(name="switch-image-model",
-                          description="Switch the image generation model for this channel. / このチャンネルの画像生成モデルを切り替えます。")
+                          description="Switch the image generation model for this channel.")
     @app_commands.describe(
-        model="Select the image generation model you want to use. / 使用したい画像生成モデルを選択してください。")
+        model="Select the image generation model you want to use.")
     @app_commands.autocomplete(model=image_model_autocomplete)
     async def switch_image_model_slash(self, interaction: discord.Interaction, model: str):
         await interaction.response.defer(ephemeral=False)
@@ -3053,7 +3084,7 @@ class LLMCog(commands.Cog, name="LLM"):
             await interaction.followup.send(embed=embed, view=self._create_support_view())
 
     @app_commands.command(name="show-image-model",
-                          description="Show the current image generation model for this channel. / このチャンネルの現在の画像生成モデルを表示します。")
+                          description="Show the current image generation model for this channel.")
     async def show_image_model_slash(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         # companion では PLANA へ誘導する
@@ -3096,8 +3127,8 @@ class LLMCog(commands.Cog, name="LLM"):
         await interaction.followup.send(embed=embed, view=self._create_support_view(), ephemeral=False)
 
     @app_commands.command(name="list-image-models",
-                          description="List all available image generation models. / 利用可能な画像生成モデルの一覧を表示します。")
-    @app_commands.describe(provider="Filter by provider (optional). / プロバイダーで絞り込み（オプション）")
+                          description="List all available image generation models.")
+    @app_commands.describe(provider="Filter by provider (optional).")
     async def list_image_models_slash(self, interaction: discord.Interaction, provider: str = None):
         await interaction.response.defer(ephemeral=False)
         # companion では PLANA へ誘導する
@@ -3159,7 +3190,7 @@ class LLMCog(commands.Cog, name="LLM"):
             await interaction.followup.send(embed=embed, view=view, ephemeral=False)
 
     @app_commands.command(name="clear_history",
-                          description="Clears the history of the current conversation thread. / 現在の会話スレッドの履歴をクリアします。")
+                          description="Clears the history of the current conversation thread.")
     async def clear_history_slash(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         guild_id = interaction.guild.id if interaction.guild else 0  # DMの場合は0

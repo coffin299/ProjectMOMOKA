@@ -12,6 +12,7 @@ from discord.ext import commands
 
 # カスタムエラーをインポート
 from MOMOKA.scheduler.error.errors import InvalidTimeFormatError, TimeRangeError
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 # ロガーの初期化
 logger = logging.getLogger(__name__)
@@ -244,30 +245,17 @@ def build_schedule_embed(
 # モーダル（時刻入力フォーム）
 # =============================================================================
 
-class TimeInputModal(discord.ui.Modal, title="時刻を入力"):
+class TimeInputModal(discord.ui.Modal):
     """時刻入力用のモーダルダイアログ"""
 
-    # 開始時刻の入力欄
-    start_time = discord.ui.TextInput(
-        label="開始時刻（24H表記）",
-        placeholder="例: 21:00",
-        required=True,
-        max_length=5,
-        min_length=4,
-        style=discord.TextStyle.short
-    )
-
-    # 終了時刻の入力欄
-    end_time = discord.ui.TextInput(
-        label="終了予定時刻（24H表記）",
-        placeholder="例: 22:30",
-        required=True,
-        max_length=5,
-        min_length=4,
-        style=discord.TextStyle.short
-    )
-
-    def __init__(self, schedule_title: str, cog: "MatchTimeCog", message_id: int):
+    def __init__(
+        self,
+        schedule_title: str,
+        cog: "MatchTimeCog",
+        message_id: int,
+        *,
+        lang: str = "en",
+    ):
         """
         モーダルの初期化。
 
@@ -275,25 +263,63 @@ class TimeInputModal(discord.ui.Modal, title="時刻を入力"):
             schedule_title: 募集タイトル名（モーダルのタイトルに使用）
             cog: MatchTimeCogインスタンス（データ保存用）
             message_id: 対象の調整メッセージID
+            lang: UI 言語（ja / en）
         """
+        # UI 言語を正規化する
+        ui_lang = "ja" if lang == "ja" else "en"
         # モーダルのタイトルに募集名を含める（最大45文字制限対応）
-        super().__init__(title=f"📅 {schedule_title[:40]}")
+        super().__init__(
+            title=pick_str(
+                ui_lang,
+                ja=f"📅 {schedule_title[:40]}",
+                en=f"📅 {schedule_title[:40]}",
+            )
+        )
         # Cogインスタンスの参照を保持
         self.cog = cog
         # 対象メッセージIDを保持
         self.message_id = message_id
+        # 言語を保持する
+        self.lang = ui_lang
+        # 開始時刻の入力欄
+        self.start_time = discord.ui.TextInput(
+            label=pick_str(ui_lang, ja="開始時刻（24H表記）", en="Start time (24H)"),
+            placeholder=pick_str(ui_lang, ja="例: 21:00", en="e.g. 21:00"),
+            required=True,
+            max_length=5,
+            min_length=4,
+            style=discord.TextStyle.short,
+        )
+        # 終了時刻の入力欄
+        self.end_time = discord.ui.TextInput(
+            label=pick_str(ui_lang, ja="終了予定時刻（24H表記）", en="End time (24H)"),
+            placeholder=pick_str(ui_lang, ja="例: 22:30", en="e.g. 22:30"),
+            required=True,
+            max_length=5,
+            min_length=4,
+            style=discord.TextStyle.short,
+        )
+        # Modal に載せる
+        self.add_item(self.start_time)
+        self.add_item(self.end_time)
 
     async def on_submit(self, interaction: discord.Interaction):
         """モーダル送信時の処理"""
         # 入力値を取得
         start_str = self.start_time.value.strip()
         end_str = self.end_time.value.strip()
+        # 応答メッセージ言語（押した人の locale 優先）
+        msg_lang = resolve_interaction_lang(interaction)
 
         # 開始時刻のバリデーション
         start_minutes = parse_time(start_str)
         if start_minutes is None:
             await interaction.response.send_message(
-                "❌ 開始時刻の形式が正しくありません。`HH:MM`（例: `21:00`）の形式で入力してください。",
+                pick_str(
+                    msg_lang,
+                    ja="❌ 開始時刻の形式が正しくありません。`HH:MM`（例: `21:00`）の形式で入力してください。",
+                    en="❌ Invalid start time. Use `HH:MM` (e.g. `21:00`).",
+                ),
                 ephemeral=True
             )
             return
@@ -302,7 +328,11 @@ class TimeInputModal(discord.ui.Modal, title="時刻を入力"):
         end_minutes = parse_time(end_str)
         if end_minutes is None:
             await interaction.response.send_message(
-                "❌ 終了時刻の形式が正しくありません。`HH:MM`（例: `22:30`）の形式で入力してください。",
+                pick_str(
+                    msg_lang,
+                    ja="❌ 終了時刻の形式が正しくありません。`HH:MM`（例: `22:30`）の形式で入力してください。",
+                    en="❌ Invalid end time. Use `HH:MM` (e.g. `22:30`).",
+                ),
                 ephemeral=True
             )
             return
@@ -310,7 +340,11 @@ class TimeInputModal(discord.ui.Modal, title="時刻を入力"):
         # セッションの存在チェック
         if self.message_id not in self.cog.sessions:
             await interaction.response.send_message(
-                "❌ この時間調整セッションは既に終了しています。",
+                pick_str(
+                    msg_lang,
+                    ja="❌ この時間調整セッションは既に終了しています。",
+                    en="❌ This match-time session has already ended.",
+                ),
                 ephemeral=True
             )
             return
@@ -345,8 +379,17 @@ class TimeInputModal(discord.ui.Modal, title="時刻を入力"):
 
         # 入力完了を通知（エフェメラル）
         await interaction.response.send_message(
-            f"✅ 時刻を登録しました！\n"
-            f"**開始:** `{start_str}` ── **終了:** `{end_str}`",
+            pick_str(
+                msg_lang,
+                ja=(
+                    f"✅ 時刻を登録しました！\n"
+                    f"**開始:** `{start_str}` ── **終了:** `{end_str}`"
+                ),
+                en=(
+                    f"✅ Time registered!\n"
+                    f"**Start:** `{start_str}` — **End:** `{end_str}`"
+                ),
+            ),
             ephemeral=True
         )
         logger.info(
@@ -392,17 +435,23 @@ class MatchTimeView(discord.ui.View):
         """「時刻を入力する」ボタン押下時の処理（緑ボタン）"""
         # セッションの存在チェック
         if self.message_id not in self.cog.sessions:
+            lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "❌ この時間調整セッションは既に終了しています。",
+                pick_str(
+                    lang,
+                    ja="❌ この時間調整セッションは既に終了しています。",
+                    en="❌ This match-time session has already ended.",
+                ),
                 ephemeral=True
             )
             return
 
-        # モーダルを表示
+        # モーダルを表示（app → guild → en）
         modal = TimeInputModal(
             schedule_title=self.schedule_title,
             cog=self.cog,
-            message_id=self.message_id
+            message_id=self.message_id,
+            lang=resolve_interaction_lang(interaction),
         )
         await interaction.response.send_modal(modal)
 
@@ -496,10 +545,10 @@ class MatchTimeCog(commands.Cog, name="時間調整"):
 
     @app_commands.command(
         name="match_time",
-        description="Start time matching; find the best overlap from preferences. / 時間調整を開始し、ベストマッチを自動算出します。"
+        description="Start time matching; find the best overlap from preferences."
     )
     @app_commands.describe(
-        title="Session title (e.g. scrim, rank grind). / 募集タイトル名（例: スクリム練習、ランク周回）"
+        title="Session title (e.g. scrim, rank grind)."
     )
     async def match_time(self, interaction: discord.Interaction, title: str):
         """

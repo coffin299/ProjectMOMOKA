@@ -75,10 +75,10 @@
 - **Music** — YouTube / Spotify, etc. (**JA:** 両ボット · **EN:** both bots)
 - **TTS / images / notifications / trackers** — **JA:** PLANA のみ · **EN:** PLANA only
 - **Link Fix** — **JA:** 公式 SNS embed を抑制し Fix URL で引用置換（`/linkfix` で全体・サイト別・一括 on/off、デフォルト無効・必要時に有効化、PLANA のみ） · **EN:** suppress original social embeds and quote-replace via fixers (`/linkfix` master/site/bulk toggles, disabled by default — enable when needed, PLANA only)
-- **Utilities** — `/help` (🇯🇵/🇺🇸 + paging) `/invite` `/support` `/feedback`, timers, `/match_time`, `/download_video` `/download_audio`, …
+- **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en) `/invite` `/support` `/feedback`, timers, `/match_time`, `/download_video` `/download_audio`, …
 
-**JA:** 最新コマンドは `/help`（絵文字で日英切替・ページング）または [コマンド一覧](https://momoka-project.com/commands.html)  
-**EN:** Prefer `/help` in Discord (🇯🇵/🇺🇸 language toggle + paging), or the [command list](https://momoka-project.com/commands.html)
+**JA:** Components V2 / Modal の表示言語は **クライアント言語 → サーバー言語 → English**（音楽 UI 除く）。スラッシュコマンドの説明文は Discord クライアント言語（日本語 / 英語 / 韓国語 / ベトナム語 / 中国語簡体・繁体 / スペイン語 / フランス語 / ドイツ語 / ポルトガル語 / ロシア語 / タイ語 / インドネシア語）に応じて表示し、欠落時は英語。最新コマンドは `/help` または [コマンド一覧](https://momoka-project.com/commands.html)  
+**EN:** Components V2 / Modal UI language is **app locale → guild locale → English** (music UI excluded). Slash command descriptions follow the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian), falling back to English. Prefer `/help` in Discord, or the [command list](https://momoka-project.com/commands.html)
 
 ---
 

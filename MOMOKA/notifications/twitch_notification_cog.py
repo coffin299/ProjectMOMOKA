@@ -263,11 +263,11 @@ class TwitchNotification(commands.Cog):
         return choices[:25]
 
     # --- スラッシュコマンド ---
-    @app_commands.command(name="twitch_set", description="Set up Twitch stream notifications. / Twitch配信通知を設定します。")
+    @app_commands.command(name="twitch_set", description="Set up Twitch stream notifications.")
     @app_commands.describe(
-        twitch_url="Twitch channel URL to watch (e.g. https://www.twitch.tv/twitch). / 通知したいTwitchチャンネルのURL",
-        notification_channel="Discord channel to send notifications to. / 通知を送信するDiscordチャンネル",
-        message="Optional custom message (e.g. mentions) for notifications. / 通知時のカスタムメッセージ"
+        twitch_url="Twitch channel URL to watch (e.g. https://www.twitch.tv/twitch).",
+        notification_channel="Discord channel to send notifications to.",
+        message="Optional custom message (e.g. mentions) for notifications."
     )
     @app_commands.checks.has_permissions(manage_guild=True)
     async def set_notification(self, interaction: discord.Interaction, twitch_url: str,
@@ -320,8 +320,8 @@ class TwitchNotification(commands.Cog):
             await interaction.followup.send(message)
 
     ### 変更箇所: twitch_removeコマンドを修正 ###
-    @app_commands.command(name="twitch_remove", description="Remove Twitch stream notification settings. / Twitch配信通知の設定を解除します。")
-    @app_commands.describe(twitch_channel="Twitch channel to remove. / 解除したいTwitchチャンネル")
+    @app_commands.command(name="twitch_remove", description="Remove Twitch stream notification settings.")
+    @app_commands.describe(twitch_channel="Twitch channel to remove.")
     @app_commands.autocomplete(twitch_channel=twitch_channel_autocomplete)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def remove_notification(self, interaction: discord.Interaction, twitch_channel: str):
@@ -345,8 +345,8 @@ class TwitchNotification(commands.Cog):
         else:
             await interaction.response.send_message("ℹ️ 指定されたTwitchチャンネルの通知設定は見つかりませんでした。")
 
-    @app_commands.command(name="twitch_test", description="Send a Twitch notification test message. / Twitch配信通知のテストメッセージを送信します。")
-    @app_commands.describe(twitch_channel="Twitch channel to test. / テストしたいTwitchチャンネル")
+    @app_commands.command(name="twitch_test", description="Send a Twitch notification test message.")
+    @app_commands.describe(twitch_channel="Twitch channel to test.")
     @app_commands.autocomplete(twitch_channel=twitch_channel_autocomplete)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def test_notification(self, interaction: discord.Interaction, twitch_channel: str):
@@ -383,7 +383,7 @@ class TwitchNotification(commands.Cog):
             message = self.handler.get_user_friendly_message(e)
             await interaction.followup.send(message)
 
-    @app_commands.command(name="twitch_list", description="List configured Twitch notifications. / 設定されているTwitch通知の一覧を表示します。")
+    @app_commands.command(name="twitch_list", description="List configured Twitch notifications.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def list_notifications(self, interaction: discord.Interaction):
         """設定されている通知の一覧を表示するコマンド"""

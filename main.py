@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands, tasks
 
 from MOMOKA.GUI import attach_gui_logging, run_log_viewer_thread, set_bot_ref, set_dark_mode
+from MOMOKA.utilities.command_i18n import CommandDescriptionTranslator
 from MOMOKA.utilities.restart_notice import SHUTDOWN_USER_ID
 from MOMOKA.version import status_version_string
 
@@ -362,6 +363,21 @@ class Momoka(commands.Bot):
             # 2秒待機して primary の同期を先に行わせる
             await asyncio.sleep(2)
 
+        # description 多言語 Translator を sync 前に登録する（name は英語固定）
+        try:
+            # YAML カタログベースの Translator をセットする
+            await self.tree.set_translator(CommandDescriptionTranslator(self.config))
+            # 登録成功をログに残す
+            logging.info("%s コマンド description Translator を登録しました。", self.display_name)
+        except Exception as e:
+            # Translator 失敗でも起動は継続する（英語デフォルトのみ）
+            logging.error(
+                "%s コマンド description Translator の登録に失敗しました: %s",
+                self.display_name,
+                e,
+                exc_info=True,
+            )
+
         # スラッシュコマンドの同期を行う
         if self.config.get('sync_slash_commands', True):
             try:
@@ -631,7 +647,7 @@ if __name__ == "__main__":
     # ===============================================================
     @plana_bot.tree.command(
         name="shutdown",
-        description="Shut down both bots after notifying users (owner only). / 通知後に両Botを停止（オーナー専用）",
+        description="Shut down both bots after notifying users (owner only).",
     )
     async def shutdown_command(interaction: discord.Interaction):
         # ハードコード UID 以外は拒否する
@@ -657,7 +673,7 @@ if __name__ == "__main__":
         # レジストリの全ボットをクローズする（再起動通知を含む）
         await registry.close_all()
 
-    @plana_bot.tree.command(name="reload_plana", description="🔄 Reload PLANA cogs (admin only). / PLANAのCogをリロードします（管理者専用）")
+    @plana_bot.tree.command(name="reload_plana", description="Reload PLANA cogs (admin only).")
     async def reload_plana_cog(interaction: discord.Interaction, cog_name: str = None):
         # 管理者でなければ拒否する
         if not plana_bot.is_admin(interaction.user.id):
@@ -722,7 +738,7 @@ if __name__ == "__main__":
                 f"全Cogリロードがユーザー {interaction.user} によって実行されました。成功: {len(reloaded)}, 失敗: {len(failed)}"
             )
 
-    @plana_bot.tree.command(name="list_plana_cogs", description="📋 List loaded PLANA cogs. / PLANAのロード済みCog一覧を表示します")
+    @plana_bot.tree.command(name="list_plana_cogs", description="List loaded PLANA cogs.")
     async def list_plana_cogs(interaction: discord.Interaction):
         # ロード済み拡張機能のリストを取得する
         loaded_extensions = list(plana_bot.extensions.keys())

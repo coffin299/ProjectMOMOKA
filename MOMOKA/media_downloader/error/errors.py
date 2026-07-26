@@ -9,6 +9,8 @@ import openai
 import yt_dlp
 from googleapiclient.errors import HttpError
 
+from MOMOKA.utilities.locale import pick_str
+
 logger = logging.getLogger(__name__)
 
 # Discordのメッセージ最大長
@@ -50,17 +52,16 @@ class LLMExceptionHandler:
         return f"{base_message}{error_detail}"[:DISCORD_MESSAGE_MAX_LENGTH]
 
 
-# --- ここから新規追加 ---
-
 class YTDLPExceptionHandler:
     """yt-dlpとGoogle Drive関連のエラーを処理し、ユーザー向けのメッセージを生成するクラス。"""
 
-    def handle_exception(self, e: Exception) -> str:
+    def handle_exception(self, e: Exception, *, lang: str = "en") -> str:
         """
         例外オブジェクトを受け取り、種類に応じて適切なエラーメッセージ文字列を返す。
 
         Args:
             e (Exception): 捕捉された例外オブジェクト。
+            lang: UI 言語（ja / en）。
 
         Returns:
             str: Discordに返信するエラーメッセージ。
@@ -68,42 +69,67 @@ class YTDLPExceptionHandler:
         logger.error(f"An error occurred in YTDLP/GDrive process: {e}", exc_info=True)
 
         if isinstance(e, yt_dlp.utils.DownloadError):
-            return (
-                f"動画が見つからないか、ダウンロードが許可されていません。検索クエリやURLを確認してください。\n"
-                f"Video not found or download is not allowed. Please check the query or URL.\n"
-                f"```{str(e)}```"
+            return pick_str(
+                lang,
+                ja=(
+                    f"動画が見つからないか、ダウンロードが許可されていません。"
+                    f"検索クエリやURLを確認してください。\n```{str(e)}```"
+                ),
+                en=(
+                    f"Video not found or download is not allowed. "
+                    f"Please check the query or URL.\n```{str(e)}```"
+                ),
             )
         elif isinstance(e, HttpError):
-            return (
-                f"Google Drive APIでエラーが発生しました。認証情報やフォルダID、APIの割り当てを確認してください。\n"
-                f"An error occurred with the Google Drive API. Please check credentials, folder ID, and API quota.\n"
-                f"```{str(e)}```"
+            return pick_str(
+                lang,
+                ja=(
+                    f"Google Drive APIでエラーが発生しました。"
+                    f"認証情報やフォルダID、APIの割り当てを確認してください。\n```{str(e)}```"
+                ),
+                en=(
+                    f"An error occurred with the Google Drive API. "
+                    f"Please check credentials, folder ID, and API quota.\n```{str(e)}```"
+                ),
             )
         else:
-            return (
-                f"処理中に予期せぬエラーが発生しました。\n"
-                f"An unexpected error occurred during processing.\n"
-                f"```{type(e).__name__}: {str(e)}```"
+            return pick_str(
+                lang,
+                ja=f"処理中に予期せぬエラーが発生しました。\n```{type(e).__name__}: {str(e)}```",
+                en=(
+                    f"An unexpected error occurred during processing.\n"
+                    f"```{type(e).__name__}: {str(e)}```"
+                ),
             )
 
-    def get_gdrive_init_error(self) -> str:
+    def get_gdrive_init_error(self, *, lang: str = "en") -> str:
         """Google Drive APIが初期化されていない場合のエラーメッセージを返す。"""
-        return (
-            "エラー: Google Drive APIが初期化されていません。コンソールを確認してください。\n"
-            "Error: Google Drive API is not initialized. Please check the console."
+        return pick_str(
+            lang,
+            ja="エラー: Google Drive APIが初期化されていません。コンソールを確認してください。",
+            en="Error: Google Drive API is not initialized. Please check the console.",
         )
 
-    def get_merge_error(self) -> str:
+    def get_merge_error(self, *, lang: str = "en") -> str:
         """動画と音声の結合に失敗した場合のエラーメッセージを返す。"""
-        return "エラー: 動画と音声の結合に失敗しました。\nError: Failed to merge video and audio."
+        return pick_str(
+            lang,
+            ja="エラー: 動画と音声の結合に失敗しました。",
+            en="Error: Failed to merge video and audio.",
+        )
 
-    def get_upload_error(self) -> str:
+    def get_upload_error(self, *, lang: str = "en") -> str:
         """Google Driveへのアップロードに失敗した場合のエラーメッセージを返す。"""
-        return "エラー: Google Driveへのアップロードに失敗しました。\nError: Failed to upload to Google Drive."
+        return pick_str(
+            lang,
+            ja="エラー: Google Driveへのアップロードに失敗しました。",
+            en="Error: Failed to upload to Google Drive.",
+        )
 
-    def get_conversion_error(self) -> str:
+    def get_conversion_error(self, *, lang: str = "en") -> str:
         """ファイル変換に失敗した場合のエラーメッセージを返す。"""
-        return (
-            "エラー: ファイル変換に失敗しました。FFmpegがインストールされていますか？\n"
-            "Error: File conversion failed. Is FFmpeg installed?"
+        return pick_str(
+            lang,
+            ja="エラー: ファイル変換に失敗しました。FFmpegがインストールされていますか？",
+            en="Error: File conversion failed. Is FFmpeg installed?",
         )

@@ -36,7 +36,7 @@ class TimerCog(commands.Cog):
             print(f"TimerCogで予期せぬエラーが発生しました: {error}")
             await interaction.response.send_message("予期せぬエラーが発生しました。", ephemeral=True)
 
-    timer_group = app_commands.Group(name="timer", description="Timer-related commands. / タイマー関連のコマンド")
+    timer_group = app_commands.Group(name="timer", description="Timer-related commands.")
 
     async def update_timer_display(self, user_key: tuple, message: discord.Message, start_time: datetime.datetime,
                                    user: discord.User):
@@ -99,7 +99,7 @@ class TimerCog(commands.Cog):
                 self.timers.pop(user_key, None)
                 break
 
-    @timer_group.command(name="start", description="Start a timer. / タイマーを開始します。")
+    @timer_group.command(name="start", description="Start a timer.")
     async def start_timer(self, interaction: discord.Interaction):
         """ユーザーのタイマーを開始する"""
         user_key = (interaction.guild_id, interaction.user.id)
@@ -128,7 +128,7 @@ class TimerCog(commands.Cog):
         # バックグラウンドで更新タスクを開始。interaction.userを渡す
         self.bot.loop.create_task(self.update_timer_display(user_key, message, start_time, interaction.user))
 
-    @timer_group.command(name="stop", description="Stop the timer and show elapsed time. / タイマーを停止し、経過時間を表示します。")
+    @timer_group.command(name="stop", description="Stop the timer and show elapsed time.")
     async def stop_timer(self, interaction: discord.Interaction):
         """ユーザーのタイマーを停止し、結果を表示する"""
         user_key = (interaction.guild_id, interaction.user.id)

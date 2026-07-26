@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import discord
 from discord.ext import commands
 
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
+
 logger = logging.getLogger(__name__)
 
 # View / Modal の有効期限（秒）— 画像生成フローに合わせる
@@ -33,11 +35,14 @@ _CATEGORY_STYLES: Dict[str, discord.ButtonStyle] = {
 }
 
 
-def category_label(category_id: str) -> str:
-    """カテゴリの日英併記ラベルを返す。"""
+def category_label(category_id: str, *, lang: Optional[str] = None) -> str:
+    """カテゴリラベルを返す（lang 指定時は単一言語、未指定時は日英併記）。"""
     # 未知 ID は other にフォールバックする
     meta = CATEGORIES.get(category_id) or CATEGORIES["other"]
-    # 「JA / EN」形式で返す
+    # lang 指定なら単一言語
+    if lang is not None:
+        return pick_str(lang, ja=meta["ja"], en=meta["en"])
+    # 未指定は後方互換の併記
     return f"{meta['ja']} / {meta['en']}"
 
 
@@ -197,22 +202,32 @@ class FeedbackService:
         requester: discord.abc.User,
         source_guild: Optional[discord.Guild],
         source_channel: Optional[discord.abc.GuildChannel],
+        lang: str = "en",
     ) -> Tuple[bool, str, Optional[str]]:
         """
         全 feedback チャンネルへ投稿する。
 
         Returns:
-            (ok, bilingual_message, submission_id_or_none)
+            (ok, user_message, submission_id_or_none)
         """
+        # UI 言語を正規化する
+        ui_lang = "ja" if lang == "ja" else "en"
         # 投稿先が無ければ失敗する
         ids = self.channel_ids()
         if not ids:
             return (
                 False,
-                "❌ フィードバック送信先が未設定です。"
-                "`configs/utilities_config.yaml` の `feedback.channel_ids` を設定してください。\n"
-                "❌ Feedback destination is not configured. "
-                "Set `feedback.channel_ids` in `configs/utilities_config.yaml`.",
+                pick_str(
+                    ui_lang,
+                    ja=(
+                        "❌ フィードバック送信先が未設定です。"
+                        "`configs/utilities_config.yaml` の `feedback.channel_ids` を設定してください。"
+                    ),
+                    en=(
+                        "❌ Feedback destination is not configured. "
+                        "Set `feedback.channel_ids` in `configs/utilities_config.yaml`."
+                    ),
+                ),
                 None,
             )
         # クールダウンを確認する
@@ -220,8 +235,11 @@ class FeedbackService:
         if remaining is not None:
             return (
                 False,
-                f"⏳ 連続投稿は少し待ってください（残り約 {remaining} 秒）。\n"
-                f"⏳ Please wait before submitting again (~{remaining}s remaining).",
+                pick_str(
+                    ui_lang,
+                    ja=f"⏳ 連続投稿は少し待ってください（残り約 {remaining} 秒）。",
+                    en=f"⏳ Please wait before submitting again (~{remaining}s remaining).",
+                ),
                 None,
             )
         # カテゴリを正規化する
@@ -265,8 +283,11 @@ class FeedbackService:
         if sent == 0:
             return (
                 False,
-                "❌ フィードバックの投稿に失敗しました。管理者に連絡してください。\n"
-                "❌ Failed to deliver feedback. Please contact an administrator.",
+                pick_str(
+                    ui_lang,
+                    ja="❌ フィードバックの投稿に失敗しました。管理者に連絡してください。",
+                    en="❌ Failed to deliver feedback. Please contact an administrator.",
+                ),
                 None,
             )
         # クールダウンを記録する
@@ -274,8 +295,11 @@ class FeedbackService:
         # 成功メッセージを返す
         return (
             True,
-            f"✅ フィードバックを送信しました（{sent} 件）。 / Feedback submitted ({sent} destination(s)).\n"
-            f"`submission_id={submission_id}`",
+            pick_str(
+                ui_lang,
+                ja=f"✅ フィードバックを送信しました（{sent} 件）。\n`submission_id={submission_id}`",
+                en=f"✅ Feedback submitted ({sent} destination(s)).\n`submission_id={submission_id}`",
+            ),
             submission_id,
         )
 
@@ -291,20 +315,25 @@ class FeedbackModal(discord.ui.Modal):
         *,
         prefill_title: str = "",
         prefill_body: str = "",
+        lang: str = "en",
     ) -> None:
-        # カテゴリ併記をタイトルに載せる
+        # UI 言語を正規化する
+        ui_lang = "ja" if lang == "ja" else "en"
+        # カテゴリ単一言語をタイトルに載せる
+        cat = category_label(category_id, lang=ui_lang)
         super().__init__(
-            title=f"Feedback — {category_label(category_id)}"[:45],
+            title=f"Feedback — {cat}"[:45],
             timeout=VIEW_TIMEOUT_SECONDS,
         )
         # 依存を保持する
         self.service = service
         self.category_id = category_id
         self.requester_id = requester_id
+        self.lang = ui_lang
         # タイトル入力欄を作る
         self.title_input = discord.ui.TextInput(
-            label="タイトル / Title",
-            placeholder="短い要約 / Short summary",
+            label=pick_str(ui_lang, ja="タイトル", en="Title"),
+            placeholder=pick_str(ui_lang, ja="短い要約", en="Short summary"),
             style=discord.TextStyle.short,
             required=True,
             max_length=100,
@@ -312,8 +341,12 @@ class FeedbackModal(discord.ui.Modal):
         )
         # 本文入力欄を作る
         self.body_input = discord.ui.TextInput(
-            label="本文 / Details",
-            placeholder="再現手順・期待動作など / Steps to reproduce, expected behavior, etc.",
+            label=pick_str(ui_lang, ja="本文", en="Details"),
+            placeholder=pick_str(
+                ui_lang,
+                ja="再現手順・期待動作など",
+                en="Steps to reproduce, expected behavior, etc.",
+            ),
             style=discord.TextStyle.paragraph,
             required=True,
             max_length=1500,
@@ -326,9 +359,13 @@ class FeedbackModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction) -> None:
         # 依頼者以外は拒否する
         if interaction.user.id != self.requester_id:
+            msg_lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "❌ このフォームは依頼したユーザーのみ送信できます。\n"
-                "❌ Only the original requester can submit this form.",
+                pick_str(
+                    msg_lang,
+                    ja="❌ このフォームは依頼したユーザーのみ送信できます。",
+                    en="❌ Only the original requester can submit this form.",
+                ),
                 ephemeral=True,
             )
             return
@@ -345,6 +382,7 @@ class FeedbackModal(discord.ui.Modal):
             requester=interaction.user,
             source_guild=guild,
             source_channel=channel,
+            lang=self.lang,
         )
         # 結果を ephemeral で返す
         await interaction.followup.send(message, ephemeral=True)
@@ -391,6 +429,7 @@ class _CategoryButton(discord.ui.Button):
             service=view.service,
             category_id=self.category_id,
             requester_id=view.requester_id,
+            lang=resolve_interaction_lang(interaction),
         )
         await interaction.response.send_modal(modal)
 
@@ -564,6 +603,7 @@ class FeedbackConfirmView(discord.ui.View):
             requester_id=self.requester_id,
             prefill_title=self.title_text,
             prefill_body=self.body_text,
+            lang=resolve_interaction_lang(interaction),
         )
         await interaction.response.send_modal(modal)
 
@@ -665,20 +705,32 @@ class _OpenFeedbackModalButton(discord.ui.Button):
             return
         # 投稿先未設定なら Modal を開かず案内する
         if not view.service.is_configured():
+            lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                "❌ フィードバック送信先が未設定です。"
-                "GitHub リンクから Issue を作成するか、管理者に設定を依頼してください。\n"
-                "❌ Feedback destination is not configured. "
-                "Use the GitHub link or ask an admin to set channel_ids.",
+                pick_str(
+                    lang,
+                    ja=(
+                        "❌ フィードバック送信先が未設定です。"
+                        "GitHub リンクから Issue を作成するか、管理者に設定を依頼してください。"
+                    ),
+                    en=(
+                        "❌ Feedback destination is not configured. "
+                        "Use the GitHub link or ask an admin to set channel_ids."
+                    ),
+                ),
                 ephemeral=True,
             )
             return
         # クールダウン中なら案内する
         remaining = view.service.check_cooldown(interaction.user.id)
         if remaining is not None:
+            lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                f"⏳ 連続投稿は少し待ってください（残り約 {remaining} 秒）。\n"
-                f"⏳ Please wait before submitting again (~{remaining}s remaining).",
+                pick_str(
+                    lang,
+                    ja=f"⏳ 連続投稿は少し待ってください（残り約 {remaining} 秒）。",
+                    en=f"⏳ Please wait before submitting again (~{remaining}s remaining).",
+                ),
                 ephemeral=True,
             )
             return
@@ -687,6 +739,7 @@ class _OpenFeedbackModalButton(discord.ui.Button):
             service=view.service,
             category_id=view.default_category,
             requester_id=interaction.user.id,
+            lang=resolve_interaction_lang(interaction),
         )
         await interaction.response.send_modal(modal)
 

@@ -148,17 +148,26 @@ class GuildState:
         self.update_activity()
 
     def get_current_position(self) -> int:
+        # 再生中でなければシーク位置をそのまま返す
         if not self.is_playing:
             return self.seek_position
 
-        if self.is_paused and self.paused_at:
+        # 一時停止中は paused_at と playback_start_time の両方が必要
+        # （片方が None だと減算で TypeError になるためガードする）
+        if self.is_paused and self.paused_at and self.playback_start_time:
+            # 一時停止時点までの経過秒を算出する
             elapsed = self.paused_at - self.playback_start_time
+            # シーク基準位置に加算して返す
             return self.seek_position + int(elapsed)
 
+        # 再生中で開始時刻がある場合は現在時刻との差分を使う
         if self.playback_start_time:
+            # 再生開始からの経過秒を算出する
             elapsed = time.time() - self.playback_start_time
+            # シーク基準位置に加算して返す
             return self.seek_position + int(elapsed)
 
+        # タイムスタンプ欠損時はシーク位置を返す
         return self.seek_position
 
     def reset_playback_tracking(self):
@@ -1049,7 +1058,15 @@ class MusicCog(commands.Cog, name="music_cog"):
                 state.mixer = current_mixer
             if not state.is_playing:
                 logger.warning(f"Guild {guild_id}: state.is_playing was cleared during playback setup, restoring")
+                # 再生中フラグを復元する
                 state.is_playing = True
+            # コールバックで reset_playback_tracking された場合、開始時刻も復元する
+            if state.playback_start_time is None:
+                logger.warning(
+                    f"Guild {guild_id}: state.playback_start_time was cleared during playback setup, restoring"
+                )
+                # 現在時刻から進捗追跡を再開する
+                state.playback_start_time = time.time()
             if state.current_track is None and track_to_play is not None and not is_seek_operation:
                 logger.warning(f"Guild {guild_id}: state.current_track was cleared during playback setup, restoring")
                 state.current_track = track_to_play
@@ -1406,8 +1423,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 人間が戻ったので予定されていた自動退出を取り消す
             state.auto_leave_task.cancel()
 
-    @commands.hybrid_command(name="play", description="Play a song or add it to the queue. / 曲を再生またはキューに追加します。")
-    @app_commands.describe(query="Song title or URL to play. / 再生したい曲のタイトル、またはURL")
+    @commands.hybrid_command(name="play", description="Play a song or add it to the queue.")
+    @app_commands.describe(query="Song title or URL to play.")
     async def play(self, ctx: commands.Context, *, query: str):
         # レスポンス送信を保留（defer）にし、処理がタイムアウトしないようにする
         await ctx.defer()
@@ -1583,8 +1600,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 読み込み状態フラグをFalseに戻す
             state.is_loading = False
 
-    @commands.hybrid_command(name="seek", description="Seek to a specified time in the track. / 再生位置を指定した時刻に移動します。")
-    @app_commands.describe(time="Seek target (e.g. 1:30 or 90 seconds). / 移動先の時刻 (例: 1:30 または 90 秒)")
+    @commands.hybrid_command(name="seek", description="Seek to a specified time in the track.")
+    @app_commands.describe(time="Seek target (e.g. 1:30 or 90 seconds).")
     async def seek(self, ctx: commands.Context, *, time: str):
         state = self._get_guild_state(ctx.guild.id)
         if not state:
@@ -1622,7 +1639,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         finally:
             state.is_seeking = False
 
-    @commands.hybrid_command(name="pause", description="Pause playback. / 再生を一時停止します。")
+    @commands.hybrid_command(name="pause", description="Pause playback.")
     async def pause(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state or not await self._ensure_voice(ctx, connect_if_not_in=False):
@@ -1642,7 +1659,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         await self._send_response(ctx, "playback_paused")
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="resume", description="Resume paused playback. / 一時停止中の再生を再開します。")
+    @commands.hybrid_command(name="resume", description="Resume paused playback.")
     async def resume(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state or not await self._ensure_voice(ctx, connect_if_not_in=False):
@@ -1661,7 +1678,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         await self._send_response(ctx, "playback_resumed")
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="skip", description="Skip the current track. / 再生中の曲をスキップします。")
+    @commands.hybrid_command(name="skip", description="Skip the current track.")
     async def skip(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state:
@@ -1685,7 +1702,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             # ミキサーなしで再生中の場合（フォールバック）
             state.voice_client.stop()
 
-    @commands.hybrid_command(name="stop", description="Stop playback and clear the queue. / 再生を停止し、キューをクリアします。")
+    @commands.hybrid_command(name="stop", description="Stop playback and clear the queue.")
     async def stop(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state:
@@ -1719,7 +1736,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         await self._send_response(ctx, "stopped_playback")
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="leave", description="Disconnect the bot from the voice channel. / ボットをボイスチャンネルから切断します。")
+    @commands.hybrid_command(name="leave", description="Disconnect the bot from the voice channel.")
     async def leave(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state:
@@ -1735,7 +1752,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             await self._send_response(ctx, "leaving_voice_channel")
             await self._cleanup_guild_state(ctx.guild.id)
 
-    @commands.hybrid_command(name="queue", description="Show the current playback queue. / 現在の再生キューを表示します。")
+    @commands.hybrid_command(name="queue", description="Show the current playback queue.")
     async def queue(self, ctx: commands.Context):
         # ギルドの再生状態を取得する
         state = self._get_guild_state(ctx.guild.id)
@@ -1825,7 +1842,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         # 本文とページ情報を返す
         return body, page, total_pages
 
-    @commands.hybrid_command(name="nowplaying", description="Show info about the currently playing track. / 現在再生中の曲の情報を表示します。")
+    @commands.hybrid_command(name="nowplaying", description="Show info about the currently playing track.")
     async def nowplaying(self, ctx: commands.Context):
         # ギルドの再生状態オブジェクトを取得する
         state = self._get_guild_state(ctx.guild.id)
@@ -2212,7 +2229,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         # 生成したバー文字列を返す
         return bar
 
-    @commands.hybrid_command(name="shuffle", description="Shuffle the playback queue. / 再生キューをシャッフルします。")
+    @commands.hybrid_command(name="shuffle", description="Shuffle the playback queue.")
     async def shuffle(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state or not await self._ensure_voice(ctx, connect_if_not_in=False):
@@ -2232,7 +2249,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         # Now Playing のキュー表示を更新する
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="clear", description="Clear the queue (does not stop the current track). / 再生キューを空にします（再生中の曲は停止しません）。")
+    @commands.hybrid_command(name="clear", description="Clear the queue (does not stop the current track).")
     async def clear(self, ctx: commands.Context):
         state = self._get_guild_state(ctx.guild.id)
         if not state or not await self._ensure_voice(ctx, connect_if_not_in=False):
@@ -2245,8 +2262,8 @@ class MusicCog(commands.Cog, name="music_cog"):
         # Now Playing のキュー表示を更新する
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="remove", description="Remove a track from the queue by number. / キューから指定した番号の曲を削除します。")
-    @app_commands.describe(index="Queue position to remove. / 削除したい曲のキュー番号")
+    @commands.hybrid_command(name="remove", description="Remove a track from the queue by number.")
+    @app_commands.describe(index="Queue position to remove.")
     async def remove(self, ctx: commands.Context, index: int):
         state = self._get_guild_state(ctx.guild.id)
         if not state:
@@ -2281,8 +2298,8 @@ class MusicCog(commands.Cog, name="music_cog"):
         # Now Playing のキュー表示を更新する
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="volume", description="Change the volume (0-200). / 音量を変更します (0-200)。")
-    @app_commands.describe(level="Volume level to set (0-200). / 設定したい音量レベル (0-200)")
+    @commands.hybrid_command(name="volume", description="Change the volume (0-200).")
+    @app_commands.describe(level="Volume level to set (0-200).")
     async def volume(self, ctx: commands.Context, level: int):
         if not 0 <= level <= 200:
             await self._send_ctx_message(ctx, content="音量は0から200の間で指定してください。", ephemeral=True)
@@ -2301,8 +2318,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             await state.mixer.set_volume('music', state.volume)
         await self._send_response(ctx, "volume_set", volume=level)
 
-    @commands.hybrid_command(name="loop", description="Set the loop playback mode. / ループ再生モードを設定します。")
-    @app_commands.describe(mode="Select the loop mode. / ループのモードを選択してください。")
+    @commands.hybrid_command(name="loop", description="Set the loop playback mode.")
+    @app_commands.describe(mode="Select the loop mode.")
     @app_commands.choices(mode=[
         app_commands.Choice(name="オフ (Loop Off)", value="off"),
         app_commands.Choice(name="現在の曲をループ (Loop One)", value="one"),
@@ -2332,7 +2349,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         # Now Playing の Loop / QLoop 表示を更新する
         await self._update_now_playing_message_ui(ctx.guild.id)
 
-    @commands.hybrid_command(name="join", description="Join your voice channel. / ボットをあなたのいるボイスチャンネルに接続します。")
+    @commands.hybrid_command(name="join", description="Join your voice channel.")
     async def join(self, ctx: commands.Context):
         await ctx.defer(ephemeral=True)
         if await self._ensure_voice(ctx, connect_if_not_in=True):

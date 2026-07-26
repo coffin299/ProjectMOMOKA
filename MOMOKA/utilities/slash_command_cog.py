@@ -18,9 +18,8 @@ from MOMOKA.utilities.error.errors import InvalidDiceNotationError, DiceValueErr
 from MOMOKA.utilities.help_view import (
     HelpLayoutView,
     InviteLayoutView,
-    lang_from_discord_locale,
-    resolve_invite_urls,
 )
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 # フィードバック Modal / 複数チャンネル投稿
 from MOMOKA.utilities.feedback import (
     CATEGORIES,
@@ -138,8 +137,8 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
             return random.choices(population, weights=weights, k=1)[0]
 
     @app_commands.command(name="gacha",
-                          description="Recruits students like in Blue Archive. / ブルーアーカイブ風の生徒募集（ガチャ）を行います。")
-    @app_commands.describe(rolls="Select the number of recruitments. / 募集回数を選択します。")
+                          description="Recruits students like in Blue Archive.")
+    @app_commands.describe(rolls="Select the number of recruitments.")
     @app_commands.choices(rolls=[
         app_commands.Choice(name="10 Rolls / 10回募集", value=10),
         app_commands.Choice(name="1 Roll / 1回募集", value=1),
@@ -184,7 +183,7 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         logger.info(f"/ping が実行されました。レイテンシ: {latency_ms}ms (User: {interaction.user.id})")
 
     @app_commands.command(name="serverinfo",
-                          description="Displays information about the current server. / 現在のサーバーに関する情報を表示します。")
+                          description="Displays information about the current server.")
     async def serverinfo(self, interaction: discord.Interaction):
         if not interaction.guild:
             await interaction.response.send_message(
@@ -224,9 +223,9 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         logger.info(f"/serverinfo が実行されました。 (Server: {guild.id}, User: {interaction.user.id})")
 
     @app_commands.command(name="userinfo",
-                          description="Displays information about the specified user. / 指定されたユーザーの情報を表示します。")
+                          description="Displays information about the specified user.")
     @app_commands.describe(
-        user="User to display information for (optional, defaults to you). / 情報を表示するユーザー（任意、デフォルトはコマンド実行者）")
+        user="User to display information for (optional, defaults to you).")
     async def userinfo(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         target_user = user or interaction.user
         embed = discord.Embed(title=f"{target_user.display_name} のユーザー情報 / User Information",
@@ -287,9 +286,9 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         logger.info(f"/userinfo が実行されました。 (TargetUser: {target_user.id}, Requester: {interaction.user.id})")
 
     @app_commands.command(name="avatar",
-                          description="Displays the avatar of the specified user. / 指定されたユーザーのアバター画像URLを表示します。")
+                          description="Displays the avatar of the specified user.")
     @app_commands.describe(
-        user="User whose avatar to display (optional, defaults to you). / アバターを表示するユーザー（任意、デフォルトはコマンド実行者）")
+        user="User whose avatar to display (optional, defaults to you).")
     async def avatar_command(self, interaction: discord.Interaction, user: Optional[discord.User] = None):
         target_user = user or interaction.user
         avatar_url = target_user.display_avatar.url
@@ -303,10 +302,10 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
 
     @app_commands.command(
         name="feedback",
-        description="Send a bug report or feature request. / 不具合・要望を開発者サーバーへ送ります",
+        description="Send a bug report or feature request.",
     )
     @app_commands.describe(
-        category="Report category. / 報告の種類",
+        category="Report category.",
     )
     @app_commands.choices(
         category=[
@@ -333,9 +332,13 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         # クールダウン中なら案内する
         remaining = self.feedback_service.check_cooldown(interaction.user.id)
         if remaining is not None:
+            lang = resolve_interaction_lang(interaction)
             await interaction.response.send_message(
-                f"⏳ 連続投稿は少し待ってください（残り約 {remaining} 秒）。\n"
-                f"⏳ Please wait before submitting again (~{remaining}s remaining).",
+                pick_str(
+                    lang,
+                    ja=f"⏳ 連続投稿は少し待ってください（残り約 {remaining} 秒）。",
+                    en=f"⏳ Please wait before submitting again (~{remaining}s remaining).",
+                ),
                 ephemeral=True,
             )
             return
@@ -346,6 +349,7 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
             service=self.feedback_service,
             category_id=category_id,
             requester_id=interaction.user.id,
+            lang=resolve_interaction_lang(interaction),
         )
         await interaction.response.send_modal(modal)
         # 実行ログを残す
@@ -356,7 +360,7 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         )
 
     @app_commands.command(name="support",
-                          description="Shows how to contact the developer. / 開発者へのお問い合わせ方法を表示します")
+                          description="Shows how to contact the developer.")
     async def support_contact_slash(self, interaction: discord.Interaction) -> None:
         # GitHubリポジトリURLを問い合わせ先として使用
         github_url = "https://github.com/coffin399/ProjectMOMOKA"
@@ -430,17 +434,21 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         logger.info(f"/support が実行されました。 (User: {interaction.user.id})")
 
     @app_commands.command(name="invite",
-                          description="Shows invite links for PLANA and ARONA. / PLANA / ARONA の招待リンクを表示します。")
+                          description="Shows invite links for PLANA and ARONA.")
     async def invite_bot_slash(self, interaction: discord.Interaction) -> None:
+        # app → guild → en で表示言語を決める
+        lang = resolve_interaction_lang(interaction)
         # Components V2 は embed 併用不可のため view のみ送信する
-        view = InviteLayoutView(self.bot)
+        view = InviteLayoutView(self.bot, lang=lang)
         # LayoutView メッセージを返す
         await interaction.response.send_message(view=view)
         # 実行ログ
-        logger.info(f"/invite が実行されました。 (User: {interaction.user.id})")
+        logger.info(
+            f"/invite が実行されました。 (User: {interaction.user.id}, lang={lang})"
+        )
 
     @app_commands.command(name="updates",
-                          description="Shows the bot's latest update history (commit log). / Botの最新のアップデート履歴（コミットログ）を表示します。")
+                          description="Shows the bot's latest update history (commit log).")
     async def updates(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
 
@@ -513,10 +521,10 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
             logger.error(f"/updates の実行中に接続エラーが発生しました: {e}")
 
     @app_commands.command(name="help",
-                          description="Displays help information for the bot. / Botのヘルプ情報を表示します。")
+                          description="Displays help information for the bot.")
     async def help_slash_command(self, interaction: discord.Interaction):
-        # Discord クライアント言語から初期表示言語を決める
-        initial_lang = lang_from_discord_locale(interaction.locale)
+        # app → guild → en で初期表示言語を決める
+        initial_lang = resolve_interaction_lang(interaction)
         # Components V2 LayoutView のみ送信（embed 非併用）
         view = HelpLayoutView(self.bot, page=0, lang=initial_lang)
         # ヘルプパネルを返す

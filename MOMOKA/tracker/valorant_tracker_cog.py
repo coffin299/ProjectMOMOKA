@@ -158,10 +158,10 @@ class ValorantCog(commands.Cog):
                 return self.RANK_COLORS[key]
         return discord.Color.blurple().value
 
-    @app_commands.command(name="valorant-stats", description="Get Valorant player statistics. / Valorantプレイヤー統計を取得")
+    @app_commands.command(name="valorant-stats", description="Get Valorant player statistics.")
     @app_commands.describe(
-        riot_id="Player's Riot ID (e.g., PlayerName#TAG). / プレイヤーのRiot ID（例: PlayerName#TAG）",
-        region="Region (eu, na, ap, kr, latam, br). / リージョン"
+        riot_id="Player's Riot ID (e.g., PlayerName#TAG).",
+        region="Region (eu, na, ap, kr, latam, br)."
     )
     async def valorant_stats(
             self,
@@ -331,10 +331,10 @@ class ValorantCog(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="valorant-recent", description="Get recent competitive matches. / 最近のコンペティティブ試合を取得")
+    @app_commands.command(name="valorant-recent", description="Get recent competitive matches.")
     @app_commands.describe(
-        riot_id="Player's Riot ID (e.g., PlayerName#TAG). / プレイヤーのRiot ID（例: PlayerName#TAG）",
-        region="Region (eu, na, ap, kr, latam, br). / リージョン"
+        riot_id="Player's Riot ID (e.g., PlayerName#TAG).",
+        region="Region (eu, na, ap, kr, latam, br)."
     )
     async def valorant_recent(
             self,
