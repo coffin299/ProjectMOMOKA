@@ -644,8 +644,8 @@ def preview_embed_for_confirm(
 
 
 # サポート誘導用の既定 URL
-GITHUB_REPO_URL = "https://github.com/coffin399/ProjectMOMOKA"
-GITHUB_ISSUES_URL = "https://github.com/coffin399/ProjectMOMOKA/issues"
+GITHUB_REPO_URL = "https://github.com/coffin299/ProjectMOMOKA"
+GITHUB_ISSUES_URL = "https://github.com/coffin299/ProjectMOMOKA/issues"
 
 # エラー表示フッター（日英）
 SUPPORT_FOOTER_TEXT = (

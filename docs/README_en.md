@@ -140,7 +140,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 
 1. **Clone**
    ```bash
-   git clone https://github.com/coffin399/ProjectMOMOKA.git
+   git clone https://github.com/coffin299/ProjectMOMOKA.git
    cd ProjectMOMOKA
    ```
 

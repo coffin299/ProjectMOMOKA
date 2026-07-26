@@ -25,7 +25,7 @@ Also see: [bot_listing_topgg.md](bot_listing_topgg.md) (top.gg / image-friendly 
 - FAQ: https://momoka-project.com/faq.html
 - Terms: https://momoka-project.com/terms.html
 - Privacy: https://momoka-project.com/privacy.html
-- Source: https://github.com/coffin399/ProjectMOMOKA
+- Source: https://github.com/coffin299/ProjectMOMOKA
 
 ---
 

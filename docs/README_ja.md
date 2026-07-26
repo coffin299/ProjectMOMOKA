@@ -140,7 +140,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 1. **リポジトリのクローン**
    ```bash
-   git clone https://github.com/coffin399/ProjectMOMOKA.git
+   git clone https://github.com/coffin299/ProjectMOMOKA.git
    cd ProjectMOMOKA
    ```
 

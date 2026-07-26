@@ -57,7 +57,7 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
         # /updates 用リポジトリ（MOMOKA本体のコミット履歴）
         self.updates_repository = _cfg(
             "updates_repository_url",
-            "https://github.com/coffin399/ProjectMOMOKA",
+            "https://github.com/coffin299/ProjectMOMOKA",
         )
         self.support_x_url = _cfg("support_x_url", "https://x.com/coffin299")
         self.support_discord_id = _cfg("support_discord_id", "coffin299")
@@ -364,8 +364,8 @@ class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
                           description="Shows how to contact the developer.")
     async def support_contact_slash(self, interaction: discord.Interaction) -> None:
         # GitHubリポジトリURLを問い合わせ先として使用
-        github_url = "https://github.com/coffin399/ProjectMOMOKA"
-        github_issues_url = "https://github.com/coffin399/ProjectMOMOKA/issues"
+        github_url = "https://github.com/coffin299/ProjectMOMOKA"
+        github_issues_url = "https://github.com/coffin299/ProjectMOMOKA/issues"
 
         embed = discord.Embed(
             title="💬 サポート / Support",

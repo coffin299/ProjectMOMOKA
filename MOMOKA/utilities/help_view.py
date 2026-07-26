@@ -583,7 +583,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "• AI の回答は誤る可能性があります。重要判断は自己責任で\n"
                 "• 生成コンテンツの公開・商用利用は各モデル規約に従ってください"
                 f"{role_note}\n\n"
-                "リポジトリ: https://github.com/coffin399/ProjectMOMOKA"
+                "リポジトリ: https://github.com/coffin299/ProjectMOMOKA"
             )
         if self.is_companion:
             role_note_en = (
@@ -606,7 +606,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "• AI output can be wrong; verify critical decisions yourself\n"
             "• Follow each model provider's terms for generated content"
             f"{role_note_en}\n\n"
-            "Repository: https://github.com/coffin399/ProjectMOMOKA"
+            "Repository: https://github.com/coffin299/ProjectMOMOKA"
         )
 
     async def _lang_ja_callback(self, interaction: discord.Interaction) -> None:

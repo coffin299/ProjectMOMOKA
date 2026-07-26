@@ -1,5 +1,5 @@
 slash_commands:
-  updates_repository_url: https://github.com/coffin399/ProjectMOMOKA
+  updates_repository_url: https://github.com/coffin299/ProjectMOMOKA
 
 # バグ報告・機能リクエストの配信先（複数可）。空なら投稿不可メッセージを返す。
 # サポート鯖に Bot を招待し、投稿先チャンネル ID を列挙する。

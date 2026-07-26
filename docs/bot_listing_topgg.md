@@ -32,7 +32,7 @@ Also see: [bot_listing_discord.md](bot_listing_discord.md) (Discord App Director
 - FAQ: https://momoka-project.com/faq.html
 - Terms: https://momoka-project.com/terms.html
 - Privacy: https://momoka-project.com/privacy.html
-- Source: https://github.com/coffin399/ProjectMOMOKA
+- Source: https://github.com/coffin299/ProjectMOMOKA
 
 ---
 
