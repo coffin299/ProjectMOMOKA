@@ -1337,11 +1337,28 @@ class LLMCog(commands.Cog, name="LLM"):
                 if len(image_bytes) > max_image_bytes:
                     logger.warning(f"Image too large ({len(image_bytes)} bytes): {url}")
                     return None
+                # レスポンスの Content-Type を取得する（パラメータ無し）
                 mime_type = response.content_type
-                if not mime_type or not mime_type.startswith('image/'):
-                    ext = url.split('.')[-1].lower().split('?')
-                    mime_type = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif',
-                                 'webp': 'image/webp'}.get(ext, 'image/jpeg')
+                # 画像以外の Content-Type が明示されている場合は推測せず破棄する
+                if mime_type and not mime_type.startswith('image/'):
+                    # HTML 等（share.google など）を画像として送らない
+                    logger.warning(
+                        f"URL did not return an image Content-Type ({mime_type}): {url}")
+                    return None
+                # Content-Type が無い場合のみ URL 拡張子から MIME を推測する
+                if not mime_type:
+                    # クエリを除き、最後のドット以降を拡張子として取り出す
+                    path_without_query = url.split('?', 1)[0]
+                    # 拡張子が無い URL ではパス全体が候補になるため小文字化のみ行う
+                    ext = path_without_query.rsplit('.', 1)[-1].lower()
+                    # 既知拡張子のみ採用し、不明なら JPEG にフォールバックする
+                    mime_type = {
+                        'png': 'image/png',
+                        'jpg': 'image/jpeg',
+                        'jpeg': 'image/jpeg',
+                        'gif': 'image/gif',
+                        'webp': 'image/webp',
+                    }.get(ext, 'image/jpeg')
                 if mime_type == 'image/gif':
                     try:
                         from PIL import Image
@@ -2860,32 +2877,14 @@ class LLMCog(commands.Cog, name="LLM"):
             default_model = self._persona_default_model()
             # 上書きが残っておりデフォルトと違う場合のみクリアする
             if current_model and current_model != default_model:
-                # 上書きを削除する
+                # 上書きを削除する（チャンネルへの通知は送らない）
                 self._clear_channel_override(channel_id)
                 # JSON へ反映する
                 await self._save_channel_models()
+                # サイレント復帰のため Discord 通知はせずログのみ残す
                 logger.info(
                     f"[{self._bot_tag()}] Model for channel {channel_id} auto-reset to '{default_model}'."
                 )
-                # 通知先チャンネルを取得する
-                channel = self.bot.get_channel(channel_id)
-                # テキストチャンネルなら通知を送る
-                if channel and isinstance(channel, discord.TextChannel):
-                    try:
-                        embed = discord.Embed(
-                            title="ℹ️ AI Model Reset / AIモデルをリセットしました",
-                            description=(
-                                f"The AI model for this channel has been reset to the default "
-                                f"(`{default_model}`) after 3 hours.\n"
-                                f"3時間が経過したため、このチャンネルのAIモデルをデフォルト "
-                                f"(`{default_model}`) に戻しました。"
-                            ),
-                            color=discord.Color.blue(),
-                        )
-                        self._add_support_footer(embed)
-                        await channel.send(embed=embed, view=self._create_support_view())
-                    except discord.HTTPException as e:
-                        logger.warning(f"Failed to send model reset notification to channel {channel_id}: {e}")
             elif entry is not None:
                 # 無効／デフォルト相当の残骸があれば掃除して保存する
                 self._clear_channel_override(channel_id)
