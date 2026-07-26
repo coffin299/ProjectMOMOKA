@@ -32,7 +32,7 @@
 
 ### 特徴
 
-- 🤖 **マルチモデルAI対話** - OpenAI、Google Gemini、NVIDIA NIM、KoboldCPP など
+- 🤖 **マルチモデルAI対話** - OpenAI、Google Gemini、NVIDIA NIM、OpenRouter、KoboldCPP など
 - 🗣️ **debate / cross_check** - PLANA↔ARONA の多ラウンド討論＋評定、または軽量3ステップ検証
 - 🎵 **音楽再生** - YouTube、Spotify、Google Drive など（両ボット）
 - 🎨 **画像生成 / TTS / 通知 / tracker** - **PLANA 専用**
@@ -52,6 +52,7 @@
 - **OpenAI**: GPT-4o, GPT-4 Turbo
 - **Google**: Gemini 系
 - **NVIDIA NIM**: Kimi、Llama、DeepSeek R1 など
+- **OpenRouter**: Free Models Router（`openrouter/free`）など（集約 API）
 - **KoboldCPP**: ローカル LLM サーバー
 
 #### 主な機能
@@ -223,10 +224,17 @@ bots:
 ```yaml
 llm:
   model: "google/gemini-2.5-pro"
+  # OpenRouter 利用例: model: "openrouter/free"
   providers:
     google:
       api_key1: YOUR_KEY
       api_key2: YOUR_KEY_2  # レートリミット時に自動切替
+    openrouter:
+      base_url: https://openrouter.ai/api/v1
+      api_key1: YOUR_OPENROUTER_KEY
+      # 任意（ランキング用）
+      http_referer: https://momoka-project.com
+      x_title: Project MOMOKA
 ```
 
 #### 画像生成（`images_config.yaml` / LLM 連携設定）

@@ -861,6 +861,49 @@ class LLMCog(commands.Cog, name="LLM"):
     async def _save_channel_models(self) -> None:
         await self._save_json_data(self.channel_models, self.channel_settings_path)
 
+    def _openai_client_kwargs(
+        self,
+        provider_name: str,
+        provider_config: Dict[str, Any],
+        api_key: str,
+        base_url: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """AsyncOpenAI 生成用の共通 kwargs を組み立てる。"""
+        # 呼び出し先 URL（未指定時は設定の base_url）
+        resolved_base_url = base_url if base_url is not None else provider_config.get("base_url")
+        # 必須引数を先に入れる
+        kwargs: Dict[str, Any] = {
+            "base_url": resolved_base_url,
+            "api_key": api_key,
+        }
+        # KoboldCPP のみ timeout を明示する（他は SDK 既定）
+        if provider_name.lower() == "koboldcpp":
+            # 設定値または 300 秒を使う
+            kwargs["timeout"] = provider_config.get("timeout", 300.0)
+        # OpenRouter 推奨ヘッダ（ランキング・識別用）
+        if provider_name.lower() == "openrouter":
+            # Referer / アプリ名を設定から読み、無ければプロジェクト既定値
+            referer = provider_config.get("http_referer") or "https://momoka-project.com"
+            # アプリ表示名（X-Title）
+            title = provider_config.get("x_title") or "Project MOMOKA"
+            # default_headers として渡す
+            kwargs["default_headers"] = {
+                "HTTP-Referer": referer,
+                "X-Title": title,
+            }
+        # 組み立て結果を返す
+        return kwargs
+
+    def _is_google_gemini_model(self, model_string: Optional[str]) -> bool:
+        """Google プロバイダー直結の Gemini のみ True（OpenRouter 経由は除外）。"""
+        # 空や不正形式は対象外
+        if not model_string or "/" not in model_string:
+            return False
+        # provider / 以降のモデル ID に分割する
+        provider_name, model_name = model_string.split("/", 1)
+        # Google API 向けアダプタは google プロバイダー限定
+        return provider_name.lower() == "google" and "gemini" in model_name.lower()
+
     def _initialize_llm_client(self, model_string: Optional[str]) -> Optional[openai.AsyncOpenAI]:
         if not model_string or '/' not in model_string:
             logger.error(f"Invalid model format: '{model_string}'. Expected 'provider_name/model_name'.")
@@ -871,6 +914,18 @@ class LLMCog(commands.Cog, name="LLM"):
             if not provider_config:
                 logger.error(f"Configuration for LLM provider '{provider_name}' not found.")
                 return None
+
+            # OpenRouter 公式ルータ（例: openrouter/free）は API 上も openrouter/<id> が必要
+            if provider_name.lower() == "openrouter" and "/" not in model_name:
+                # free / auto など著者プレフィックス無しの場合に復元する
+                if model_name.lower() in ("free", "auto"):
+                    # API に渡す正式スラッグへ書き換える
+                    model_name = f"openrouter/{model_name}"
+                    # 補正内容をログに残す
+                    logger.info(
+                        f"🔧 [OpenRouter] Normalized model slug to '{model_name}' "
+                        f"(from '{model_string}')."
+                    )
             
             # KoboldCPP固有の処理
             is_koboldcpp = provider_name.lower() == 'koboldcpp'
@@ -912,8 +967,15 @@ class LLMCog(commands.Cog, name="LLM"):
                         base_url = base_url + '/v1'
                     logger.info(f"🔧 [KoboldCPP] Adjusted base_url to: {base_url}")
             
-            client = openai.AsyncOpenAI(base_url=base_url, api_key=api_key_to_use, timeout=provider_config.get('timeout', 300.0) if is_koboldcpp else None)
+            # 共通 kwargs（OpenRouter ヘッダ含む）でクライアントを生成する
+            client = openai.AsyncOpenAI(
+                **self._openai_client_kwargs(
+                    provider_name, provider_config, api_key_to_use, base_url=base_url
+                )
+            )
             client.model_name_for_api_calls, client.provider_name = model_name, provider_name
+            # 設定上の model 文字列（例: openrouter/free）を保持する
+            client.config_model_string = model_string
             # KoboldCPP固有のメタデータを設定
             if is_koboldcpp:
                 client.supports_tools = provider_config.get('supports_tools', True)
@@ -2001,6 +2063,11 @@ class LLMCog(commands.Cog, name="LLM"):
 
     def _client_model_string(self, client: openai.AsyncOpenAI, channel_id: int) -> Optional[str]:
         """クライアントから provider/model 文字列を組み立てる。"""
+        # 設定時の正規文字列があればそれを優先する（OpenRouter free 補正後の二重化を防ぐ）
+        config_model = getattr(client, "config_model_string", None)
+        # 設定文字列があればそのまま返す
+        if config_model:
+            return config_model
         # クライアントに付与された provider 名を取得する
         provider_name = getattr(client, "provider_name", None)
         # クライアントに付与された API 用モデル名を取得する
@@ -2043,8 +2110,8 @@ class LLMCog(commands.Cog, name="LLM"):
         self, messages: List[Dict[str, Any]], model_string: Optional[str]
     ) -> List[Dict[str, Any]]:
         """切替先モデル向けにメッセージ形式を必要なら変換する。"""
-        # Gemini 判定に使う
-        is_gemini = bool(model_string and "gemini" in model_string.lower())
+        # Google 直結 Gemini のみアダプタ対象（OpenRouter 等は除外）
+        is_gemini = self._is_google_gemini_model(model_string)
         # system role が残っているか確認する（未変換の目安）
         has_system = any(m.get("role") == "system" for m in messages)
         # Gemini かつ system が残っていれば変換する
@@ -2132,14 +2199,18 @@ class LLMCog(commands.Cog, name="LLM"):
         provider_config = self.llm_config.get("providers", {}).get(provider_name, {})
         # KoboldCPP かどうか判定する
         is_koboldcpp = provider_name.lower() == "koboldcpp"
-        # KoboldCPP のみ timeout を明示する
-        timeout = provider_config.get("timeout", 300.0) if is_koboldcpp else None
-        # 新しいキーでクライアントを作り直す
-        new_client = openai.AsyncOpenAI(base_url=client.base_url, api_key=next_key, timeout=timeout)
+        # 共通 kwargs（timeout / OpenRouter ヘッダ）で作り直す
+        new_client = openai.AsyncOpenAI(
+            **self._openai_client_kwargs(
+                provider_name, provider_config, next_key, base_url=str(client.base_url)
+            )
+        )
         # モデル名メタデータを引き継ぐ
         new_client.model_name_for_api_calls = client.model_name_for_api_calls
         # プロバイダー名メタデータを引き継ぐ
         new_client.provider_name = client.provider_name
+        # 設定上の model 文字列も引き継ぐ
+        new_client.config_model_string = getattr(client, "config_model_string", None)
         # ツール対応フラグを引き継ぐ
         if is_koboldcpp:
             new_client.supports_tools = getattr(
@@ -2147,8 +2218,12 @@ class LLMCog(commands.Cog, name="LLM"):
             )
         else:
             new_client.supports_tools = getattr(client, "supports_tools", True)
+        # キャッシュキーは設定文字列を優先する
+        cache_key = getattr(new_client, "config_model_string", None) or (
+            f"{provider_name}/{new_client.model_name_for_api_calls}"
+        )
         # キャッシュを新クライアントで更新する
-        self.llm_clients[f"{provider_name}/{new_client.model_name_for_api_calls}"] = new_client
+        self.llm_clients[cache_key] = new_client
         # 連打抑制のため短く待つ
         await asyncio.sleep(1)
         # 新しいクライアントを返す
@@ -2170,8 +2245,8 @@ class LLMCog(commands.Cog, name="LLM"):
         model_string = self._resolve_model_string(channel_id)
         # 実クライアントの provider/model を優先して試行チェーンを組む
         primary_model_string = self._client_model_string(client, channel_id) or model_string
-        # Gemini 向け初回変換が必要か判定する
-        is_gemini = primary_model_string and "gemini" in primary_model_string.lower()
+        # Google 直結 Gemini のみ初回変換する（OpenRouter 経由は除外）
+        is_gemini = self._is_google_gemini_model(primary_model_string)
 
         if is_gemini:
             original_messages_for_log = messages

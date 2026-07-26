@@ -32,7 +32,7 @@
 
 ### Features
 
-- 🤖 **Multi-model AI chat** — OpenAI, Google Gemini, NVIDIA NIM, KoboldCPP, and more
+- 🤖 **Multi-model AI chat** — OpenAI, Google Gemini, NVIDIA NIM, OpenRouter, KoboldCPP, and more
 - 🗣️ **debate / cross_check** — Multi-round PLANA↔ARONA debate with a judge turn, or a light 3-step verification
 - 🎵 **Music playback** — YouTube, Spotify, Google Drive, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
@@ -52,6 +52,7 @@ Mention `@PLANA` or `@ARONA` to chat.
 - **OpenAI**: GPT-4o, GPT-4 Turbo
 - **Google**: Gemini family
 - **NVIDIA NIM**: Kimi, Llama, DeepSeek R1, and more
+- **OpenRouter**: Free Models Router (`openrouter/free`) and more (unified API)
 - **KoboldCPP**: Local LLM servers
 
 #### Highlights
@@ -223,10 +224,17 @@ bots:
 ```yaml
 llm:
   model: "google/gemini-2.5-pro"
+  # OpenRouter example: model: "openrouter/free"
   providers:
     google:
       api_key1: YOUR_KEY
       api_key2: YOUR_KEY_2  # rotates on rate limit
+    openrouter:
+      base_url: https://openrouter.ai/api/v1
+      api_key1: YOUR_OPENROUTER_KEY
+      # optional (ranking / app identity)
+      http_referer: https://momoka-project.com
+      x_title: Project MOMOKA
 ```
 
 #### Images / TTS / Music

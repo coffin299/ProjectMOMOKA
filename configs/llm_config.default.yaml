@@ -13,6 +13,8 @@ llm:
   - nvidia_nim/minimaxai/minimax-m2.7
   - google/gemini-3.5-flash
   - mistral/mistral-medium-latest
+  # OpenRouter Free Models Router（API モデル ID: openrouter/free）
+  - openrouter/free
   # メインモデルの全APIキー失敗時に上から順に試すフォールバックモデル
   fallback_models:
   - nvidia_nim/deepseek-ai/deepseek-v4-flash
@@ -38,6 +40,13 @@ llm:
     groq:
       base_url: https://api.groq.com/openai/v1
       api_key1: key
+    # OpenRouter（OpenAI 互換）。キーは https://openrouter.ai/keys
+    openrouter:
+      base_url: https://openrouter.ai/api/v1
+      api_key1: key
+      # ランキング用（任意）。未設定時は下記デフォルトを送る
+      http_referer: https://momoka-project.com
+      x_title: Project MOMOKA
     koboldcpp:
       base_url: http://localhost:5001/v1
       api_key1: koboldcpp-dummy-key

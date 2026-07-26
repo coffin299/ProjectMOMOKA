@@ -84,7 +84,7 @@ Paste into App Directory **Expanded Description**.
 
 Mention `@PLANA` to start a conversation, then keep chatting with replies.
 
-- Multiple models (OpenAI, Gemini, NVIDIA NIM, and more)
+- Multiple models (OpenAI, Gemini, NVIDIA NIM, OpenRouter, and more)
 - Conversation history, web search, and image understanding (supported models)
 
 ---
@@ -143,7 +143,7 @@ Fetch video or audio and share via Google Drive.
 
 `@PLANA` をメンションして会話を始め、リプライで会話を続けられます。
 
-- 複数モデル対応（OpenAI、Gemini、NVIDIA NIM など）
+- 複数モデル対応（OpenAI、Gemini、NVIDIA NIM、OpenRouter など）
 - 会話履歴、Web検索、画像理解（対応モデル）
 
 ---
