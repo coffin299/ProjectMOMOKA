@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import collections
 import gc
 import io
@@ -36,7 +36,6 @@ try:
     )
     from MOMOKA.music.error.errors import MusicCogExceptionHandler
     from MOMOKA.music.plugins.audio_mixer import AudioMixer, MusicAudioSource
-    from MOMOKA.music.plugins.voice_dave_patch import apply_dave_patch
 except ImportError as e:
     print(f"[CRITICAL] MusicCog: 必須コンポーネントのインポートに失敗しました。エラー: {e}")
     Track = None
@@ -50,7 +49,6 @@ except ImportError as e:
     MusicCogExceptionHandler = None
     AudioMixer = None
     MusicAudioSource = None
-    apply_dave_patch = None
 
 logger = logging.getLogger(__name__)
 
@@ -256,16 +254,6 @@ class MusicCog(commands.Cog, name="music_cog"):
             except Exception as e:
                 # キャッシュ削除失敗でも Cog ロードは続行する
                 logger.warning(f"yt-dlp cache cleanup failed (non-fatal): {e}")
-
-        # DAVE: 2.6 系向けモンキーパッチ / 2.7+ は discord.py ネイティブ + davey（voice_dave_patch 内で分岐）
-        if apply_dave_patch:
-            try:
-                # ボイスWebSocketの IDENTIFY/RESUME/received_message をパッチ
-                result = apply_dave_patch()
-                if result:
-                    logger.info("DAVE protocol patch applied successfully")
-            except Exception as e:
-                logger.warning(f"DAVE protocol patch failed (non-fatal): {e}")
 
         if not self.cleanup_task or self.cleanup_task.done():
             self.cleanup_task = self.cleanup_task_loop.start()
