@@ -285,7 +285,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 | Command | Description |
 |---------|-------------|
-| `/earthquake_*` | Earthquake alerts |
+| `/earthquake_*` | Earthquake alerts (`/earthquake_settings`, Japan data only) |
 | `/twitch_add` `/twitch_remove` `/twitch_list` | Twitch alerts |
 
 ### Link Fix (PLANA)
@@ -330,7 +330,10 @@ Place models under `models/image-models/`, use `provider: "local"` (default). Fo
 
 ### Earthquake alerts (PLANA)
 
-Real-time JMA WebSocket alerts (early warning, quake info, tsunami forecast).
+Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.p2pquake.net/develop/json_api_v2/#/) (EEW, quake info, tsunami).
+
+- `/earthquake_settings` — channels (simple unified / detailed per-type), per-intensity filters (including unknown), tsunami on/off (Components V2)
+- Usable on any Discord server; **Japan earthquake/tsunami data only**
 
 ### Link Fix (PLANA)
 

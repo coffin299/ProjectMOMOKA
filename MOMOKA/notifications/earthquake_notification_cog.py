@@ -89,6 +89,23 @@ from MOMOKA.notifications.error.earthquake_errors import (
 DATA_DIR = 'data'
 CONFIG_FILE = os.path.join(DATA_DIR, 'earthquake_tsunami_notification_config.json')
 
+# 通知対象になり得る震度コード（P2P API v2 / maxScale。-1 は震度不明）
+ALL_NOTIFY_SCALES = [-1, 10, 20, 30, 40, 45, 50, 55, 60, 70]
+
+# 設定 UI 用の震度ラベル（日本語固定）
+NOTIFY_SCALE_LABELS = {
+    -1: "震度不明",
+    10: "震度1",
+    20: "震度2",
+    30: "震度3",
+    40: "震度4",
+    45: "震度5弱",
+    50: "震度5強",
+    55: "震度6弱",
+    60: "震度6強",
+    70: "震度7",
+}
+
 
 class InfoType(Enum):
     """情報タイプの定義"""
@@ -96,6 +113,20 @@ class InfoType(Enum):
     QUAKE = "quake"
     TSUNAMI = "tsunami"
     UNKNOWN = "unknown"
+
+
+def notification_embed_footer(*, test: bool = False) -> str:
+    """配信 embed 用フッター文言を返す。"""
+    # 1行目はデータ出典
+    line1 = "Powered by P2P地震情報 WebSocket API | 気象庁"
+    # 2行目は設定コマンド案内
+    line2 = "設定: /earthquake_settings"
+    # テスト時は先頭に明示する
+    if test:
+        # テストであることを先に出す
+        return f"これはテスト通知です | {line1}\n{line2}"
+    # 本番は2行
+    return f"{line1}\n{line2}"
 
 
 class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
@@ -534,6 +565,10 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                     for guild_id, value in list(config.items()):
                         if isinstance(value, int):
                             config[guild_id] = {it.value: value for it in InfoType if it != InfoType.UNKNOWN}
+                        # ギルド設定を正規化する
+                        if isinstance(config.get(guild_id), dict):
+                            # フィルタ系キーの欠落を埋める
+                            self._normalize_guild_config(config[guild_id])
                     return config
         except (json.JSONDecodeError, FileNotFoundError) as e:
             logger.warning(f"設定ファイル読み込みエラー: {e}")
@@ -545,6 +580,138 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
         except Exception as e:
             raise ConfigError(f"設定ファイルの保存に失敗: {e}")
+
+    def _normalize_guild_config(self, guild_config: Dict[str, Any]) -> None:
+        """ギルド設定にフィルタ用キーのデフォルトを補完する。"""
+        # EEW 震度リストが無ければ全レベル＋不明
+        if "notify_scales_eew" not in guild_config:
+            # デフォルトは全通知
+            guild_config["notify_scales_eew"] = list(ALL_NOTIFY_SCALES)
+        # 通常地震も同様
+        if "notify_scales_quake" not in guild_config:
+            # デフォルトは全通知
+            guild_config["notify_scales_quake"] = list(ALL_NOTIFY_SCALES)
+        # 津波通知フラグが無ければオン
+        if "notify_tsunami" not in guild_config:
+            # 既存互換で true
+            guild_config["notify_tsunami"] = True
+
+    def ensure_guild_config(self, guild_id: str) -> Dict[str, Any]:
+        """ギルド設定辞書を取得し、無ければ作成して正規化する。"""
+        # 未作成なら空 dict
+        if guild_id not in self.config or not isinstance(self.config.get(guild_id), dict):
+            # 新規ギルド枠
+            self.config[guild_id] = {}
+        # 正規化する
+        self._normalize_guild_config(self.config[guild_id])
+        # 参照を返す
+        return self.config[guild_id]
+
+    def get_notify_scales(self, guild_id: str, info_type: str) -> list:
+        """通知する震度コード一覧を返す（欠落時は全レベル）。"""
+        # キーを決める
+        key = f"notify_scales_{info_type}"
+        # ギルド設定
+        guild_config = self.config.get(guild_id) or {}
+        # 生の値
+        raw = guild_config.get(key)
+        # 無ければデフォルト
+        if raw is None:
+            return list(ALL_NOTIFY_SCALES)
+        # int 化して返す
+        result = []
+        for item in raw:
+            try:
+                result.append(int(item))
+            except (TypeError, ValueError):
+                continue
+        return result
+
+    def set_notify_scales(self, guild_id: str, info_type: str, scales: list) -> None:
+        """通知する震度コード一覧を保存する。"""
+        # ギルド枠を確保
+        guild_config = self.ensure_guild_config(guild_id)
+        # 許可コードだけ残す
+        allowed = set(ALL_NOTIFY_SCALES)
+        cleaned = []
+        for item in scales:
+            try:
+                code = int(item)
+            except (TypeError, ValueError):
+                continue
+            if code in allowed and code not in cleaned:
+                cleaned.append(code)
+        # 安定した並びにする
+        cleaned.sort(key=lambda c: ALL_NOTIFY_SCALES.index(c) if c in ALL_NOTIFY_SCALES else c)
+        # 書き込む
+        guild_config[f"notify_scales_{info_type}"] = cleaned
+        # 永続化
+        self.save_config()
+
+    def get_notify_tsunami(self, guild_id: str) -> bool:
+        """津波通知が有効かどうかを返す。"""
+        # ギルド設定
+        guild_config = self.config.get(guild_id) or {}
+        # デフォルト true
+        return bool(guild_config.get("notify_tsunami", True))
+
+    def set_notify_tsunami(self, guild_id: str, enabled: bool) -> None:
+        """津波通知の有効/無効を保存する。"""
+        # ギルド枠を確保
+        guild_config = self.ensure_guild_config(guild_id)
+        # フラグを書く
+        guild_config["notify_tsunami"] = bool(enabled)
+        # 永続化
+        self.save_config()
+
+    def set_channels_unified(self, guild_id: str, channel_id: int) -> None:
+        """EEW / 地震 / 津波の通知先を同一チャンネルに揃える。"""
+        # ギルド枠を確保
+        guild_config = self.ensure_guild_config(guild_id)
+        # 3種に同じ ID
+        for key in (InfoType.EEW.value, InfoType.QUAKE.value, InfoType.TSUNAMI.value):
+            guild_config[key] = int(channel_id)
+        # 永続化
+        self.save_config()
+
+    def set_channel_for_type(self, guild_id: str, info_type: str, channel_id: int) -> None:
+        """指定種別の通知チャンネルを保存する。"""
+        # ギルド枠を確保
+        guild_config = self.ensure_guild_config(guild_id)
+        # チャンネル ID を書く
+        guild_config[info_type] = int(channel_id)
+        # 永続化
+        self.save_config()
+
+    def normalize_max_scale(self, max_scale: Any) -> int:
+        """maxScale を比較用 int に正規化する（欠落は -1）。"""
+        # None は不明
+        if max_scale is None:
+            return -1
+        try:
+            return int(max_scale)
+        except (TypeError, ValueError):
+            return -1
+
+    def should_notify_by_scale(self, guild_id: str, info_type: str, max_scale: Any) -> bool:
+        """震度フィルタに基づき通知すべきか判定する。"""
+        # 正規化
+        code = self.normalize_max_scale(max_scale)
+        # 許可リストに含まれるか
+        return code in self.get_notify_scales(guild_id, info_type)
+
+    def format_scales_summary(self, guild_id: str, info_type: str) -> str:
+        """設定中の震度一覧を短い日本語にする。"""
+        # 現在値
+        scales = self.get_notify_scales(guild_id, info_type)
+        # 空ならミュート
+        if not scales:
+            return "なし（すべて非通知）"
+        # 全選択なら略記
+        if set(scales) == set(ALL_NOTIFY_SCALES):
+            return "すべて"
+        # ラベル連結
+        return "、".join(NOTIFY_SCALE_LABELS.get(s, str(s)) for s in scales)
 
     def scale_to_japanese(self, scale_code):
         if scale_code is None or scale_code == -1:
@@ -729,7 +896,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                                 value="この情報は速報です。揺れが予想される地域の方は、身の安全を確保してください。",
                                 inline=False)
 
-            embed.set_footer(text="Powered by P2P地震情報 WebSocket API | PLANA by coffin299")
+            embed.set_footer(text=notification_embed_footer())
             embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
 
             map_file = None
@@ -755,7 +922,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                     except Exception as e:
                         logger.warning(f"地図生成に失敗: {e}")
 
-            await self.send_embed_to_channels(embed, info_type, map_file)
+            await self.send_embed_to_channels(embed, info_type, map_file, max_scale=max_scale)
 
         except Exception as e:
             raise NotificationError(f"{info_type}通知処理エラー: {e}")
@@ -797,7 +964,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             if tsunami_info.get('description'):
                 embed.add_field(name="ℹ️ 詳細情報", value=tsunami_info['description'][:500], inline=False)
 
-            embed.set_footer(text="気象庁 | 津波から身を守るため直ちに避難を | PLANA by coffin299")
+            embed.set_footer(text=notification_embed_footer())
             embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
             await self.send_embed_to_channels(embed, InfoType.TSUNAMI.value)
         except Exception as e:
@@ -926,7 +1093,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         title_prefix = "緊急地震速報" if info_type == "eew" else "地震情報"
         title = f'{title_prefix} - 震源位置\n{quake["name"]}'
         ax.text(0.5, 0.98, title, transform=ax.transAxes,
-                fontsize=18, fontweight='bold', ha='center', va='top', color='white',
+                fontsize=18, fontweight='normal', ha='center', va='top', color='white',
                 bbox=dict(boxstyle='round,pad=0.8', facecolor='black',
                           edgecolor='white', alpha=0.8, linewidth=2))
 
@@ -946,7 +1113,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 ax.text(city_lon, city_lat + 0.15, city, fontsize=9, ha='center', color='white',
                         bbox=dict(boxstyle='round,pad=0.3', facecolor='black',
                                   edgecolor='yellow', alpha=0.85, linewidth=1),
-                        transform=ccrs.Geodetic(), zorder=9, fontweight='bold')
+                        transform=ccrs.Geodetic(), zorder=9, fontweight='normal')
                 displayed_cities += 1
 
         # 震源地の色とサイズ
@@ -1001,7 +1168,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 fontsize=13, ha='center', va='top', color='white',
                 bbox=dict(boxstyle='round,pad=0.7', facecolor='black',
                           edgecolor='red', linewidth=2.5, alpha=0.9),
-                transform=ccrs.Geodetic(), zorder=12, fontweight='bold')
+                transform=ccrs.Geodetic(), zorder=12, fontweight='normal')
 
         # 凡例
         ax.legend(loc='upper left', frameon=True, fontsize=12,
@@ -1054,7 +1221,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         if min_scale:
             title += f'\n最小震度: {min_scale}'
         ax.text(0.5, 0.98, title, transform=ax.transAxes,
-                fontsize=18, fontweight='bold', ha='center', va='top', color='white',
+                fontsize=18, fontweight='normal', ha='center', va='top', color='white',
                 bbox=dict(boxstyle='round,pad=0.8', facecolor='black',
                           edgecolor='white', alpha=0.9, linewidth=2))
 
@@ -1119,7 +1286,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             ax.text(lon, lat + 0.35, city, fontsize=9, ha='center', color='white',
                     bbox=dict(boxstyle='round,pad=0.3', facecolor='black',
                               edgecolor='yellow', alpha=0.85, linewidth=0.8),
-                    transform=ccrs.Geodetic(), zorder=4, fontweight='bold')
+                    transform=ccrs.Geodetic(), zorder=4, fontweight='normal')
 
         # 画像として保存
         buffer = io.BytesIO()
@@ -1130,7 +1297,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
         return buffer
 
-    async def send_embed_to_channels(self, embed, info_type, map_file=None):
+    async def send_embed_to_channels(self, embed, info_type, map_file=None, max_scale=None):
         if not self.config:
             logger.warning(f"通知送信スキップ ({info_type}): config が空です")
             return
@@ -1150,6 +1317,23 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 if not channel_id:
                     skipped_count += 1
                     continue
+
+                # 津波通知オフなら送らない（チャンネル設定は残す）
+                if info_type == InfoType.TSUNAMI.value and not self.get_notify_tsunami(guild_id):
+                    logger.info(f"津波通知オフでスキップ: ギルド {guild_id}")
+                    skipped_count += 1
+                    continue
+
+                # EEW / 通常は震度フィルタを適用する
+                if info_type in (InfoType.EEW.value, InfoType.QUAKE.value):
+                    # 許可されていなければスキップ
+                    if not self.should_notify_by_scale(guild_id, info_type, max_scale):
+                        logger.info(
+                            f"震度フィルタでスキップ ({info_type}): ギルド {guild_id}, "
+                            f"maxScale={self.normalize_max_scale(max_scale)}"
+                        )
+                        skipped_count += 1
+                        continue
 
                 guild = self.bot.get_guild(int(guild_id))
                 if not guild:
@@ -1177,7 +1361,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
                 permissions = channel.permissions_for(guild.me)
                 if not permissions.send_messages or not permissions.embed_links:
-                    logger.error(f"送信失敗 ({info_type}): チャンネル '{channel.name}' への権限が不足")
+                    logger.info(f"送信失敗 ({info_type}): チャンネル '{channel.name}' への権限が不足")
                     # 再送しても失敗するため当該通知設定を削除する
                     del self.config[guild_id][info_type]
                     config_modified = True
@@ -1202,7 +1386,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                 logger.info(f"✅ 送信成功: '{guild.name}' の '{channel.name}'")
 
             except discord.Forbidden:
-                logger.error(f"送信失敗 ({info_type}): 権限不足 - ギルド {guild_id}")
+                logger.info(f"送信失敗 ({info_type}): 権限不足 - ギルド {guild_id}")
                 # 送信直前に権限が落ちた場合も設定を削除する
                 try:
                     # ギルド設定が残っているか確認する
@@ -1248,8 +1432,8 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                           info_type: Literal["緊急地震速報", "地震情報", "津波予報", "すべて"]):
         try:
             guild_id = str(interaction.guild.id)
-            if guild_id not in self.config:
-                self.config[guild_id] = {}
+            # ギルド枠を確保する
+            guild_config = self.ensure_guild_config(guild_id)
 
             types_to_set = (
                 [InfoType.EEW.value, InfoType.QUAKE.value, InfoType.TSUNAMI.value]
@@ -1259,15 +1443,37 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             )
 
             for t in types_to_set:
-                self.config[guild_id][t] = channel.id
+                guild_config[t] = channel.id
 
             self.save_config()
             await interaction.response.send_message(
-                f"✅ **{info_type}** の通知チャンネルを {channel.mention} に設定しました。")
+                f"✅ **{info_type}** の通知チャンネルを {channel.mention} に設定しました。\n"
+                f"ℹ️ 震度フィルタ等は `/earthquake_settings` でも変更できます。"
+            )
         except Exception as e:
             self.exception_handler.log_generic_error(e, "チャンネル設定コマンド")
             await interaction.response.send_message(self.exception_handler.get_user_friendly_message(e),
                                                     ephemeral=False)
+
+    @app_commands.command(
+        name="earthquake_settings",
+        description="Configure earthquake/tsunami notification filters and channels.",
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def earthquake_settings(self, interaction: discord.Interaction):
+        """Components V2 の地震通知設定画面を開く。"""
+        # ギルド外は拒否
+        if interaction.guild is None:
+            await interaction.response.send_message("このコマンドはサーバー内でのみ使用できます。", ephemeral=True)
+            return
+        # 遅延インポート（循環参照回避）
+        from MOMOKA.notifications.earthquake_settings_view import EarthquakeSettingsView
+        # ギルド設定を正規化しておく
+        self.ensure_guild_config(str(interaction.guild.id))
+        # View 生成
+        view = EarthquakeSettingsView(self.bot, self, interaction.guild)
+        # ephemeral で送信（LayoutView は content なし）
+        await interaction.response.send_message(view=view, ephemeral=True)
 
     @app_commands.command(name="earthquake_status", description="Check earthquake/tsunami system status.")
     async def status_system(self, interaction: discord.Interaction):
@@ -1314,6 +1520,15 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
             embed.add_field(name="📢 通知チャンネル", value=channel_status, inline=False)
 
+            # フィルタ状態
+            filter_status = (
+                f"**EEW 震度:** {self.format_scales_summary(guild_id, InfoType.EEW.value)}\n"
+                f"**地震情報 震度:** {self.format_scales_summary(guild_id, InfoType.QUAKE.value)}\n"
+                f"**津波通知:** {'オン' if self.get_notify_tsunami(guild_id) else 'オフ'}\n"
+                f"ℹ️ 変更は `/earthquake_settings`"
+            )
+            embed.add_field(name="🎚️ 通知フィルタ", value=filter_status, inline=False)
+
             if self.error_stats['last_error_time']:
                 embed.add_field(
                     name="🕐 最後のエラー",
@@ -1328,7 +1543,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             )
             embed.add_field(name="📊 エラー統計", value=error_summary, inline=False)
 
-            embed.set_footer(text="システム診断完了 | P2P地震情報 WebSocket API | PLANA by coffin299")
+            embed.set_footer(text="システム診断完了 | P2P地震情報 WebSocket API")
             await interaction.followup.send(embed=embed)
         except Exception as e:
             self.exception_handler.log_generic_error(e, "ステータスコマンド")
@@ -1396,7 +1611,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             msg = (
                 f"✅ 設定されたチャンネル {target_channel.mention} に **{info_type}** のテスト通知を送信しました。"
                 if is_configured
-                else f"✅ このチャンネルに **{info_type}** のテスト通知を送信しました。\nℹ️ 本番の通知は `/earthquake_channel` コマンドで設定したチャンネルに送信されます。"
+                else f"✅ このチャンネルに **{info_type}** のテスト通知を送信しました。\nℹ️ 本番の通知は `/earthquake_settings` または `/earthquake_channel` で設定したチャンネルに送信されます。"
             )
             await interaction.followup.send(msg)
         except discord.Forbidden:
@@ -1427,7 +1642,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             value=f"🔴 **{max_scale}** - テスト県A市\n🟠 **震度4** - テスト県B市\n🟡 **震度3** - テスト県C市",
             inline=False
         )
-        embed.set_footer(text="これはテスト通知です | Powered by P2P地震情報 WebSocket API | PLANA by coffin299")
+        embed.set_footer(text=notification_embed_footer(test=True))
         embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
         return embed
 
@@ -1455,7 +1670,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             else "⚠️ 海の中や海岸付近は危険です。海から上がって、海岸から離れてください。"
         )
         embed.add_field(name="⚠️ 注意事項", value=warning_text, inline=False)
-        embed.set_footer(text="これはテスト通知です | 気象庁 | PLANA by coffin299")
+        embed.set_footer(text=notification_embed_footer(test=True))
         embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
         return embed
 
@@ -1531,7 +1746,10 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
     async def help_system(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="📚 地震・津波情報システム ヘルプ",
-            description="このボットは気象庁の地震・津波情報をリアルタイムで通知します（WebSocket接続）。",
+            description=(
+                "このボットは気象庁の地震・津波情報をリアルタイムで通知します（WebSocket接続）。\n"
+                "通知フィルタ・チャンネルは `/earthquake_settings` で設定できます。"
+            ),
             color=discord.Color.green(),
             timestamp=datetime.now(self.jst)
         )
@@ -1539,6 +1757,7 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             name="🛠️ 利用可能なコマンド",
             value=(
                 "**🔧 設定コマンド**\n"
+                "`/earthquake_settings` - 通知先・震度・津波の設定（推奨）\n"
                 "`/earthquake_channel` - 通知チャンネルを設定\n"
                 "`/earthquake_remove` - 通知設定を削除\n"
                 "`/earthquake_test` - テスト通知を送信\n\n"
@@ -1552,6 +1771,8 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             ),
             inline=False
         )
+        embed.set_footer(text=notification_embed_footer())
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="earthquake_map", description="Display recent earthquakes on a map of Japan.")
     @app_commands.describe(

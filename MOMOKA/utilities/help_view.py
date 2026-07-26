@@ -466,7 +466,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "• `/twitch_list` — 設定一覧\n"
                 "• `/twitch_test` — テスト通知\n\n"
                 "**その他の通知**\n"
-                "地震・津波: `/earthquake_channel` `/earthquake_status` "
+                "地震・津波: `/earthquake_settings` `/earthquake_channel` `/earthquake_status` "
                 "`/earthquake_help` など"
                 f"{note}"
             )
@@ -485,7 +485,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "• `/twitch_list` — list settings\n"
             "• `/twitch_test` — send a test notification\n\n"
             "**Other notifications**\n"
-            "Earthquake/tsunami: `/earthquake_channel` `/earthquake_status` "
+            "Earthquake/tsunami: `/earthquake_settings` `/earthquake_channel` `/earthquake_status` "
             "`/earthquake_help`, …"
             f"{note_en}"
         )

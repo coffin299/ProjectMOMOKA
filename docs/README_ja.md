@@ -303,7 +303,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 | コマンド | 説明 |
 |---------|------|
-| `/earthquake_*` | 地震速報設定・履歴など |
+| `/earthquake_*` | 地震速報設定・履歴・`/earthquake_settings` など |
 | `/twitch_add` `/twitch_remove` `/twitch_list` | Twitch 通知 |
 
 ### Link Fix（PLANA）
@@ -348,7 +348,12 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 地震速報（PLANA）
 
-気象庁 WebSocket による緊急地震速報・地震情報・津波予報の通知。
+気象庁由来の情報を [P2P地震情報 JSON API v2 / WebSocket](https://www.p2pquake.net/develop/json_api_v2/#/) 経由で受信し、緊急地震速報・地震情報・津波予報を通知します。
+
+- `/earthquake_settings` … 通知チャンネル（簡易で3種統一 / 詳細で個別）、震度レベル別フィルタ（震度不明含む）、津波通知 ON/OFF（Components V2）
+- `/earthquake_channel` … 通知チャンネルの従来コマンド（互換）
+- 配信 embed フッターに `/earthquake_settings` への案内を表示
+- 海外サーバーでも設定可能。取得・配信されるのは日本の地震・津波情報のみ
 
 ### Link Fix（PLANA）
 
@@ -395,7 +400,8 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 ### 地震速報が届かない
 
 1. `/earthquake_status` で状態確認（PLANA）
-2. 通知チャンネル設定・WebSocket 接続を確認
+2. `/earthquake_settings` で通知チャンネル・震度フィルタ・津波 ON/OFF を確認
+3. WebSocket 接続を確認
 
 ---
 

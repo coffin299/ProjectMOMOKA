@@ -1197,19 +1197,19 @@ commands_i18n:
             id: Tag pencarian (dipisah spasi).
     earthquake_channel:
       description:
-        en: Set the notification channel for earthquake/tsunami alerts.
+        en: Set EQ/tsunami notify channel (any server; Japan data only).
         ja: 地震・津波情報の通知チャンネルを設定します
-        ko: 지진·쓰나미 알림 채널을 설정합니다.
-        vi: Đặt kênh thông báo động đất/sóng thần.
-        zh-CN: 设置地震/海啸警报的通知频道。
-        zh-TW: 設定地震／海嘯警報的通知頻道。
-        es: Configura el canal de alertas sísmicas/tsunami.
-        fr: Définit le salon d'alertes séisme/tsunami.
-        de: Setzt den Kanal für Erdbeben-/Tsunami-Warnungen.
-        pt-BR: Define o canal de alertas de terremoto/tsunami.
-        ru: Задаёт канал оповещений о землетрясениях/цунами.
-        th: ตั้งช่องแจ้งเตือนแผ่นดินไหว/สึนามิ
-        id: Atur saluran notifikasi gempa/tsunami.
+        ko: 지진·쓰나미 알림 채널 설정 (해외 서버 가능, 일본 정보만).
+        vi: Đặt kênh báo động đất/sóng thần (mọi server; chỉ dữ liệu Nhật).
+        zh-CN: 设置地震/海啸通知频道（任意服务器；仅日本数据）。
+        zh-TW: 設定地震／海嘯通知頻道（任意伺服器；僅日本資料）。
+        es: Canal de alertas sísmicas (cualquier server; solo Japón).
+        fr: Salon d'alertes séisme (tout serveur; données Japon seulement).
+        de: Erdbeben-/Tsunami-Kanal (jeder Server; nur Japan-Daten).
+        pt-BR: Canal de alerta sísmico (qualquer server; só Japão).
+        ru: Канал оповещений (любой сервер; только Япония).
+        th: ตั้งช่องแจ้งเตือนแผ่นดินไหว (ใช้ได้ทุกเซิร์ฟ; ข้อมูลญี่ปุ่นเท่านั้น)
+        id: Atur saluran gempa/tsunami (server mana pun; data Jepang saja).
       options:
         channel:
           description:
@@ -1241,36 +1241,51 @@ commands_i18n:
             ru: Тип оповещения.
             th: ประเภทการแจ้งเตือน
             id: Jenis peringatan yang dinotifikasi.
+    earthquake_settings:
+      description:
+        en: Configure EQ/tsunami filters & channels (any server; Japan data only).
+        ja: 地震・津波通知のフィルタとチャンネルを設定します
+        ko: 지진·쓰나미 필터/채널 설정 (해외 서버 가능, 일본 정보만).
+        vi: Cấu hình bộ lọc/kênh (mọi server; chỉ dữ liệu Nhật).
+        zh-CN: 配置地震/海啸过滤与频道（任意服务器；仅日本数据）。
+        zh-TW: 設定地震／海嘯過濾與頻道（任意伺服器；僅日本資料）。
+        es: Filtros y canales sísmicos (cualquier server; solo Japón).
+        fr: Filtres et salons séisme (tout serveur; Japon seulement).
+        de: Filter und Kanäle (jeder Server; nur Japan-Daten).
+        pt-BR: Filtros e canais sísmicos (qualquer server; só Japão).
+        ru: Фильтры и каналы (любой сервер; только Япония).
+        th: ตั้งค่าตัวกรอง/ช่อง (ใช้ได้ทุกเซิร์ฟ; ข้อมูลญี่ปุ่นเท่านั้น)
+        id: Atur filter & saluran (server mana pun; data Jepang saja).
     earthquake_status:
       description:
-        en: Check earthquake/tsunami system status.
+        en: Check EQ/tsunami system status (any server; Japan data only).
         ja: 地震・津波情報システムの状態を確認します
-        ko: 지진·쓰나미 시스템 상태를 확인합니다.
-        vi: Kiểm tra trạng thái hệ thống động đất/sóng thần.
-        zh-CN: 检查地震/海啸系统状态。
-        zh-TW: 檢查地震／海嘯系統狀態。
-        es: Comprueba el estado del sistema sísmico.
-        fr: Vérifie l'état du système séisme/tsunami.
-        de: Prüft den Status des Erdbeben-/Tsunami-Systems.
-        pt-BR: Verifica o status do sistema de terremoto/tsunami.
-        ru: Проверяет статус системы землетрясений/цунами.
-        th: ตรวจสอบสถานะระบบแผ่นดินไหว/สึนามิ
-        id: Periksa status sistem gempa/tsunami.
+        ko: 지진·쓰나미 시스템 상태 확인 (해외 서버 가능, 일본 정보만).
+        vi: Kiểm tra trạng thái hệ thống (mọi server; chỉ dữ liệu Nhật).
+        zh-CN: 检查地震/海啸系统状态（任意服务器；仅日本数据）。
+        zh-TW: 檢查地震／海嘯系統狀態（任意伺服器；僅日本資料）。
+        es: Estado del sistema sísmico (cualquier server; solo Japón).
+        fr: État du système séisme (tout serveur; Japon seulement).
+        de: Systemstatus (jeder Server; nur Japan-Daten).
+        pt-BR: Status do sistema (qualquer server; só Japão).
+        ru: Статус системы (любой сервер; только Япония).
+        th: ตรวจสอบสถานะระบบ (ใช้ได้ทุกเซิร์ฟ; ข้อมูลญี่ปุ่นเท่านั้น)
+        id: Periksa status sistem (server mana pun; data Jepang saja).
     earthquake_test:
       description:
-        en: Send a test earthquake/tsunami notification.
+        en: Send a test EQ/tsunami notification (any server; Japan data only).
         ja: 地震・津波情報のテスト通知を送信します
-        ko: 지진·쓰나미 테스트 알림을 보냅니다.
-        vi: Gửi thông báo thử động đất/sóng thần.
-        zh-CN: 发送地震/海啸测试通知。
-        zh-TW: 傳送地震／海嘯測試通知。
-        es: Envía una notificación de prueba sísmica.
-        fr: Envoie une notification test séisme/tsunami.
-        de: Sendet eine Test-Erdbeben-/Tsunami-Meldung.
-        pt-BR: Envia uma notificação de teste de terremoto/tsunami.
-        ru: Отправляет тестовое оповещение.
-        th: ส่งการแจ้งเตือนทดสอบแผ่นดินไหว/สึนามิ
-        id: Kirim notifikasi uji gempa/tsunami.
+        ko: 지진·쓰나미 테스트 알림 (해외 서버 가능, 일본 정보만).
+        vi: Gửi thông báo thử (mọi server; chỉ dữ liệu Nhật).
+        zh-CN: 发送地震/海啸测试通知（任意服务器；仅日本数据）。
+        zh-TW: 傳送地震／海嘯測試通知（任意伺服器；僅日本資料）。
+        es: Notificación de prueba (cualquier server; solo Japón).
+        fr: Notification test (tout serveur; Japon seulement).
+        de: Testmeldung (jeder Server; nur Japan-Daten).
+        pt-BR: Notificação de teste (qualquer server; só Japão).
+        ru: Тестовое оповещение (любой сервер; только Япония).
+        th: ส่งการแจ้งเตือนทดสอบ (ใช้ได้ทุกเซิร์ฟ; ข้อมูลญี่ปุ่นเท่านั้น)
+        id: Kirim notifikasi uji (server mana pun; data Jepang saja).
       options:
         info_type:
           description:
@@ -1319,19 +1334,19 @@ commands_i18n:
             id: Tingkat peringatan tsunami untuk uji.
     earthquake_remove:
       description:
-        en: Remove earthquake/tsunami notification settings.
+        en: Remove EQ/tsunami notify settings (any server; Japan data only).
         ja: 地震・津波情報の通知設定を削除します
-        ko: 지진·쓰나미 알림 설정을 삭제합니다.
-        vi: Xóa cài đặt thông báo động đất/sóng thần.
-        zh-CN: 删除地震/海啸通知设置。
-        zh-TW: 刪除地震／海嘯通知設定。
-        es: Elimina la configuración de alertas sísmicas.
-        fr: Supprime les réglages d'alertes séisme/tsunami.
-        de: Entfernt Erdbeben-/Tsunami-Benachrichtigungen.
-        pt-BR: Remove as configurações de alerta de terremoto/tsunami.
-        ru: Удаляет настройки оповещений.
-        th: ลบการตั้งค่าแจ้งเตือนแผ่นดินไหว/สึนามิ
-        id: Hapus pengaturan notifikasi gempa/tsunami.
+        ko: 지진·쓰나미 알림 설정 삭제 (해외 서버 가능, 일본 정보만).
+        vi: Xóa cài đặt thông báo (mọi server; chỉ dữ liệu Nhật).
+        zh-CN: 删除地震/海啸通知设置（任意服务器；仅日本数据）。
+        zh-TW: 刪除地震／海嘯通知設定（任意伺服器；僅日本資料）。
+        es: Quitar alertas sísmicas (cualquier server; solo Japón).
+        fr: Supprimer alertes séisme (tout serveur; Japon seulement).
+        de: Meldungen entfernen (jeder Server; nur Japan-Daten).
+        pt-BR: Remover alertas (qualquer server; só Japão).
+        ru: Удалить оповещения (любой сервер; только Япония).
+        th: ลบการตั้งค่าแจ้งเตือน (ใช้ได้ทุกเซิร์ฟ; ข้อมูลญี่ปุ่นเท่านั้น)
+        id: Hapus pengaturan notifikasi (server mana pun; data Jepang saja).
       options:
         info_type:
           description:
@@ -1350,19 +1365,19 @@ commands_i18n:
             id: Pengaturan notifikasi yang dihapus.
     earthquake_help:
       description:
-        en: Show help for this system.
+        en: Show EQ/tsunami help (any server; Japan data only).
         ja: このシステムのヘルプを表示します
-        ko: 이 시스템의 도움말을 표시합니다.
-        vi: Hiển thị trợ giúp hệ thống này.
-        zh-CN: 显示此系统的帮助。
-        zh-TW: 顯示此系統的說明。
-        es: Muestra la ayuda de este sistema.
-        fr: Affiche l'aide de ce système.
-        de: Zeigt die Hilfe zu diesem System.
-        pt-BR: Mostra a ajuda deste sistema.
-        ru: Показывает справку по системе.
-        th: แสดงวิธีใช้ระบบนี้
-        id: Tampilkan bantuan untuk sistem ini.
+        ko: 지진·쓰나미 도움말 (해외 서버 가능, 일본 정보만).
+        vi: Hiện trợ giúp (mọi server; chỉ dữ liệu Nhật).
+        zh-CN: 显示地震/海啸帮助（任意服务器；仅日本数据）。
+        zh-TW: 顯示地震／海嘯說明（任意伺服器；僅日本資料）。
+        es: Ayuda sísmica (cualquier server; solo Japón).
+        fr: Aide séisme (tout serveur; Japon seulement).
+        de: Hilfe (jeder Server; nur Japan-Daten).
+        pt-BR: Ajuda sísmica (qualquer server; só Japão).
+        ru: Справка (любой сервер; только Япония).
+        th: แสดงวิธีใช้ (ใช้ได้ทุกเซิร์ฟ; ข้อมูลญี่ปุ่นเท่านั้น)
+        id: Tampilkan bantuan (server mana pun; data Jepang saja).
     earthquake_map:
       description:
         en: Display recent earthquakes on a map of Japan.
