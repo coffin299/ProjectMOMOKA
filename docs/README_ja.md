@@ -107,7 +107,7 @@ Rainbow Six Siege / VALORANT の統計表示。
 
 **UI 言語（Components V2 / Modal）:** Discord クライアント言語（app locale）→ サーバーの `preferred_locale`（guild）→ English の順で決定します（音楽 Now Playing 等は対象外）。`/help` `/invite` `/linkfix`、LLM 待機・討論パネル、メディア DL、`/feedback` Modal、`/match_time` Modal、画像生成 Modal などが対象です。
 
-**スラッシュコマンドの説明文:** Discord クライアント言語（日本語 / 英語 / 韓国語 / ベトナム語 / 中国語簡体・繁体 / スペイン語 / フランス語 / ドイツ語 / ポルトガル語 / ロシア語 / タイ語 / インドネシア語）に応じて表示します（`configs/commands_i18n_config.yaml`）。翻訳が無い言語や未対応 locale は英語にフォールバックします。コマンド名自体は英語のままです。
+**スラッシュコマンドの説明文:** Discord クライアント言語（日本語 / 英語 / 韓国語 / ベトナム語 / 中国語簡体・繁体 / スペイン語 / フランス語 / ドイツ語 / ポルトガル語 / ロシア語 / タイ語 / インドネシア語）に応じて表示します（`configs/commands_i18n_config.default.yaml` を直接読み込み）。翻訳が無い言語や未対応 locale は英語にフォールバックします。コマンド名自体は英語のままです。
 
 #### メディアダウンロード（Components V2）
 
@@ -143,7 +143,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    ```
 
 2. **設定ファイル**
-   - 初回起動時、`configs/<category>_config.yaml` が無いカテゴリだけ `*_config.default.yaml` から自動コピーされます
+   - 初回起動時、`configs/<category>_config.yaml` が無いカテゴリだけ `*_config.default.yaml` から自動コピーされます（`commands_i18n` は除く。default を直接読みます）
    - 手動でコピーする場合の例:
      ```bash
      copy configs\bots_config.default.yaml configs\bots_config.yaml   # Windows
@@ -197,6 +197,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 | `count_config.yaml` | 掲載サイト向けサーバー数投稿（top.gg / Void Bots / DEL 等・PLANA） |
 | `utilities_config.yaml` | ユーティリティ |
 | `core_config.yaml` | コア共通設定 |
+| `commands_i18n_config.default.yaml` | スラッシュコマンド説明の多言語カタログ（コピーせず直接読み込み） |
 
 #### ボット設定例（`bots_config.yaml`）
 

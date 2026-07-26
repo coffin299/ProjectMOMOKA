@@ -1,8 +1,7 @@
 # スラッシュ／hybrid コマンドの description / パラメータ説明（Discord localizations）
 # 対応言語: en（フォールバック）, ja, ko, vi, zh-CN, zh-TW, es, fr, de, pt-BR, ru, th, id
 # コマンド name は翻訳しない（英語固定）
-# 注意: 既存の commands_i18n_config.yaml がある場合、この default の新規キーは自動マージされない。
-#       default 更新後は実行用 yaml へ不足キーを追記すること。
+# 本ファイルをそのまま読み込む（commands_i18n_config.yaml は生成しない）。
 commands_i18n:
   fallback: en
   commands:

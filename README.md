@@ -98,7 +98,7 @@
 **JA:** ルートの `config.yaml` は **使いません**。`configs/` 配下のみです。  
 **EN:** Root `config.yaml` is **not used**. Use `configs/` only.
 
-1. First run copies `configs/<category>_config.default.yaml` → `configs/<category>_config.yaml` (or copy manually)
+1. First run copies `configs/<category>_config.default.yaml` → `configs/<category>_config.yaml` (or copy manually; `commands_i18n` loads the default file directly)
 2. Set tokens / invite URLs in `configs/bots_config.yaml`
 3. Set API keys in `configs/llm_config.yaml`
 4. Details: [docs/README_ja.md](docs/README_ja.md) · [docs/README_en.md](docs/README_en.md)

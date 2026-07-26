@@ -31,6 +31,10 @@ CATEGORIES: List[str] = [
     "commands_i18n",
 ]
 
+# *_config.yaml を生成せず、*_config.default.yaml を直接読むカテゴリ
+# （ユーザー編集不要のカタログ系。default 更新が即反映される）
+DEFAULT_ONLY_CATEGORIES = frozenset({"commands_i18n"})
+
 # プレースホルダ判定用
 _TOKEN_PLACEHOLDERS = {
     "YOUR_PLANA_BOT_TOKEN",
@@ -58,6 +62,9 @@ def ensure_default_configs(root: Optional[Path] = None) -> None:
     base.mkdir(parents=True, exist_ok=True)
     # 各カテゴリを走査する
     for category in CATEGORIES:
+        # default 直読みカテゴリはコピーしない
+        if category in DEFAULT_ONLY_CATEGORIES:
+            continue
         # default / 実ファイルのパスを組み立てる
         default_path = base / f"{category}_config.default.yaml"
         runtime_path = base / f"{category}_config.yaml"
@@ -98,11 +105,15 @@ def load_merged_config(root: Optional[Path] = None) -> Dict[str, Any]:
     base = configs_dir(root)
     # カテゴリ順に読み込む
     for category in CATEGORIES:
-        # 実行用パス
-        runtime_path = base / f"{category}_config.yaml"
-        # 無ければ default を試す
-        if not runtime_path.exists():
+        # default 直読みカテゴリは常に *.default.yaml
+        if category in DEFAULT_ONLY_CATEGORIES:
             runtime_path = base / f"{category}_config.default.yaml"
+        else:
+            # 実行用パス
+            runtime_path = base / f"{category}_config.yaml"
+            # 無ければ default を試す
+            if not runtime_path.exists():
+                runtime_path = base / f"{category}_config.default.yaml"
         # どちらも無ければスキップ
         if not runtime_path.exists():
             logger.error("Config not found for category '%s'", category)

@@ -107,7 +107,7 @@ Dice, timers, server/user info, gacha, etc. `/help` uses Components V2 with **�
 
 **UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting/debate panels, media download, `/feedback` Modal, `/match_time` Modal, image-generation Modal, and related surfaces.
 
-**Slash command descriptions:** Shown according to the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian) via `configs/commands_i18n_config.yaml`. Missing translations and unsupported locales fall back to English. Command names stay in English.
+**Slash command descriptions:** Shown according to the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian) via `configs/commands_i18n_config.default.yaml` (loaded directly; no runtime copy). Missing translations and unsupported locales fall back to English. Command names stay in English.
 
 #### Media download (Components V2)
 
@@ -143,7 +143,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    ```
 
 2. **Configuration**
-   - On first run, each missing `configs/<category>_config.yaml` is copied from the matching `*_config.default.yaml`
+   - On first run, each missing `configs/<category>_config.yaml` is copied from the matching `*_config.default.yaml` (except `commands_i18n`, which is loaded directly from the default file)
    - Manual copy example:
      ```bash
      copy configs\bots_config.default.yaml configs\bots_config.yaml   # Windows
@@ -197,6 +197,7 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 | `count_config.yaml` | Server-count posting to bot lists (top.gg, Void Bots, DEL, etc., PLANA) |
 | `utilities_config.yaml` | Utilities |
 | `core_config.yaml` | Shared core settings |
+| `commands_i18n_config.default.yaml` | Slash command description i18n catalog (loaded directly; no runtime copy) |
 
 #### Bot tokens (`bots_config.yaml`)
 
