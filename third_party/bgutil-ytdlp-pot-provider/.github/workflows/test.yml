@@ -1,0 +1,351 @@
+name: Run tests
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOCKER_BUILD_RECORD_UPLOAD: false
+  TEST_ARGS: >-
+    -vF --color always
+    --extractor-args "youtube:player-client=web,web_music,mweb;pot_trace=true;fetch_pot=always"
+    --ignore-no-formats-error
+    --js-runtimes node
+
+jobs:
+  lint-format:
+    name: Lint and format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Ruff and autopep8
+        run: pip install ruff autopep8
+      - name: Python lint check (Ruff)
+        run: ruff check --output-format=github -v plugin/
+      - name: Python lint check (autopep8)
+        if: always()
+        run: autopep8 --diff plugin/
+      - name: Install Node
+        uses: actions/setup-node@v6
+        if: always()
+        with:
+          node-version: "25" # minimum supported version
+      - name: Check and install server dependencies
+        if: always()
+        run: |
+          cd server
+          npm ci --no-audit --no-fund
+          node scripts/check_lockfiles.ts
+      - name: Server lint check (ESlint)
+        if: always()
+        run: cd server && npx eslint --max-warnings=0 src/
+      - name: Server format check (Prettier)
+        if: always()
+        run: cd server && npx prettier --check 'src/**/*.{js,ts}'
+      - name: Lint Dockerfile
+        uses: docker/build-push-action@v6
+        if: always()
+        with:
+          context: server
+          file: server/Dockerfile
+          call: check
+          build-args: BUILDKIT_DOCKERFILE_CHECK=error=true
+      - name: Generate warnings for Dockerfile
+        uses: docker/build-push-action@v6
+        if: failure()
+        env:
+          DOCKER_BUILD_SUMMARY: false
+        with:
+          context: server
+          file: server/Dockerfile
+          cache-from: type=gha
+          build-args: BUILDKIT_DOCKERFILE_CHECK=error=false
+
+  script-method:
+    name: Test plugin (script method)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        jsrt: [deno, node]
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x" # keep in sync with yt-dlp's python requirement
+      - name: Download yt-dlp
+        shell: bash
+        run: |
+          curl -L https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp -o yt-dlp
+          chmod +x ./yt-dlp
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        if: matrix.jsrt == 'deno'
+        with:
+          deno-version: "2.0.0" # minimum supported version
+      - name: Install Node
+        uses: actions/setup-node@v6
+        if: matrix.jsrt == 'node'
+        with:
+          node-version: "20" # minimum supported version
+      - name: Install and build server dependencies
+        shell: bash
+        run: |
+          cd server
+          if [ "${{ matrix.jsrt }}" = "deno" ]; then
+            deno install --allow-scripts=npm:canvas --frozen
+          else
+            npm ci --no-audit --no-fund && npx tsc
+          fi
+      - name: Install plugin
+        run: |
+          mkdir -p ~/yt-dlp-plugins/bgutil-ytdlp-pot-provider/
+          cp -r plugin/ ~/yt-dlp-plugins/
+      - name: Test script method
+        shell: bash
+        run: |
+          exit_code=0
+
+          gen_once() {
+              case "${{ matrix.jsrt }}" in
+                deno)
+                  deno run --allow-read --allow-write --allow-env --allow-ffi --allow-net \
+                    server/src/generate_once.ts "$@"
+                  ;;
+                node) node server/build/generate_once.js "$@" ;;
+              esac
+          }
+
+          echo "script version: $(gen_once --version)"
+          script_output=$(gen_once | tail -n 1)
+
+          # check that the script is returning a POT
+          echo "::group::POT response from the script"
+          echo "$script_output" | jq -C
+          echo "::endgroup::"
+
+          poToken=$(echo "$script_output" | jq -r '.poToken')
+          contentBinding=$(echo "$script_output" | jq -r '.contentBinding')
+
+          if [[ "$poToken" == "null" || "$contentBinding" == "null" ]]; then
+            echo "::error title=PoToken generation failed,file=server/src/session_manager.ts::\
+          'poToken' or 'contentBinding' is null."
+            exit 1
+          fi
+
+          # expect this to fail, but just make sure that the plugin is invoked
+          {
+            script_response=$(./yt-dlp ${{ env.TEST_ARGS }} --extractor-args \
+              "youtubepot-bgutilscript:server_home=server;" dQw4w9WgXcQ 2>&1)
+            ret=$?
+          } || true
+
+          echo "::group::Logs from yt-dlp"
+          printf "%s\n" "$script_response"
+          echo "::endgroup::"
+
+          if [ "$ret" -ne 0 ]; then
+            echo "::warning title=yt-dlp failed when testing script,\
+          file=plugin/yt_dlp_plugins/extractor/getpot_bgutil_script.py::yt-dlp returned $ret exit status"
+          fi
+
+          expect_pfx="[youtube] [pot:bgutil:script-${{ matrix.jsrt }}] TRACE: Generating POT via script: "
+          if [[ "$script_response" != *"$expect_pfx"* ]]; then
+            echo "::error title=BgUtilScript was not invoked,\
+          file=plugin/yt_dlp_plugins/extractor/getpot_bgutil_script.py::\
+          BgUtilScript was not invoked"
+            [ "$exit_code" -eq 0 ] && exit_code=1
+          fi
+
+          pot_response=$(echo "$script_response" | \
+            grep -A1 -m1 '\[youtube\] \[pot:bgutil:script-${{ matrix.jsrt }}\] TRACE: JSON response:' | \
+            tail -n1 | \
+            jq -r '.poToken')
+          echo "POT: $pot_response"
+          if [[ "$pot_response" == "null" || -z "$pot_response" || "$pot_response" == '""' ]]; then
+            echo "::error title=Failed to generate POT,\
+          file=plugin/yt_dlp_plugins/extractor/getpot_bgutil_script.py::\
+          Failed to generate POT"
+            [ "$exit_code" -eq 0 ] && exit_code=1
+          fi
+
+          exit $exit_code
+
+  server-method:
+    name: Test plugin (server method)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        jsrt: [deno, node]
+        run: [native, docker]
+      fail-fast: false
+    env:
+      PORT: 4426
+      # Interval/Timeout in seconds to wait for the server to be up
+      INTERVAL: 0.5
+      TIMEOUT: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x" # keep in sync with yt-dlp's python requirement
+      - name: Download yt-dlp
+        shell: bash
+        run: |
+          curl -L https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp -o yt-dlp
+          chmod +x ./yt-dlp
+      - name: Install plugin
+        shell: bash
+        run: |
+          mkdir -p ~/yt-dlp-plugins/bgutil-ytdlp-pot-provider/
+          cp -r plugin/ ~/yt-dlp-plugins/
+      - name: Install Deno
+        uses: denoland/setup-deno@v2
+        if: matrix.run == 'native' && matrix.jsrt == 'deno'
+        with:
+          deno-version: "2.0.0" # minimum supported version
+      - name: Install Node
+        uses: actions/setup-node@v6
+        if: matrix.run == 'native' && matrix.jsrt == 'node'
+        with:
+          node-version: "20" # minimum supported version
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        if: matrix.run == 'docker'
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        if: matrix.run == 'docker'
+        with:
+          context: server
+          target: server_${{ matrix.jsrt }}
+          load: true
+          tags: brainicism/bgutil-ytdlp-pot-provider:ci-${{ matrix.jsrt }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Test server method
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          exit_code=0
+          ping() {
+            until curl -o- --silent --fail http://127.0.0.1:${{ env.PORT }}/ping 2>&1; do
+              sleep ${1:-0.5}
+            done
+          }
+          export -f ping
+          print_logs() {
+            GROUP="::group::Logs from the HTTP server \
+          (${{ matrix.jsrt }}, ${{ matrix.run }})"
+            if [ "${{ matrix.run }}" = "native" ]; then
+              [ -n "$SERVER_PID" ] && kill -9 "$SERVER_PID"
+              echo "$GROUP"
+              cat server.log
+            else
+              docker stop bgutil-provider
+              echo "$GROUP"
+              docker logs -t bgutil-provider 2>&1
+            fi
+            echo "::endgroup::"
+          }
+
+          if [ "${{ matrix.run }}" = "native" ]; then
+            cd server
+            case "${{ matrix.jsrt }}" in
+              deno)
+                # We don't need swc-node
+                deno install --allow-scripts=npm:canvas --frozen
+                (
+                  cd node_modules && \
+                  deno run --allow-env --allow-net --allow-ffi=. --allow-read=. \
+                    ../src/main.ts --port "${{ env.PORT }}" > ../../server.log 2>&1 &
+                  SERVER_PID=$!
+                )
+                ;;
+              node)
+                npm ci --no-audit --no-fund && npx tsc
+                node build/main.js --port "${{ env.PORT }}" > ../server.log 2>&1 &
+                SERVER_PID=$!
+                ;;
+            esac
+            cd ..
+          else
+            docker run --name bgutil-provider -d -p ${{ env.PORT }}:4416 \
+              brainicism/bgutil-ytdlp-pot-provider:ci-${{ matrix.jsrt }}
+          fi
+
+          echo "Waiting for server to be up..."
+          PING_RESP=$(timeout ${{ env.TIMEOUT }} bash -c "ping ${{ env.INTERVAL }}") || \
+            (echo "::error title=Timeout reached,file=server/src/main.ts::\
+          Timeout reached before the server is up." && print_logs && exit 1)
+
+          echo "::group::Response from HTTP server"
+          if echo "$PING_RESP" | jq -e . >/dev/null 2>&1; then
+            echo "$PING_RESP" | jq -C
+          else
+            echo "$PING_RESP"
+          fi
+          echo "::endgroup::"
+
+          # check that the server is returning a POT
+          pot_response=$(curl -s -X POST "http://127.0.0.1:${{ env.PORT }}/get_pot")
+          echo "::group::Get pot response from the HTTP server"
+          if echo "$pot_response" | jq -e . >/dev/null 2>&1; then
+            echo "$pot_response" | jq -C
+          else
+            echo "$pot_response"
+          fi
+          echo "::endgroup::"
+          poToken=$(echo "$pot_response" | jq -r '.poToken')
+          contentBinding=$(echo "$pot_response" | jq -r '.contentBinding')
+
+          if [[ "$poToken" == "null" || "$contentBinding" == "null" ]]; then
+            echo "::error title=PoToken generation failed,file=server/src/session_manager.ts::\
+          'poToken' or 'contentBinding' is null."
+            exit 1
+          fi
+
+          # expect this to fail, but just make sure that the plugin is invoked
+          {
+            server_response=$(./yt-dlp ${{ env.TEST_ARGS }} --extractor-args \
+              "youtubepot-bgutilhttp:base_url=http://127.0.0.1:${{ env.PORT }}" dQw4w9WgXcQ 2>&1)
+            ret=$?
+          } || true
+
+          print_logs
+
+          echo "::group::Logs from yt-dlp"
+          printf "%s\n" "$server_response"
+          echo "::endgroup::"
+
+          if [ "$ret" -ne 0 ]; then
+            echo "::warning title=yt-dlp failed when testing HTTP server,\
+          file=plugin/yt_dlp_plugins/extractor/getpot_bgutil_http.py::\
+          yt-dlp returned $ret exit status"
+          fi
+
+          if [[ "$server_response" != *"[pot:bgutil:http] TRACE: Generating POT via HTTP server"* ]]; then
+            echo "::error title=BgUtilHTTP was not invoked,\
+          file=plugin/yt_dlp_plugins/extractor/getpot_bgutil_http.py::\
+          BgUtilHTTP was not invoked"
+            [ "$exit_code" -eq 0 ] && exit_code=1
+          fi
+
+          {
+            po_token=$(echo "$server_response" | \
+              grep -m1 '\[youtube\] \[pot:bgutil:http\] TRACE: Generated POT: ' | \
+              sed 's/.*Generated POT: //')
+          } || true
+          echo "POT: $po_token"
+          if [[ "$po_token" == "None" || -z "$po_token" ]]; then
+            echo "::error title=Failed to generate POT,\
+          file=plugin/yt_dlp_plugins/extractor/getpot_bgutil_http.py::\
+          Failed to generate POT"
+            [ "$exit_code" -eq 0 ] && exit_code=1
+          fi
+
+          exit $exit_code

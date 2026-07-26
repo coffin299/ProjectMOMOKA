@@ -6,3 +6,12 @@ admin_user_ids:
 allowed_channel_ids: []
 music_cog_prefix: ''
 llm_cog_prefix: ''
+external_services:
+  bgutil:
+    enabled: true
+    required: true
+    runtime: node
+    server_dir: third_party/bgutil-ytdlp-pot-provider/server
+    base_url: http://127.0.0.1:4416
+    port: 4416
+    startup_timeout_seconds: 20

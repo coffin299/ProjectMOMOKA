@@ -149,6 +149,55 @@ if errorlevel 1 (
 )
 echo.
 
+REM 同梱BgUtils PO Token ProviderはNode.js 20以上でビルド・実行する
+echo [INFO] Checking vendored BgUtils PO Token Provider...
+where node >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Node.js 20+ is required for the bundled PO Token Provider.
+    echo [ERROR] Install Node.js from https://nodejs.org/ and retry.
+    pause
+    exit /b 1
+)
+set "NODE_MAJOR="
+for /f "delims=" %%A in ('node -p "process.versions.node.split('.')[0]" 2^>nul') do set "NODE_MAJOR=%%A"
+if not defined NODE_MAJOR (
+    echo [ERROR] Unable to determine the Node.js version.
+    pause
+    exit /b 1
+)
+if !NODE_MAJOR! LSS 20 (
+    echo [ERROR] Node.js 20+ is required. Detected major version: !NODE_MAJOR!
+    pause
+    exit /b 1
+)
+if not exist "third_party\bgutil-ytdlp-pot-provider\server\package-lock.json" (
+    echo [ERROR] Vendored BgUtils Provider source is missing.
+    echo [ERROR] Expected: third_party\bgutil-ytdlp-pot-provider\server\package-lock.json
+    pause
+    exit /b 1
+)
+if not exist "third_party\bgutil-ytdlp-pot-provider\server\build\main.js" (
+    echo [INFO] Installing and building BgUtils Provider v1.3.1...
+    pushd "third_party\bgutil-ytdlp-pot-provider\server"
+    call npm ci
+    if errorlevel 1 (
+        popd
+        echo [ERROR] BgUtils Provider npm install failed.
+        pause
+        exit /b 1
+    )
+    call npx tsc
+    if errorlevel 1 (
+        popd
+        echo [ERROR] BgUtils Provider TypeScript build failed.
+        pause
+        exit /b 1
+    )
+    popd
+)
+echo [SUCCESS] BgUtils PO Token Provider is ready.
+echo.
+
 REM MOMOKAの起動
 echo ================================
 echo Starting MOMOKA...

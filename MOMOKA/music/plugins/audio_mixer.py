@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 import logging
 
+from MOMOKA.music.plugins.process_log_bridge import ChildProcessLogPump
+
 logger = logging.getLogger(__name__)
 
 
@@ -267,6 +269,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         self._has_produced_audio = False
         # yt-dlp パイプ用プロセス（未使用時は None）
         self._ytdlp_proc: Optional[subprocess.Popen] = None
+        # yt-dlp stderrを常時排出するログポンプ（未使用時はNone）
+        self._ytdlp_stderr_pump: Optional[ChildProcessLogPump] = None
         # 一度も PCM を出せずに終了したか
         self.no_audio_failure: bool = False
         # yt-dlp / FFmpeg 側が HTTP 403 だったか
@@ -330,6 +334,15 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 stderr=subprocess.PIPE,
                 stdin=subprocess.DEVNULL,
             )
+            # stderrを常時排出してパイプ満杯とread()ブロックを防ぐ。
+            self._ytdlp_stderr_pump = ChildProcessLogPump(
+                self._ytdlp_proc.stderr,
+                logger=logger,
+                level=logging.WARNING,
+                label="yt-dlp",
+            )
+            # 子プロセスが出力を始める前に読み取りを開始する。
+            self._ytdlp_stderr_pump.start()
             # パイプ再生であることをログする
             logger.info(
                 "Guild %s: Using yt-dlp pipe for '%s' (avoids googlevideo 403)",
@@ -519,15 +532,16 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             return f"(stderr file read error: {e})"
 
     def _read_ytdlp_stderr(self) -> str:
-        """yt-dlp の stderr を非ブロッキング気味に読み取る。"""
+        """ログポンプが保持するyt-dlp stderr末尾を返す。"""
         try:
-            if not self._ytdlp_proc or not self._ytdlp_proc.stderr:
+            # パイプ未使用時は診断情報なしとする。
+            if self._ytdlp_stderr_pump is None:
+                # 非YouTube音源向けの既定値を返す。
                 return "(no ytdlp stderr)"
-            # プロセス終了後なら残データを読む
-            raw = self._ytdlp_proc.stderr.read()
-            if raw:
-                return raw.decode("utf-8", errors="replace").strip()[:2000]
-            return "(empty)"
+            # ロック保護された末尾履歴を取得する。
+            snapshot = self._ytdlp_stderr_pump.snapshot()
+            # 空履歴は明示的な表示へ変換する。
+            return snapshot or "(empty)"
         except Exception as e:
             return f"(ytdlp stderr read error: {e})"
 
@@ -550,6 +564,12 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                     # 終了待ち失敗は無視する
                     pass
                 finally:
+                    # プロセス終了後にstderr読取スレッドを回収する。
+                    if self._ytdlp_stderr_pump is not None:
+                        # EOF処理を短時間だけ待つ。
+                        self._ytdlp_stderr_pump.stop()
+                        # 再利用されないよう参照を消す。
+                        self._ytdlp_stderr_pump = None
                     # 参照をクリアする
                     self._ytdlp_proc = None
             # 一時ファイルをクローズ（自動削除される）

@@ -27,5 +27,7 @@ nico_cookies.txt
 # ビルド成果物
 /dist/
 /build/
+third_party/bgutil-ytdlp-pot-provider/server/node_modules/
+third_party/bgutil-ytdlp-pot-provider/server/build/
 *.exe
 *.bin

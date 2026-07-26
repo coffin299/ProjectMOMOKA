@@ -90,8 +90,9 @@
 ### Requirements / 要件
 
 - **Python 3.11.x** (**JA:** 必須 · **EN:** required)
+- **Node.js 20+** (**JA:** 同梱PO Token Providerに必須 · **EN:** required by bundled PO Token Provider)
 - Discord Application ×2 (PLANA + ARONA), both with **Message Content Intent**
-- Optional: Netscape-format `youtube_cookie.txt` in the project root
+- Optional: Netscape-format `youtube_cookies.txt` in the project root
 
 ### Configure / 設定
 
@@ -111,6 +112,12 @@ cd ProjectMOMOKA
 startMOMOKA.bat          # Windows (recommended)
 # or: python main.py     # after installing deps
 ```
+
+`startMOMOKA.bat` builds the bundled BgUtils Provider v1.3.1 once. MOMOKA
+starts it before both bots, checks `http://127.0.0.1:4416/ping`, and stops
+the owned process during shutdown. Provider/yt-dlp output is redacted and
+shown in the GUI **TTS+Music** log. Block inbound TCP 4416 in Windows
+Firewall because upstream v1.3.1 may bind to non-loopback interfaces.
 
 ---
 

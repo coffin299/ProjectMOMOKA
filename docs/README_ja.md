@@ -129,10 +129,11 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 ### 必要な環境
 
 - **Python 3.11.x**（必須。3.10 / 3.12 以降は非対応）
+- **Node.js 20 以上**（同梱 BgUtils PO Token Provider のビルド・実行に必須）
 - Discord Bot Token（PLANA / ARONA 各1つ）
 - 両方の Application で **Message Content Intent** を有効化
 - 各種 API キー（利用機能に応じて）
-- （任意）`youtube_cookie.txt`（Netscape 形式、プロジェクト直下）
+- （任意）`youtube_cookies.txt`（Netscape 形式、プロジェクト直下）
 
 ### インストール手順
 
@@ -161,6 +162,14 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    - debate / cross_check を使うサーバーには **両方** を入れてください
 
 5. **起動**
+
+   `startMOMOKA.bat` は初回のみ同梱 Provider v1.3.1へ `npm ci` と
+   TypeScriptビルドを行います。Bot起動前にProviderを開始して `/ping` を確認し、
+   GUI・`/shutdown`・Ctrl+Cによる終了時にはMOMOKAが起動したProviderも停止します。
+   Providerとyt-dlpの出力は秘密値を除去してGUIの「TTS+Musicログ」へ表示されます。
+
+   > **セキュリティ:** 上流v1.3.1は外部インターフェースへbindする場合があります。
+   > Windows Firewallで受信TCP 4416をローカル用途以外から遮断してください。
 
    **Windows (推奨):**
    ```bash
@@ -372,8 +381,11 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 音楽が再生されない
 
-1. ボイスチャンネル接続・FFmpeg・`youtube_cookie.txt` を確認
-2. **YouTube EJS**: Deno（推奨）または Node.js 22+ を PATH に入れ、`pip install -U "yt-dlp[default]"` を実行
+1. ボイスチャンネル接続・FFmpeg・`youtube_cookies.txt` を確認
+2. GUIの「TTS+Musicログ」で `BgUtils PO Token Provider v1.3.1 is ready` を確認
+3. `http://127.0.0.1:4416/ping` がversion `1.3.1`を返すことを確認
+4. Providerビルドが無い場合はNode.js 20+をPATHへ入れ、`startMOMOKA.bat`を再実行
+5. `tv client ... DRM protected` が出る場合は、古い設定/プロセスではなく現行MOMOKAが起動したyt-dlpを使用しているか確認
 
 ### 画像生成ができない
 

@@ -89,3 +89,25 @@ MOMOKA/generator/tts/style_bert_vits2/ に統合しています。
 改変日: 2025年11月
 =============================================================================
 
+=============================================================================
+BgUtils PO Token Provider
+=============================================================================
+
+本プロジェクトは、YouTube再生用PO Tokenを自動生成するため、以下の第三者
+ソフトウェアを未改変のソーススナップショットとして同梱します。
+
+- 名称: bgutil-ytdlp-pot-provider
+- バージョン: 1.3.1
+- 配置先: third_party/bgutil-ytdlp-pot-provider/
+- オリジナル: https://github.com/Brainicism/bgutil-ytdlp-pot-provider
+- Copyright: Brainicism and contributors
+- ライセンス: GNU General Public License v3.0 only (GPL-3.0-only)
+- ライセンス全文: third_party/bgutil-ytdlp-pot-provider/LICENSE
+
+MOMOKA側のプロセス管理・ログ統合コードはProvider本体とは別に実装しており、
+同梱Providerのソースコード自体には改変を行いません。
+
+=============================================================================
+同梱日: 2026年7月
+=============================================================================
+

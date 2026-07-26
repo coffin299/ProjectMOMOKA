@@ -129,10 +129,11 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 ### Requirements
 
 - **Python 3.11.x** (required; 3.10 / 3.12+ not supported)
+- **Node.js 20+** (required to build and run the bundled BgUtils PO Token Provider)
 - Discord bot tokens for PLANA and ARONA
 - **Message Content Intent** enabled on both applications
 - API keys as needed
-- (Optional) Netscape-format `youtube_cookie.txt` in the project root
+- (Optional) Netscape-format `youtube_cookies.txt` in the project root
 
 ### Installation
 
@@ -176,6 +177,14 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    ```
    On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
    The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit).
+
+   On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
+   Provider v1.3.1. MOMOKA starts it before the bots, checks `/ping`, and
+   stops the process it owns on GUI, `/shutdown`, or Ctrl+C shutdown.
+   Provider and yt-dlp output is redacted and shown in the TTS+Music log.
+
+   > **Security:** upstream v1.3.1 may bind to non-loopback interfaces.
+   > Use Windows Firewall to block inbound TCP 4416 from non-local hosts.
 
 ---
 
@@ -354,8 +363,11 @@ Real-time JMA WebSocket alerts (early warning, quake info, tsunami forecast).
 
 ### Music won't play
 
-1. Check VC connection, FFmpeg, and `youtube_cookie.txt`
-2. **YouTube EJS**: install Deno (recommended) or Node.js 22+ on PATH; run `pip install -U "yt-dlp[default]"`
+1. Check the VC connection, FFmpeg, and `youtube_cookies.txt`
+2. Confirm `BgUtils PO Token Provider v1.3.1 is ready` in the GUI TTS+Music log
+3. Confirm `http://127.0.0.1:4416/ping` reports version `1.3.1`
+4. If the Provider build is missing, install Node.js 20+ and rerun `startMOMOKA.bat`
+5. If `tv client ... DRM protected` appears, confirm the current MOMOKA-managed yt-dlp process is being used
 
 ### Image generation fails
 

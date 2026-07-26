@@ -134,6 +134,10 @@ class DiscordLogHandler(logging.Handler):
             await self._save_config()
 
     def emit(self, record: logging.LogRecord):
+        # 外部ProviderログはGUI専用とし、認証情報の外部送信経路を閉じる。
+        if record.name.startswith("MOMOKA.music.external."):
+            # Discordキューへ投入せず終了する。
+            return
         if self._closed:
             return
         msg = self.format(record)

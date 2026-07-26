@@ -149,6 +149,8 @@ _YOUTUBE_COOKIE_CANDIDATES = (
 )
 # config から上書きされる任意のクッキーパス（未設定時は None）
 _youtube_cookie_override: Optional[Path] = None
+# BgUtils HTTP ProviderのURL（main.py起動時に設定される）
+_bgutil_provider_base_url: Optional[str] = None
 
 
 def set_youtube_cookie_path(path: Optional[str]) -> None:
@@ -167,6 +169,19 @@ def set_youtube_cookie_path(path: Optional[str]) -> None:
     _youtube_cookie_override = Path(path)
     # 設定内容をログへ出力する
     logger.info("YouTube cookie path override set to: %s", _youtube_cookie_override.resolve())
+
+
+def set_bgutil_provider_base_url(base_url: Optional[str]) -> None:
+    """BgUtils PO Token ProviderのURLを抽出APIとCLIへ共有する。"""
+    # モジュール共有値を更新するためglobalを宣言する。
+    global _bgutil_provider_base_url
+    # 空値はProvider無効としてNoneへ正規化する。
+    _bgutil_provider_base_url = base_url.rstrip("/") if base_url else None
+    # 秘密値を含まない接続先だけを運用ログへ残す。
+    logger.info(
+        "BgUtils PO Token Provider URL: %s",
+        _bgutil_provider_base_url or "disabled",
+    )
 
 
 def resolve_youtube_cookie_path() -> Optional[Path]:
@@ -233,26 +248,21 @@ _FORMAT_TRIES: tuple[str, ...] = (
     "best/best*",
     "18/bestaudio*/best*",
 )
-# 一次クライアント: 上流 yt-dlp 既定に近い android_vr を先頭に置く
-# （web 系は SABR-only で URL 無しになりやすい）
+# 一次クライアント: 公式推奨のmweb+PO Tokenを最優先にする。
+# tv系はセッション単位の全動画DRM実験対象になるため候補へ含めない。
 _YOUTUBE_PLAYER_CLIENT_PRIMARY: list[str] = [
+    "mweb",
     "android_vr",
     "web_embedded",
-    "tv_downgraded",
 ]
-# 403 / NO audio リトライ用の代替クライアント列
+# 403 / NO audio リトライ用の非TV代替クライアント列
 _YOUTUBE_PLAYER_CLIENT_FALLBACK: list[str] = [
-    "web_creator",
-    "tv",
-    "web",
+    "web_safari",
 ]
-# player_client 候補（None は yt-dlp デフォルトに任せる）
+# player_client候補は一括指定せず、1クライアントずつ独立セッションで試す。
 _YOUTUBE_PLAYER_CLIENT_TRIES: tuple[Optional[list[str]], ...] = (
-    _YOUTUBE_PLAYER_CLIENT_PRIMARY,
-    _YOUTUBE_PLAYER_CLIENT_FALLBACK,
-    # 除外付き default も最後の手段として残す
-    ["default", "-android_sdkless", "-ios", "-mweb"],
-    None,
+    *([client] for client in _YOUTUBE_PLAYER_CLIENT_PRIMARY),
+    *([client] for client in _YOUTUBE_PLAYER_CLIENT_FALLBACK),
 )
 # 外部モジュール向けの公開エイリアス
 YOUTUBE_PLAYER_CLIENT_PRIMARY = _YOUTUBE_PLAYER_CLIENT_PRIMARY
@@ -321,6 +331,51 @@ def apply_youtube_ejs_opts(opts: dict) -> dict:
     # EJS リモート取得が未指定なら GitHub を許可する
     merged.setdefault("remote_components", ["ejs:github"])
     # 注入後のオプションを返す
+    return merged
+
+
+def _merge_youtube_extractor_args(
+    opts: dict,
+    player_clients: Optional[list[str]],
+) -> dict:
+    """既存Provider設定を壊さずYouTube clientだけを更新する。"""
+    # 呼び出し元を破壊しない浅いコピーを作成する。
+    merged = opts.copy()
+    # extractor_args全体をキー単位で複製する。
+    extractor_args = {
+        key: value.copy() if isinstance(value, dict) else value
+        for key, value in (opts.get("extractor_args") or {}).items()
+    }
+    # YouTube固有設定を独立した辞書として複製する。
+    youtube_args = dict(extractor_args.get("youtube") or {})
+    # クライアント指定がある場合だけ単一候補を設定する。
+    if player_clients:
+        # yt-dlp Python APIが要求する文字列リストを保存する。
+        youtube_args["player_client"] = list(player_clients)
+    else:
+        # default試行では既存のclient固定だけを解除する。
+        youtube_args.pop("player_client", None)
+    # YouTube設定が残る場合だけキーを保持する。
+    if youtube_args:
+        # 他のYouTube設定を維持したまま更新する。
+        extractor_args["youtube"] = youtube_args
+    else:
+        # 空辞書はyt-dlpへ渡さない。
+        extractor_args.pop("youtube", None)
+    # Provider有効時はHTTP pluginの接続先を注入する。
+    if _bgutil_provider_base_url:
+        # plugin仕様に従い値を文字列リストで渡す。
+        extractor_args["youtubepot-bgutilhttp"] = {
+            "base_url": [_bgutil_provider_base_url],
+        }
+    # 結果がある場合だけextractor_argsを設定する。
+    if extractor_args:
+        # 深くマージした設定を反映する。
+        merged["extractor_args"] = extractor_args
+    else:
+        # 空の場合はキー自体を除去する。
+        merged.pop("extractor_args", None)
+    # 統合済みオプションを返す。
     return merged
 
 
@@ -470,8 +525,8 @@ def build_ytdlp_pipe_command(
     format_spec / player_clients / use_cookies には抽出 API 側で
     実際に成功した組み合わせを渡すことで CLI 再抽出の失敗を防ぐ。
     """
-    # 未指定なら一次クライアント列を使う（抽出 API と揃える）
-    clients = player_clients or list(_YOUTUBE_PLAYER_CLIENT_PRIMARY)
+    # 未指定なら一次候補の先頭1件だけを使う（複数client混在を防ぐ）
+    clients = player_clients or [_YOUTUBE_PLAYER_CLIENT_PRIMARY[0]]
     # CLI 向けにカンマ区切りへ変換する
     client_arg = ",".join(clients)
     # format 指定が無ければ広いフォールバックチェーンを使う
@@ -512,6 +567,16 @@ def build_ytdlp_pipe_command(
         "--extractor-args",
         f"youtube:player_client={client_arg}",
     ]
+    # Provider有効時はパイプ側の再抽出にも同じ接続先を渡す。
+    if _bgutil_provider_base_url:
+        # plugin固有引数を別のextractor-argsとして追加する。
+        cmd.extend(
+            [
+                "--extractor-args",
+                "youtubepot-bgutilhttp:"
+                f"base_url={_bgutil_provider_base_url}",
+            ]
+        )
     # クッキー無しで成功した実績がある場合（use_cookies=False）は付与しない
     if use_cookies is not False:
         # 有効なクッキーがあれば付与する
@@ -549,20 +614,54 @@ def _entry_has_playable_url(info: Optional[dict]) -> bool:
     if not entry:
         # 再生不可
         return False
+    # エントリ自体がDRM指定なら再生対象にしない。
+    if entry.get("has_drm"):
+        # DRM形式を成功扱いしない。
+        return False
     # 直接のストリーム URL があれば再生可能
-    if entry.get("url"):
+    if entry.get("url") and not entry.get("has_drm"):
         # 再生可能
         return True
     # 結合前の requested_formats に実 URL があるか見る
     requested = entry.get("requested_formats") or []
     # いずれかに url / manifest_url があれば可
-    if any(f.get("url") or f.get("manifest_url") for f in requested if isinstance(f, dict)):
+    if any(
+        (f.get("url") or f.get("manifest_url")) and not f.get("has_drm")
+        for f in requested
+        if isinstance(f, dict)
+    ):
         # 再生可能
         return True
     # formats 一覧に実 URL があるか見る（SABR-only で URL 無しのダミーは除外）
     formats = entry.get("formats") or []
     # 実 URL 付きフォーマットが1つでもあれば可
-    return any(f.get("url") or f.get("manifest_url") for f in formats if isinstance(f, dict))
+    return any(
+        (f.get("url") or f.get("manifest_url")) and not f.get("has_drm")
+        for f in formats
+        if isinstance(f, dict)
+    )
+
+
+def _selected_format_spec(entry: dict, fallback: Optional[str]) -> Optional[str]:
+    """抽出済みエントリからCLIで再利用できる実format IDを返す。"""
+    # 単一または結合済みformat IDを最優先する。
+    format_id = entry.get("format_id")
+    # 有効な文字列ならそのまま返す。
+    if isinstance(format_id, str) and format_id.strip():
+        # 前後空白を除去して返す。
+        return format_id.strip()
+    # requested_formatsから実IDを順番どおり集める。
+    requested_ids = [
+        str(item.get("format_id"))
+        for item in (entry.get("requested_formats") or [])
+        if isinstance(item, dict) and item.get("format_id")
+    ]
+    # 複数形式はyt-dlpの結合指定へ変換する。
+    if requested_ids:
+        # 音声・映像形式の組合せを維持する。
+        return "+".join(requested_ids)
+    # IDが無い場合だけ従来selectorへ戻す。
+    return fallback
 
 
 def _extract_with_fallbacks(opts: dict, url: str, *, download: bool, resolve_stream: bool = False):
@@ -635,13 +734,8 @@ def _extract_with_fallbacks(opts: dict, url: str, *, download: bool, resolve_str
             trial["ignoreerrors"] = False
             # フラット展開を無効化して実 URL を得る
             trial["extract_flat"] = False
-        # player_client を指定する場合
-        if clients:
-            # extractor_args に YouTube クライアント列を設定する
-            trial["extractor_args"] = {"youtube": {"player_client": list(clients)}}
-        else:
-            # デフォルトクライアントに任せるため明示指定を外す
-            trial.pop("extractor_args", None)
+        # Provider設定等を保持したままclientだけを更新する。
+        trial = _merge_youtube_extractor_args(trial, clients)
         # クッキー無しモードなら関連キーを除去する
         if not use_cookies:
             # cookiefile を除去する
@@ -739,10 +833,10 @@ COMMON_YTDL_OPTS: dict = {
     "skip_download": True,
     # プレイリスト展開を必要時にオンデマンドで読み込む設定
     "lazy_playlist": True,
-    # YouTube: android_vr 優先（SABR-only の web 系より安定しやすい）
+    # YouTube: 公式推奨のmweb+PO Tokenを単独指定する。
     "extractor_args": {
         "youtube": {
-            "player_client": list(_YOUTUBE_PLAYER_CLIENT_PRIMARY),
+            "player_client": [_YOUTUBE_PLAYER_CLIENT_PRIMARY[0]],
         }
     },
     # YouTube JS チャレンジ解決用ランタイム（deno 優先、無ければ node）
@@ -916,8 +1010,11 @@ async def ensure_stream(track: Track, ytdl_opts_override: Optional[dict] = None)
 
         # 抽出したメタデータから一時的なTrackオブジェクトを構築する
         temp_track = _entry_to_track(entry_to_use, is_downloaded_nico=False)
-        # 実際に成功した format 指定を取り出す（パイプ再生 CLI へ引き継ぐ）
-        used_format = used_opts.get("format")
+        # 実際に選択されたformat IDをCLIへ引き継ぐ。
+        used_format = _selected_format_spec(
+            entry_to_use,
+            used_opts.get("format"),
+        )
         # 実際に成功した player_client 列を extractor_args から取り出す
         used_clients = ((used_opts.get("extractor_args") or {}).get("youtube") or {}).get("player_client")
         # クッキーを使った抽出だったかどうかを判定する

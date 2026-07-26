@@ -528,6 +528,10 @@ if __name__ == "__main__":
     from MOMOKA.bots.registry import registry
     from MOMOKA.llm.concurrency import init_concurrency
     from MOMOKA.llm.debate.orchestrator import init_orchestrator
+    from MOMOKA.services.bgutil_provider import (
+        BgutilProviderConfig,
+        BgutilProviderManager,
+    )
 
     # configs/*.yaml を統合した設定辞書を読み込む
     try:
@@ -546,6 +550,11 @@ if __name__ == "__main__":
     except ValueError as e_token:
         print(f"CRITICAL: {e_token}")
         sys.exit(1)
+
+    # マージ済み設定から共有PO Token Provider設定を構築する。
+    bgutil_config = BgutilProviderConfig.from_mapping(merged_config)
+    # PLANA/ARONAで共有するProvider Managerを一度だけ生成する。
+    bgutil_manager = BgutilProviderManager(bgutil_config)
 
     # Debate オーケストレータを初期化する
     try:
@@ -757,23 +766,45 @@ if __name__ == "__main__":
     async def run_bots():
         """PLANA と ARONA の両方を並行起動する。"""
         try:
+            try:
+                # Discord接続前にPO Token Providerを準備する。
+                provider_ready = await bgutil_manager.start()
+            except Exception as e_provider:
+                # 必須設定では不完全な音楽機能で起動しない。
+                if bgutil_config.required:
+                    # 元の起動失敗を外側へ伝える。
+                    raise
+                # 任意設定ならProvider無しの劣化運転を選ぶ。
+                provider_ready = False
+                # 劣化運転を明確に警告する。
+                logging.warning(
+                    "BgUtils Provider is unavailable; continuing without it: %s",
+                    e_provider,
+                )
+            # yt-dlpラッパーへProvider接続先を共有する。
+            from MOMOKA.music.plugins.ytdlp_wrapper import (
+                set_bgutil_provider_base_url,
+            )
+            # Provider利用可能時だけplugin URLを有効化する。
+            set_bgutil_provider_base_url(
+                bgutil_manager.base_url if provider_ready else None
+            )
             # 両ボットを並行起動する
             await asyncio.gather(
                 plana_bot.start(plana_token),
                 arona_bot.start(arona_token),
             )
-        except KeyboardInterrupt:
-            # Ctrl+C でシャットダウンする
-            print("\nINFO: KeyboardInterrupt を検出しました。シャットダウンを開始します...")
-            # レジストリの全ボットをクローズする
-            await registry.close_all()
         except Exception as e_run:
             # 実行中のエラーをログに残す
             logging.critical(f"ボットの実行中に致命的なエラーが発生しました: {e_run}", exc_info=True)
             print(f"CRITICAL: ボットの実行中に致命的なエラーが発生しました: {e_run}")
-            # レジストリの全ボットをクローズする
+            # 外側の終了コード処理へ失敗を伝える。
+            raise
+        finally:
+            # キャンセル・Ctrl+Cを含む全経路で両Botを閉じる。
             await registry.close_all()
-            sys.exit(1)
+            # Bot停止後に自分が所有するProviderだけを停止する。
+            await bgutil_manager.stop()
 
     # asyncio イベントループで両ボットを起動する
     try:
