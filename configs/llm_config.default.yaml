@@ -98,6 +98,8 @@ llm:
   max_messages: 10
   max_images: 5
   max_images_per_request: 8
+  # URL/添付画像の1枚あたり最大バイト数（超過時は DL 前またはストリーム中に拒否。既定 20 MiB）
+  max_image_bytes: 20971520
   language_prompt: "<language_instructions>\n  <rule priority=\"CRITICAL_AND_ABSOLUTE\">\n    You MUST respond in the exact same language as the user's most recent message.\n    This rule overrides ALL other instructions, including character settings and examples.\n    If the user writes in Japanese, reply in Japanese. If in English, reply in English.\n    Keep your character tone and speech style while matching the language.\n  </rule>\n</language_instructions>\n"
   active_tools:
   - search

@@ -225,6 +225,10 @@ bots:
 llm:
   model: "google/gemini-2.5-pro"
   # OpenRouter example: model: "openrouter/free"
+  max_images: 5
+  max_images_per_request: 8
+  # Max bytes per URL/attachment image (reject before/during download if exceeded)
+  max_image_bytes: 20971520  # 20 MiB
   providers:
     google:
       api_key1: YOUR_KEY

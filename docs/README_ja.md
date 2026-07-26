@@ -225,6 +225,10 @@ bots:
 llm:
   model: "google/gemini-2.5-pro"
   # OpenRouter 利用例: model: "openrouter/free"
+  max_images: 5
+  max_images_per_request: 8
+  # URL/添付画像の1枚あたり最大バイト数（超過時は DL 前またはストリーム中に拒否）
+  max_image_bytes: 20971520  # 20 MiB
   providers:
     google:
       api_key1: YOUR_KEY

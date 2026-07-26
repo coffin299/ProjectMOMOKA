@@ -1291,49 +1291,90 @@ class LLMCog(commands.Cog, name="LLM"):
         return history[-max_history_entries:] if len(history) > max_history_entries else history
 
     async def _process_image_url(self, url: str) -> Optional[Dict[str, Any]]:
+        # 画像バイト上限（未設定時は従来どおり 20 MiB）
+        max_image_bytes = int(self.llm_config.get('max_image_bytes', 20 * 1024 * 1024))
         try:
             async with self.http_session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                if response.status == 200:
-                    image_bytes = await response.read()
-                    if len(image_bytes) > 20 * 1024 * 1024:
-                        logger.warning(f"Image too large ({len(image_bytes)} bytes): {url}")
-                        return None
-                    mime_type = response.content_type
-                    if not mime_type or not mime_type.startswith('image/'):
-                        ext = url.split('.')[-1].lower().split('?')
-                        mime_type = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif',
-                                     'webp': 'image/webp'}.get(ext, 'image/jpeg')
-                    if mime_type == 'image/gif':
-                        try:
-                            from PIL import Image
-                            gif_image = Image.open(io.BytesIO(image_bytes))
-                            if getattr(gif_image, 'is_animated', False):
-                                logger.info(
-                                    f"🎬 [IMAGE] Detected animated GIF. Converting to static image: {url[:100]}...")
-                                gif_image.seek(0)
-                                if gif_image.mode != 'RGBA': gif_image = gif_image.convert('RGBA')
-                                output_buffer = io.BytesIO()
-                                gif_image.save(output_buffer, format='PNG', optimize=True)
-                                image_bytes, mime_type = output_buffer.getvalue(), 'image/png'
-                                logger.debug(
-                                    f"🖼️ [IMAGE] Converted animated GIF to PNG (Size: {len(image_bytes)} bytes)")
-                            else:
-                                logger.debug(f"🖼️ [IMAGE] Static GIF detected, processing normally")
-                        except ImportError:
-                            logger.warning(
-                                "⚠️ Pillow (PIL) library not found. Cannot process animated GIFs. Skipping image.")
-                            return None
-                        except Exception as gif_error:
-                            logger.error(f"❌ Error processing GIF image: {gif_error}", exc_info=True)
-                            return None
-                    encoded_image = base64.b64encode(image_bytes).decode('utf-8')
-                    logger.debug(
-                        f"🖼️ [IMAGE] Successfully processed image: {url[:100]}... (MIME: {mime_type}, Size: {len(image_bytes)} bytes)")
-                    return {"type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{encoded_image}", "detail": "auto"}}
-                else:
+                if response.status != 200:
                     logger.warning(f"Failed to download image from {url} (Status: {response.status})")
                     return None
+                # Content-Length があれば本文を読む前に拒否する
+                content_length = response.headers.get('Content-Length')
+                if content_length is not None:
+                    try:
+                        # ヘッダ値を整数化し上限と比較する
+                        declared_size = int(content_length)
+                        # 宣言サイズが上限超なら本文を一切読まない
+                        if declared_size > max_image_bytes:
+                            logger.warning(
+                                f"Image too large (Content-Length {declared_size} bytes): {url}")
+                            return None
+                    except (TypeError, ValueError):
+                        # 不正な Content-Length は無視してチャンク読込に進む
+                        pass
+                # チャンク単位で累積し、超過時点で中断する（全文 read による OOM 防止）
+                chunks: List[bytes] = []
+                # これまでに受け取ったバイト数
+                total_size = 0
+                # 64 KiB ずつ読み、上限を超えたら接続を捨てる
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    # 空チャンクはスキップする
+                    if not chunk:
+                        continue
+                    # 累積サイズを更新する
+                    total_size += len(chunk)
+                    # 上限超過なら以降を読まずに破棄する
+                    if total_size > max_image_bytes:
+                        logger.warning(f"Image too large (>{max_image_bytes} bytes while streaming): {url}")
+                        # 残レスポンスを読まず接続を閉じる
+                        response.close()
+                        return None
+                    # 上限内のチャンクのみ保持する
+                    chunks.append(chunk)
+                # チャンクを結合して画像バイト列にする
+                image_bytes = b''.join(chunks)
+                # 結合後の保険チェック（チャンク境界の取りこぼし対策）
+                if len(image_bytes) > max_image_bytes:
+                    logger.warning(f"Image too large ({len(image_bytes)} bytes): {url}")
+                    return None
+                mime_type = response.content_type
+                if not mime_type or not mime_type.startswith('image/'):
+                    ext = url.split('.')[-1].lower().split('?')
+                    mime_type = {'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'gif': 'image/gif',
+                                 'webp': 'image/webp'}.get(ext, 'image/jpeg')
+                if mime_type == 'image/gif':
+                    try:
+                        from PIL import Image
+                        gif_image = Image.open(io.BytesIO(image_bytes))
+                        if getattr(gif_image, 'is_animated', False):
+                            logger.info(
+                                f"🎬 [IMAGE] Detected animated GIF. Converting to static image: {url[:100]}...")
+                            gif_image.seek(0)
+                            if gif_image.mode != 'RGBA': gif_image = gif_image.convert('RGBA')
+                            output_buffer = io.BytesIO()
+                            gif_image.save(output_buffer, format='PNG', optimize=True)
+                            image_bytes, mime_type = output_buffer.getvalue(), 'image/png'
+                            # GIF→PNG 変換で膨らんだ場合も上限超過なら破棄する
+                            if len(image_bytes) > max_image_bytes:
+                                logger.warning(
+                                    f"Image too large after GIF conversion ({len(image_bytes)} bytes): {url}")
+                                return None
+                            logger.debug(
+                                f"🖼️ [IMAGE] Converted animated GIF to PNG (Size: {len(image_bytes)} bytes)")
+                        else:
+                            logger.debug(f"🖼️ [IMAGE] Static GIF detected, processing normally")
+                    except ImportError:
+                        logger.warning(
+                            "⚠️ Pillow (PIL) library not found. Cannot process animated GIFs. Skipping image.")
+                        return None
+                    except Exception as gif_error:
+                        logger.error(f"❌ Error processing GIF image: {gif_error}", exc_info=True)
+                        return None
+                encoded_image = base64.b64encode(image_bytes).decode('utf-8')
+                logger.debug(
+                    f"🖼️ [IMAGE] Successfully processed image: {url[:100]}... (MIME: {mime_type}, Size: {len(image_bytes)} bytes)")
+                return {"type": "image_url",
+                        "image_url": {"url": f"data:{mime_type};base64,{encoded_image}", "detail": "auto"}}
         except asyncio.TimeoutError:
             logger.error(f"Timeout while downloading image: {url}")
             return None
@@ -1387,15 +1428,30 @@ class LLMCog(commands.Cog, name="LLM"):
 
         # 画像 URL だけチェーン全体から集める（本文は混ぜない）
         source_urls = []
+        # 添付の早期スキップ用にバイト上限を取得する
+        max_image_bytes = int(self.llm_config.get('max_image_bytes', 20 * 1024 * 1024))
         for msg in reversed(messages_to_scan):
             # 本文中の直リンク画像を拾う
             for url in IMAGE_URL_PATTERN.findall(msg.content):
                 if url not in processed_urls: source_urls.append(url); processed_urls.add(url)
-            # 添付画像を拾う
+            # 添付画像を拾う（Discord が宣言した size が上限超なら DL しない）
             for attachment in msg.attachments:
-                if attachment.content_type and attachment.content_type.startswith(
-                    'image/') and attachment.url not in processed_urls: source_urls.append(
-                    attachment.url); processed_urls.add(attachment.url)
+                # 画像以外・重複 URL は対象外とする
+                if not (attachment.content_type and attachment.content_type.startswith('image/')):
+                    continue
+                # 既に処理済み URL はスキップする
+                if attachment.url in processed_urls:
+                    continue
+                # attachment.size が上限超なら HTTP 取得前に捨てる
+                if attachment.size is not None and attachment.size > max_image_bytes:
+                    logger.warning(
+                        f"Skipping oversized Discord attachment ({attachment.size} bytes): {attachment.url}")
+                    # 再評価を避けるため訪問済みに入れる
+                    processed_urls.add(attachment.url)
+                    continue
+                # 上限内の添付 URL を収集する
+                source_urls.append(attachment.url)
+                processed_urls.add(attachment.url)
             # embed の image / thumbnail を拾う
             for embed in msg.embeds:
                 if embed.image and embed.image.url and embed.image.url not in processed_urls: source_urls.append(
