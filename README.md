@@ -8,7 +8,7 @@
 **EN:** Multi-functional Discord bot — PLANA (primary) + ARONA (companion). AI chat, music, TTS, notifications, Link Fix, and more.
 
 [![Website](https://img.shields.io/badge/Website-momoka--project.com-1c1917?style=for-the-badge)](https://momoka-project.com/)
-[![Invite PLANA](https://img.shields.io/badge/Invite%20PLANA-24/7%20Online-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot)
+[![Invite PLANA](https://img.shields.io/badge/Invite%20PLANA-24/7%20Online-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
 [![Invite ARONA](https://img.shields.io/badge/Invite%20ARONA-Companion-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)
 
 </div>
@@ -41,7 +41,7 @@
 **JA:** 公開ホストのボットを招待するだけで使えます。セットアップ不要です。  
 **EN:** Just invite the hosted bots — no setup required.
 
-1. **[Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot)**  
+1. **[Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)**  
    **JA:** フル機能 · **EN:** full feature set
 2. **[Invite ARONA](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)**  
    **JA:** debate / cross_check を使うなら同じサーバーに追加 · **EN:** add to the same server for debate / cross_check

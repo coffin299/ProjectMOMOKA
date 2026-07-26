@@ -24,7 +24,7 @@
 
 | Bot | Role | Invite |
 |-----|------|--------|
-| **PLANA** | Primary — LLM, music, TTS, images, notifications, trackers, Link Fix, utilities | [Invite](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot) |
+| **PLANA** | Primary — LLM, music, TTS, images, notifications, trackers, Link Fix, utilities | [Invite](https://discord.com/oauth2/authorize?client_id=1031673203774464160) |
 | **ARONA** | Companion — LLM, music, utilities. TTS/images/notifications/trackers/Link Fix redirect to PLANA | [Invite](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot) |
 
 - Create **two Discord Applications** and enable **Message Content Intent** on both
@@ -158,7 +158,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    - `configs/llm_config.yaml` — API keys
 
 4. **Invite bots**
-   - [PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot)
+   - [PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
    - [ARONA](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)
    - Invite **both** to any guild where you want debate / cross_check
 

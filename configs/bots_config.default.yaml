@@ -5,7 +5,7 @@ bots:
     application_id: 1031673203774464160
     client_id: 1031673203774464160
     token: YOUR_PLANA_BOT_TOKEN
-    invite_url: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot
+    invite_url: https://discord.com/oauth2/authorize?client_id=1031673203774464160
     persona: plana
   arona:
     role: companion

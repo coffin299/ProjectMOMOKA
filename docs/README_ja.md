@@ -24,7 +24,7 @@
 
 | Bot | 役割 | 招待 |
 |-----|------|------|
-| **PLANA** | プライマリ。LLM・音楽・TTS・画像・通知・tracker・Link Fix・ユーティリティ | [招待リンク](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot) |
+| **PLANA** | プライマリ。LLM・音楽・TTS・画像・通知・tracker・Link Fix・ユーティリティ | [招待リンク](https://discord.com/oauth2/authorize?client_id=1031673203774464160) |
 | **ARONA** | コンパニオン。LLM・音楽・ユーティリティ。TTS/画像/通知/tracker/Link Fix は PLANA へ誘導 | [招待リンク](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot) |
 
 - Discord Developer Portal で **2つの Application** を用意し、両方に **Message Content Intent** を有効化してください
@@ -158,7 +158,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    - `configs/llm_config.yaml` — API キー
 
 4. **ボットの招待**
-   - [PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot)
+   - [PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
    - [ARONA](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)
    - debate / cross_check を使うサーバーには **両方** を入れてください
 
