@@ -202,6 +202,10 @@ class CountCog(commands.Cog):
         # 無ければ終了
         if not sites:
             return
+        # 成功したサイト名（まとめて1行ログするため）
+        posted_sites: list[str] = []
+        # ログ用 bot_id（最後に成功したものを残す）
+        last_bot_id: Optional[int] = None
         # 各サイトへ投稿
         for site_id, cfg in sites.items():
             # プロセス内クールダウン中なら送らない
@@ -219,13 +223,10 @@ class CountCog(commands.Cog):
                 await post_fn(session, bot_id, server_count, token)
                 # 成功時刻を記録する
                 self._last_success_at[site_id] = time.monotonic()
-                # 成功ログ
-                logger.info(
-                    "[count] posted to %s: server_count=%s bot_id=%s",
-                    site_id,
-                    server_count,
-                    bot_id,
-                )
+                # 成功サイトを溜める（個別ログは出さない）
+                posted_sites.append(site_id)
+                # サマリ用に保持する
+                last_bot_id = bot_id
             except RateLimitedError as exc:
                 # 再起動直後などで起きうる想定内エラー
                 logger.info("[count] rate limited for %s: %s", site_id, exc)
@@ -247,6 +248,15 @@ class CountCog(commands.Cog):
                         "[count] discordbotlist commands post failed: %s",
                         exc,
                     )
+        # 1件以上成功したらまとめて1行
+        if posted_sites:
+            logger.info(
+                "[count] posted to all bot list sites: "
+                "server_count=%s sites=%s bot_id=%s",
+                server_count,
+                ",".join(posted_sites),
+                last_bot_id,
+            )
 
     @post_counts.before_loop
     async def before_post_counts(self) -> None:

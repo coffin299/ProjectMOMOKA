@@ -1,6 +1,6 @@
 <div align="center">
 
-![Moe Counter](http://moecounter.atserver186.jp/@MOMOKAv1?name=MOMOKAv1&theme=booru-lewd&padding=7&offset=0&align=top&scale=1&pixelated=1&darkmode=0)
+![Moe Counter](https://count.getloli.com/@prjMOMOKAGitHub?name=prjMOMOKAGitHub&theme=original-new&padding=7&offset=0&align=top&scale=1&pixelated=1&darkmode=0&num=1030)
 
 # MOMOKA
 
