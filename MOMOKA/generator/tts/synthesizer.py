@@ -244,19 +244,24 @@ class StyleBertVITS2Synthesizer:
         self._engine = None
         self._device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
-        # First, try direct import of style_bert_vits2 (integrated package)
+        # First, try direct import of style_bert_vits2 (third_party 同梱パッケージ)
         logger = logging.getLogger(__name__)
         try:
-            logger.debug(f"Attempting to import TTSModel from integrated package")
-            # Add parent directory to sys.path so that style_bert_vits2 can be imported as absolute import
-            # The integrated package uses absolute imports (from style_bert_vits2.xxx)
+            logger.debug(f"Attempting to import TTSModel from third_party package")
+            # style_bert_vits2 は絶対 import のため、パッケージ親を sys.path に追加する
             import sys
-            tts_dir = Path(__file__).parent
-            if str(tts_dir) not in sys.path:
-                sys.path.insert(0, str(tts_dir))
-                logger.debug(f"Added {tts_dir} to sys.path for style_bert_vits2 imports")
-            
-            # Now import using absolute import path
+            # synthesizer.py → プロジェクトルート（parents[3]）
+            project_root = Path(__file__).resolve().parents[3]
+            # 同梱先: third_party/style_bert_vits2/（パッケージ本体）
+            third_party_dir = project_root / "third_party"
+            # 未登録なら先頭に挿入して import を優先する
+            if str(third_party_dir) not in sys.path:
+                sys.path.insert(0, str(third_party_dir))
+                logger.debug(
+                    f"Added {third_party_dir} to sys.path for style_bert_vits2 imports"
+                )
+
+            # 絶対 import で TTSModel を読み込む
             from style_bert_vits2.tts_model import TTSModel
             logger.debug(f"TTSModel imported successfully. Initializing with: model_path={self._ckpt_path}, config_path={self._json_path}")
             # TTSModel expects Path objects, not strings
@@ -304,9 +309,9 @@ class StyleBertVITS2Synthesizer:
             )
             return
         except ImportError as e:
-            # style_bert_vits2 not available, try module path
+            # style_bert_vits2 が読めない場合は後続のカスタム module path へフォールバック
             logger.error(
-                f"Failed to import TTSModel from integrated package: {e}. "
+                f"Failed to import TTSModel from third_party/style_bert_vits2: {e}. "
                 f"This may indicate missing dependencies or import path issues."
             )
             import traceback

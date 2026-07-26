@@ -35,8 +35,8 @@ pillow>=10.0.0
 # --- NumPy (1.x required by torch 2.1 / numba / pyopenjtalk) ---
 numpy>=1.24.0,<2.0.0
 
-# --- Style-Bert-VITS2 TTS (integrated under MOMOKA/generator/tts) ---
-# See NOTICE and MOMOKA/generator/tts/LICENSE_SBVITS2 for details.
+# --- Style-Bert-VITS2 TTS (vendored under third_party/style_bert_vits2) ---
+# See NOTICE and third_party/style_bert_vits2/LICENSE_SBVITS2 for details.
 loguru>=0.7.0
 pydantic>=2.0.0
 pyworld>=0.3.0

@@ -79,7 +79,7 @@ Requests on ARONA are redirected to PLANA.
 
 ### 4. Text-to-Speech (PLANA only)
 
-Integrated [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2). Models under `models/tts-models/`. See `NOTICE`.
+Integrated [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) (vendored: `third_party/style_bert_vits2/`, wrapper: `MOMOKA/generator/tts/`). Models under `models/tts-models/`. See `NOTICE`.
 
 ### 5. Game Trackers (PLANA only)
 

@@ -65,7 +65,7 @@
 
 > **Built-ins（セルフホスト時 / when self-hosting）**
 > - Image generation — `MOMOKA/generator/image` (diffusers)
-> - Style-Bert-VITS2 TTS — `MOMOKA/generator/tts` (see `NOTICE`)
+> - Style-Bert-VITS2 TTS — `third_party/style_bert_vits2` + wrapper `MOMOKA/generator/tts` (see `NOTICE`)
 > - Log viewer GUI — `MOMOKA/GUI/` (version: `MOMOKA/version.py`; Discord status date = last git commit)
 
 ### Key Features / 主な機能

@@ -79,7 +79,7 @@ ARONA に画像生成を頼むと、PLANA への誘導メッセージが返り�
 
 ### 4. 音声読み上げ (TTS)（PLANA 専用）
 
-統合 [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) エンジン。モデルは `models/tts-models/`。詳細は `NOTICE` を参照。
+統合 [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) エンジン（同梱: `third_party/style_bert_vits2/`、ラッパー: `MOMOKA/generator/tts/`）。モデルは `models/tts-models/`。詳細は `NOTICE` を参照。
 
 ### 5. ゲーム統計追跡（PLANA 専用）
 
