@@ -258,6 +258,7 @@ llm:
 
 \* `debate` / `cross_check` / `feedback` are LLM tools (multi-round debate + judge / light 3-step check / developer feedback form).
 \* `max_tool_iterations` (default 5) caps tool round-trips; if exceeded, the bot generates a final answer from existing tool results without further tools.
+\* LLM replies (waiting, body, split continuations, debate posts) are sent `@silent` (suppress notifications) by default.
 
 ### Music
 

@@ -774,17 +774,21 @@ class DebateOrchestrator:
                     e,
                 )
                 return clean, None
-        # reply 引数
-        send_kwargs: Dict[str, Any] = {}
+        # reply 引数（討論応答も @silent で通知抑制）
+        send_kwargs: Dict[str, Any] = {"silent": True}
+        # 引用返信先が指定されていれば reference を付与する
         if reply_to is not None:
             try:
+                # 失敗しても落ちない reference を組み立てる
                 send_kwargs["reference"] = reply_to.to_reference(fail_if_not_exists=False)
                 # 引用先作者への自動メンションはしない（本文メンションと分離）
                 send_kwargs["mention_author"] = False
             except Exception as e:
+                # reference 構築失敗は警告のみで通常送信へ落とす
                 logger.warning("Failed to build message reference: %s", e)
         # 投稿
         try:
+            # silent 付きで討論ターンを投稿する
             msg = await target.send(content, **send_kwargs)
         except Exception as e:
             logger.error("Failed to post as %s: %s", speaker_id, e, exc_info=True)

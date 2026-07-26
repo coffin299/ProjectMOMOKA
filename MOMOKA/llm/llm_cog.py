@@ -439,8 +439,8 @@ class LLMCog(commands.Cog, name="LLM"):
             if len(hinted_content) <= DISCORD_MESSAGE_MAX_LENGTH:
                 await message.edit(content=hinted_content, embed=None, view=None)
             else:
-                # 収まらない場合は案内だけ別メッセージで送る
-                await channel.send(CHAT_HISTORY_HINT.lstrip("\n"))
+                # 収まらない場合は案内だけ別メッセージで @silent 送信する
+                await channel.send(CHAT_HISTORY_HINT.lstrip("\n"), silent=True)
         except discord.HTTPException as e:
             # 案内付与失敗は応答本体を壊さないので警告のみ残す
             logger.warning(f"Failed to append /chat history hint: {e}")
@@ -1815,16 +1815,22 @@ class LLMCog(commands.Cog, name="LLM"):
             await sent_message.delete()
         except discord.HTTPException:
             pass
-        # 新規に content メッセージを送る
-        send_kwargs: Dict[str, Any] = {}
+        # 新規に content メッセージを送る（@silent で通知抑制）
+        send_kwargs: Dict[str, Any] = {"silent": True}
+        # view 指定があれば付与する
         if view is not None:
+            # View を送信引数へ入れる
             send_kwargs["view"] = view
         try:
+            # 返信参照がある場合は引用付きで送る
             if reference is not None:
+                # reference 付きで silent 送信する
                 new_msg = await channel.send(content, reference=reference, **send_kwargs)
             else:
+                # 参照なしで silent 送信する
                 new_msg = await channel.send(content, **send_kwargs)
         except discord.HTTPException:
+            # 参照付きが失敗したら参照なしで再送する
             new_msg = await channel.send(content, **send_kwargs)
         # 再追跡する
         self._register_active_response(new_msg)
@@ -1991,7 +1997,8 @@ class LLMCog(commands.Cog, name="LLM"):
                     for i, chunk in enumerate(chunks[1:], start=2):
                         for attempt in range(max_final_retries):
                             try:
-                                continuation_msg = await channel.send(chunk)
+                                # 続きチャンクも @silent で通知抑制する
+                                continuation_msg = await channel.send(chunk, silent=True)
                                 all_messages.append(continuation_msg)
                                 logger.debug(f"Sent continuation message {i}/{len(chunks)}")
                                 break
