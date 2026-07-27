@@ -2342,18 +2342,33 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             if guild_id in self.config:
                 guild_config = self.config[guild_id]
                 config_text = ""
-                for info_type, channel_id in guild_config.items():
-                    channel = interaction.guild.get_channel(channel_id)
+                type_map = {
+                    InfoType.EEW.value: '緊急地震速報',
+                    InfoType.QUAKE.value: '地震情報',
+                    InfoType.TSUNAMI.value: '津波予報',
+                }
+                for info_type, label in type_map.items():
+                    channel_id = guild_config.get(info_type)
+                    if not channel_id:
+                        config_text += f"**{label}**: ⚠️ 未設定\n"
+                        continue
+                    channel = interaction.guild.get_channel(int(channel_id))
                     if channel:
                         perms = channel.permissions_for(interaction.guild.me)
-                        config_text += f"**{info_type}**:\n"
+                        config_text += f"**{label}**:\n"
                         config_text += f"  チャンネル: {channel.mention} (ID: {channel_id})\n"
                         config_text += f"  メッセージ送信: {'✅' if perms.send_messages else '❌'}\n"
                         config_text += f"  埋め込みリンク: {'✅' if perms.embed_links else '❌'}\n"
                     else:
-                        config_text += f"**{info_type}**: ❌ チャンネル {channel_id} が見つかりません\n"
+                        config_text += f"**{label}**: ❌ チャンネル {channel_id} が見つかりません\n"
 
+                filter_text = (
+                    f"**EEW 震度:** {self.format_scales_summary(guild_id, InfoType.EEW.value)}\n"
+                    f"**地震情報 震度:** {self.format_scales_summary(guild_id, InfoType.QUAKE.value)}\n"
+                    f"**津波通知:** {'オン' if self.get_notify_tsunami(guild_id) else 'オフ'}"
+                )
                 embed.add_field(name="⚙️ このサーバーの設定", value=config_text or "設定なし", inline=False)
+                embed.add_field(name="🎚️ 通知フィルタ", value=filter_text, inline=False)
             else:
                 embed.add_field(name="⚙️ このサーバーの設定", value="❌ 未設定", inline=False)
 
