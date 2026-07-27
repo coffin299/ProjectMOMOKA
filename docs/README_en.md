@@ -119,6 +119,8 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 | `/download_audio <query> <format>` | Extract audio only (mp3 / m4a / opus / flac / wav) and share |
 
 - Format labels do **not** show “video only” notes (audio is merged after selection)
+- The format picker shows the extension first and prefers mp4 over webm at the same resolution
+- Unsupported URLs and unavailable formats get cause-specific guidance (tag/listing pages are not allowed)
 - Requires Google Drive API `client_secrets.json` / `token.json` and the folder ID configured in the cog
 - For YouTube, Deno (recommended) or Node.js 22+ plus `yt-dlp[default]` is advised (same EJS guidance as music)
 

@@ -119,6 +119,8 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 | `/download_audio <query> <format>` | 音声のみ抽出（mp3 / m4a / opus / flac / wav）して共有 |
 
 - 動画フォーマット一覧に「映像のみ」などの注記は出しません（選択後に音声を結合するため）
+- フォーマット選択では拡張子を先頭表示し、同一解像度では mp4 を webm より優先します
+- 対応外 URL やフォーマット取得不可などのエラーは原因別に案内します（タグ／一覧ページは不可）
 - Google Drive API 用の `client_secrets.json` / `token.json` と、Cog 内のフォルダ ID 設定が必要です
 - YouTube 向けには Deno（推奨）または Node.js 22+ と `yt-dlp[default]` を推奨（音楽機能と同じ EJS 対策）
 

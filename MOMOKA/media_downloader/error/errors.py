@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Dict, Any
 
 import openai
@@ -17,12 +18,22 @@ logger = logging.getLogger(__name__)
 DISCORD_MESSAGE_MAX_LENGTH = 1990
 # yt-dlp の詳細メッセージに割り当てる最大文字数
 YTDLP_ERROR_DETAIL_MAX_LENGTH = 1500
+# yt-dlp / ターミナル由来の ANSI エスケープ（色コード等）を除去する
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi_escapes(text: str) -> str:
+    """Discord 表示向けに ANSI 色コードを取り除く。"""
+    # 色付き ERROR: などをプレーンテキストへ戻す
+    return _ANSI_ESCAPE_RE.sub("", text)
 
 
 def _truncate_ytdlp_error_detail(error_detail: object) -> str:
     """Discord の上限内で yt-dlp のエラー詳細を省略する。"""
     # 例外詳細を安全に文字列へ変換する
     detail = str(error_detail)
+    # Discord に色コードが残らないよう除去する
+    detail = _strip_ansi_escapes(detail)
     # 上限以下なら元の詳細を返す
     if len(detail) <= YTDLP_ERROR_DETAIL_MAX_LENGTH:
         return detail
@@ -30,6 +41,20 @@ def _truncate_ytdlp_error_detail(error_detail: object) -> str:
     suffix = "\n…（エラー詳細は省略されました）"
     # 末尾表示を含めても上限を超えない本文を切り出す
     return f"{detail[:YTDLP_ERROR_DETAIL_MAX_LENGTH - len(suffix)]}{suffix}"
+
+
+def _classify_ytdlp_download_error(error_text: str) -> str:
+    """DownloadError 文言からユーザー向けメッセージ種別を判定する。"""
+    # 照合用に小文字化する
+    lowered = error_text.lower()
+    # 未対応 URL（一覧・タグページ等を含む）
+    if "unsupported url" in lowered:
+        return "unsupported_url"
+    # 選択フォーマットが取得できない場合
+    if "requested format is not available" in lowered:
+        return "format_unavailable"
+    # 上記以外は汎用 DownloadError 扱い
+    return "generic"
 
 
 class LLMExceptionHandler:
@@ -86,6 +111,40 @@ class YTDLPExceptionHandler:
         if isinstance(e, yt_dlp.utils.DownloadError):
             # yt-dlp の長い詳細を Discord の表示上限内へ収める
             error_detail = _truncate_ytdlp_error_detail(e)
+            # 詳細文言からユーザー向けの原因カテゴリを決める
+            error_kind = _classify_ytdlp_download_error(error_detail)
+            # 未対応 URL（サイト非対応・一覧ページなど）
+            if error_kind == "unsupported_url":
+                return pick_str(
+                    lang,
+                    ja=(
+                        f"この URL / サイトには対応していません。"
+                        f"動画の直接リンクを指定してください"
+                        f"（タグや一覧ページは不可）。\n```{error_detail}```"
+                    ),
+                    en=(
+                        f"This URL / site is not supported. "
+                        f"Please use a direct video link "
+                        f"(tag or listing pages are not allowed)."
+                        f"\n```{error_detail}```"
+                    ),
+                )
+            # 選択した画質・形式が取得できない場合
+            if error_kind == "format_unavailable":
+                return pick_str(
+                    lang,
+                    ja=(
+                        f"選択したフォーマットを取得できませんでした。"
+                        f"別の画質を選ぶか、別の URL を試してください。"
+                        f"\n```{error_detail}```"
+                    ),
+                    en=(
+                        f"The selected format is not available. "
+                        f"Please try another quality or a different URL."
+                        f"\n```{error_detail}```"
+                    ),
+                )
+            # その他の DownloadError は従来の汎用メッセージ
             return pick_str(
                 lang,
                 ja=(

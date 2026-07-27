@@ -61,6 +61,23 @@ def _format_duration(duration: Optional[int]) -> str:
     return f"{minutes:02}:{seconds:02}"
 
 
+def _container_priority(ext: Optional[str]) -> int:
+    """同一解像度内の並び用。値が高いほど優先（mp4 > その他 > webm）。"""
+    # 拡張子を小文字で正規化する
+    normalized = (ext or "").lower()
+    # mp4 を最優先にする
+    if normalized == "mp4":
+        return 3
+    # mp4 系コンテナを次点にする
+    if normalized in ("m4v", "mov"):
+        return 2
+    # webm は同解像度内で後ろへ回す
+    if normalized == "webm":
+        return 0
+    # 上記以外は中間優先度
+    return 1
+
+
 def _select_download_info(info: Any) -> Optional[Dict[str, Any]]:
     """単体情報または検索結果から最初の有効なメディア情報を返す。"""
     # 情報が辞書以外なら利用できない
@@ -217,10 +234,14 @@ class VideoFormatSelect(discord.ui.Select):
         self.lang = "ja" if lang == "ja" else "en"
         # 選択肢リスト
         options = []
-        # 映像ありフォーマットを解像度・bitrate 降順で並べる
+        # 映像ありフォーマットを解像度・コンテナ優先度・bitrate 降順で並べる
         sorted_formats = sorted(
             [f for f in info.get("formats", []) if f.get("vcodec") != "none"],
-            key=lambda f: (f.get("height") or 0, f.get("tbr") or 0),
+            key=lambda f: (
+                f.get("height") or 0,
+                _container_priority(f.get("ext")),
+                f.get("tbr") or 0,
+            ),
             reverse=True,
         )
         # Discord 上限 25 件まで載せる
@@ -228,8 +249,10 @@ class VideoFormatSelect(discord.ui.Select):
             # ファイルサイズ表示用
             filesize = f.get("filesize") or f.get("filesize_approx")
             filesize_mb = f"{filesize / (1024 * 1024):.2f}MB" if filesize else "N/A"
-            # ラベルは解像度・拡張子・サイズのみ（映像のみ注記は付けない＝後で音声結合するため）
-            label = f"{f.get('resolution', 'N/A')} ({f.get('ext')}) - {filesize_mb}"
+            # 拡張子を先頭・大文字で目立たせる（映像のみ注記は付けない＝後で音声結合するため）
+            ext_label = (f.get("ext") or "N/A").upper()
+            # ラベルは拡張子・解像度・サイズの順
+            label = f"{ext_label} | {f.get('resolution', 'N/A')} | {filesize_mb}"
             # 説明は映像コーデック中心（Audio: none 等は出さない）
             description = f"Video: {f.get('vcodec', 'n/a')} | ID: {f.get('format_id')}"
             options.append(
