@@ -37,14 +37,20 @@ from MOMOKA.llm.error.errors import (
 )
 from MOMOKA.llm.plugins import (
     SearchAgent,
-    CommandInfoManager,
     ImageGenerator
 )
-from MOMOKA.llm.plugins.debate_tools import DebateTool, CrossCheckTool
 from MOMOKA.llm.plugins.feedback_tool import FeedbackTool
-from MOMOKA.llm.debate.channel_lock import channel_lock
 from MOMOKA.llm.concurrency import chat_limiter
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
+from MOMOKA.llm.router.mode_runner import (
+    coding_attach_settings,
+    execute_command_baton,
+    image_gen_disabled_message,
+    mode_model_chain,
+    run_routed_response,
+    unsupported_message,
+    waiting_phase_title,
+)
 from MOMOKA.utilities.restart_notice import RESTART_NOTICE_TEXT
 from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
 from MOMOKA.utilities.feedback import (
@@ -342,24 +348,24 @@ class LLMCog(commands.Cog, name="LLM"):
         model_name: str,
         *,
         lang: str = "en",
+        phase: str = "conversation",
     ) -> WaitingLayoutView:
         """応答待機中の Components V2（Tips + 控えめ Ko-fi）。"""
-        # UI 言語を正規化する
-        ui_lang = "ja" if lang == "ja" else "en"
+        # UI 言語を正規化する（zh-CN 等も非 ja として en 側へ）
+        ui_lang = "ja" if str(lang).startswith("ja") else "en"
         # tip 再利用用（モデル切替時に同じ tip を維持する）
         tip_data: Optional[Dict[str, Any]] = None
+        # フェーズ見出しを先頭に置く
+        phase_line = waiting_phase_title(phase, lang)
         # Tips が無ければ簡易本文
         if self.tips_manager:
-            body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
+            tip_body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
                 model_name,
                 lang=ui_lang,
             )
+            body = f"{phase_line}\n\n{tip_body}"
         else:
-            body = (
-                f"### ⏳ '{model_name}' の応答を待っています..."
-                if ui_lang == "ja"
-                else f"### ⏳ Waiting for '{model_name}' response..."
-            )
+            body = phase_line
             accent = discord.Color.orange()
         # LayoutView を返す（試行中モデル名と tip・言語を保持）
         return WaitingLayoutView(
@@ -370,6 +376,31 @@ class LLMCog(commands.Cog, name="LLM"):
             model_name=model_name,
             lang=ui_lang,
         )
+
+    def _is_image_generator_disabled(self) -> bool:
+        """image_generator.enabled が false、またはツール未登録なら True。"""
+        # トップレベル独立 config
+        top = self.config.get("image_generator") or {}
+        if isinstance(top, dict) and top.get("enabled") is False:
+            return True
+        # 旧パス
+        legacy = (self.llm_config or {}).get("image_generator") or {}
+        if isinstance(legacy, dict) and legacy.get("enabled") is False:
+            return True
+        # プラグイン未初期化
+        if self.image_generator is None:
+            return True
+        # プラグイン側フラグ
+        return not getattr(self.image_generator, "_enabled", True)
+
+    def _looks_like_image_gen_request(self, text: str) -> bool:
+        """描画・画像生成依頼っぽいかの簡易判定。"""
+        t = (text or "").lower()
+        keys = (
+            "画像を生成", "絵を描", "画像生成", "generate an image", "draw me",
+            "generate image", "txt2img", "イラストを", "絵描いて",
+        )
+        return any(k.lower() in t for k in keys)
 
     async def _refresh_waiting_view_for_model(
         self,
@@ -484,13 +515,17 @@ class LLMCog(commands.Cog, name="LLM"):
         # プラグインの初期化（BioManager/MemoryManagerは削除済み）
         (
             self.search_agent,
-            self.command_manager,
             self.image_generator,
             self.tips_manager,
-            self.debate_tool,
-            self.cross_check_tool,
             self.feedback_tool,
         ) = self._initialize_plugins()
+        # 旧 command_manager / debate は廃止（router command モードへ移管）
+        self.command_manager = None
+        self.debate_tool = None
+        self.cross_check_tool = None
+        # 直近のルート結果（coding 添付判定などに使用）
+        self._last_route_mode: Optional[str] = None
+        self._last_route_lang: Optional[str] = None
         # persona / llm デフォルト model を初期化
         default_model_string = self._persona_default_model()
         if default_model_string:
@@ -719,26 +754,21 @@ class LLMCog(commands.Cog, name="LLM"):
 
     def _initialize_plugins(self) -> Tuple[
         Optional[SearchAgent],
-        Optional[CommandInfoManager],
         Optional[ImageGenerator],
         Optional[TipsManager],
-        Optional[DebateTool],
-        Optional[CrossCheckTool],
         Optional[FeedbackTool],
     ]:
         """プラグインの初期化と返却。"""
         plugins = {
             "SearchAgent": None,
-            "CommandInfoManager": None,
             "ImageGenerator": None,
             "TipsManager": None,
-            "DebateTool": None,
-            "CrossCheckTool": None,
             "FeedbackTool": None,
         }
 
         # TipsManagerの初期化
-        if TipsManager: plugins["TipsManager"] = TipsManager()
+        if TipsManager:
+            plugins["TipsManager"] = TipsManager()
 
         # role 別ツール一覧
         active_tools = self._active_tools_list()
@@ -746,19 +776,11 @@ class LLMCog(commands.Cog, name="LLM"):
             logger.info(f"[{self.display_name}] Initializing SearchAgent.")
             if SearchAgent:
                 plugins["SearchAgent"] = SearchAgent(self.bot, self.llm_config)
-        
-        if self.llm_config.get('commands_manager', True) and CommandInfoManager:
-            plugins["CommandInfoManager"] = CommandInfoManager(self.bot)
 
         # companion には image_generator を載せない
         if 'image_generator' in active_tools and ImageGenerator and self.bot_role != "companion":
             plugins["ImageGenerator"] = ImageGenerator(self.bot)
 
-        # debate / cross_check
-        if 'debate' in active_tools:
-            plugins["DebateTool"] = DebateTool(self.bot)
-        if 'cross_check' in active_tools:
-            plugins["CrossCheckTool"] = CrossCheckTool(self.bot)
         # フィードバック（PLANA / ARONA 両方）
         if 'feedback' in active_tools:
             plugins["FeedbackTool"] = FeedbackTool(self.bot)
@@ -772,11 +794,8 @@ class LLMCog(commands.Cog, name="LLM"):
 
         return (
             plugins["SearchAgent"],
-            plugins["CommandInfoManager"],
             plugins["ImageGenerator"],
             plugins["TipsManager"],
-            plugins["DebateTool"],
-            plugins["CrossCheckTool"],
             plugins["FeedbackTool"],
         )
 
@@ -1113,7 +1132,7 @@ class LLMCog(commands.Cog, name="LLM"):
         user_content: str,
         max_chars: int = 800,
     ) -> str:
-        """tools なしの一括生成（討論・cross_check 用）。"""
+        """tools なしの一括生成（短い要約・内部用）。"""
         # モデル解決（チャンネル無し → persona デフォルト）
         model_string = self._persona_default_model()
         if not model_string:
@@ -1191,18 +1210,6 @@ class LLMCog(commands.Cog, name="LLM"):
             else:
                 logger.warning(f"⚠️ [TOOLS] 'image_generator' is in active_tools but image_generator is None")
 
-        # コマンド情報ツール（ユーザーがコマンドについて質問した時のみ呼ばれる）
-        if 'get_commands_info' in active_tools:
-            if self.command_manager:
-                definitions.append(self.command_manager.tool_spec)
-            else:
-                logger.warning(f"⚠️ [TOOLS] 'get_commands_info' is in active_tools but command_manager is None")
-
-        # debate / cross_check
-        if 'debate' in active_tools and self.debate_tool:
-            definitions.append(self.debate_tool.tool_spec)
-        if 'cross_check' in active_tools and self.cross_check_tool:
-            definitions.append(self.cross_check_tool.tool_spec)
         if 'feedback' in active_tools:
             if self.feedback_tool:
                 definitions.append(self.feedback_tool.tool_spec)
@@ -1638,21 +1645,6 @@ class LLMCog(commands.Cog, name="LLM"):
         thread_id = await self._get_conversation_thread_id(message)
         system_prompt = await self._prepare_system_prompt(message.channel.id, message.author.id,
                                                           message.author.display_name)
-        # 討論進行中でもメンション／リプライには通常どおり応える（別セッションとして扱う）
-        if channel_lock.is_debate_active(message.channel.id):
-            system_prompt = (
-                f"{system_prompt.rstrip()}\n\n"
-                "# Parallel request during debate\n"
-                "- A PLANA↔ARONA debate is running in this channel in the background.\n"
-                "- Answer THIS user's request independently and helpfully.\n"
-                "- Do NOT call the `debate` tool again unless they clearly ask to start a new debate.\n"
-                "- Do NOT continue or narrate the ongoing debate turns unless they ask about it.\n"
-            )
-            logger.info(
-                "[%s] Debate active on channel %s; allowing parallel user response",
-                self._bot_tag(),
-                message.channel.id,
-            )
         # language_prompt は _prepare_system_prompt 内で既に結合済み
         messages_for_api: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         # Discord 返信チェーンから会話履歴を収集する
@@ -1679,7 +1671,7 @@ class LLMCog(commands.Cog, name="LLM"):
             f"Messages structure: system={len(messages_for_api[0]['content'])} chars, "
             f"lang_enforced={'present' if 'Language Control' in messages_for_api[0]['content'] else 'absent'}"
         )
-        # 通常応答の並列枠を確保する（討論枠とは独立）
+        # 通常応答の並列枠を確保する
         slot_held = False
         if chat_limiter is not None:
             slot_held = await chat_limiter.try_acquire(message.channel.id, self.bot_id)
@@ -1699,10 +1691,13 @@ class LLMCog(commands.Cog, name="LLM"):
         try:
             # スレッド作成ボタンは削除（常にFalse）
             is_first_response = False
-            sent_messages, llm_response, used_key_index = await self._handle_llm_streaming_response(message,
-                                                                                                    messages_for_api,
-                                                                                                    llm_client,
-                                                                                                    is_first_response)
+            sent_messages, llm_response, used_key_index = await self._handle_llm_streaming_response(
+                message,
+                messages_for_api,
+                llm_client,
+                is_first_response,
+                user_text_for_router=text_content,
+            )
             if sent_messages and llm_response:
                 # フォールバック後の実使用モデルで完了ログを出す
                 model_in_use = self._effective_model_label(llm_client, message.channel.id)
@@ -1758,16 +1753,26 @@ class LLMCog(commands.Cog, name="LLM"):
                             if v != thread_id
                         }
 
-    async def _handle_llm_streaming_response(self, message: discord.Message, initial_messages: List[Dict[str, Any]],
-                                             client: openai.AsyncOpenAI, is_first_response: bool = False) -> Tuple[
-        Optional[List[discord.Message]], str, Optional[int]]:
+    async def _handle_llm_streaming_response(
+        self,
+        message: discord.Message,
+        initial_messages: List[Dict[str, Any]],
+        client: openai.AsyncOpenAI,
+        is_first_response: bool = False,
+        *,
+        user_text_for_router: str = "",
+    ) -> Tuple[Optional[List[discord.Message]], str, Optional[int]]:
         sent_message = None
         try:
             model_name = client.model_name_for_api_calls
-            # メッセージ起点: guild locale → en
+            # メッセージ起点: guild locale → en（ルーター後に lang で上書き）
             ui_lang = resolve_guild_lang(message.guild)
-            # 待機は Components V2（Tips + 控えめ寄付ボタン）
-            waiting_view = self._create_waiting_view(model_name, lang=ui_lang)
+            # まず router 待機フェーズで出す
+            waiting_view = self._create_waiting_view(
+                model_name,
+                lang=ui_lang,
+                phase="router",
+            )
             # 権限不足でも例外を外へ出さない送信ヘルパーで待機メッセージを出す
             sent_message = await self._safe_reply(
                 message,
@@ -1784,6 +1789,75 @@ class LLMCog(commands.Cog, name="LLM"):
                 )
                 # 空結果を返す
                 return None, "", None
+            # ルーター分類（メンション / reply 共通）
+            route = await run_routed_response(
+                self,
+                user_text=user_text_for_router or "",
+                channel_id=message.channel.id,
+            )
+            # 直近ルートを保持する
+            self._last_route_mode = route.mode
+            self._last_route_lang = route.lang
+            # UI 言語をルーター判定で上書きする
+            ui_lang = route.lang or ui_lang
+            waiting_view.lang = "ja" if str(ui_lang).startswith("ja") else "en"
+            # unsupported: 正直に拒否して終了
+            if route.mode == "unsupported":
+                await self._replace_waiting_with_content(
+                    sent_message,
+                    message.channel,
+                    unsupported_message(route.lang, route.reason),
+                    view=self._create_support_view(),
+                )
+                return [sent_message], unsupported_message(route.lang, route.reason), None
+            # command: バトンタッチ（ストリーム本体へは戻さない）
+            if route.mode == "command":
+                waiting_view.update_body(waiting_phase_title("command", route.lang))
+                try:
+                    await sent_message.edit(view=waiting_view)
+                except Exception:
+                    pass
+                cmd_text = await execute_command_baton(
+                    self,
+                    user_text=user_text_for_router or "",
+                    lang=route.lang,
+                    channel=message.channel,
+                    author=message.author,
+                )
+                await self._replace_waiting_with_content(
+                    sent_message,
+                    message.channel,
+                    cmd_text,
+                    view=None,
+                )
+                return [sent_message], cmd_text, None
+            # conversation: 画像生成オフ＋描画依頼なら案内
+            if route.mode == "conversation" and self._looks_like_image_gen_request(user_text_for_router):
+                if self._is_image_generator_disabled():
+                    notice = image_gen_disabled_message(route.lang)
+                    await self._replace_waiting_with_content(
+                        sent_message,
+                        message.channel,
+                        notice,
+                        view=self._create_support_view(),
+                    )
+                    return [sent_message], notice, None
+            # mode 用クライアントへ切替（coding / conversation）
+            mode_chain = mode_model_chain(self.llm_config, route.mode)
+            if mode_chain:
+                mode_client = self._get_or_create_llm_client(mode_chain[0])
+                if mode_client:
+                    client = mode_client
+            # 待機 UI をモード別見出しへ更新
+            phase = "coding" if route.mode == "coding" else "conversation"
+            waiting_view.update_body(
+                waiting_phase_title(phase, route.lang),
+                model_name=getattr(client, "model_name_for_api_calls", model_name),
+            )
+            try:
+                await sent_message.edit(view=waiting_view)
+            except Exception:
+                pass
             # ストリーミング開始前に計測タイマーをスタート
             stream_start_time = time.time()
             result = await self._process_streaming_and_send_response(
@@ -1792,6 +1866,8 @@ class LLMCog(commands.Cog, name="LLM"):
                 messages_for_api=initial_messages, llm_client=client,
                 is_first_response=is_first_response,
                 waiting_view=waiting_view,
+                route_mode=route.mode,
+                route_lang=route.lang,
             )
             # ストリーミング完了後の経過時間を算出
             elapsed = time.time() - stream_start_time
@@ -1915,15 +1991,20 @@ class LLMCog(commands.Cog, name="LLM"):
                                                    messages_for_api: List[Dict[str, Any]],
                                                    llm_client: openai.AsyncOpenAI,
                                                    is_first_response: bool = False,
-                                                   waiting_view: Optional[WaitingLayoutView] = None) -> Tuple[
+                                                   waiting_view: Optional[WaitingLayoutView] = None,
+                                                   route_mode: Optional[str] = None,
+                                                   route_lang: Optional[str] = None) -> Tuple[
         Optional[List[discord.Message]], str, Optional[int]]:
         # 応答生成中として追跡登録する（再起動通知の対象にする）
         self._register_active_response(sent_message)
         try:
             full_response_text, last_update, last_displayed_length, chunk_count = "", 0.0, 0, 0
             update_interval, min_update_chars, retry_sleep_time = 0.5, 15, 2.0
-            # ストリーム生成中のみ前後に付けるカスタム絵文字（完了後は外す）
-            emoji_prefix, emoji_suffix = "<:stream:1313474295372058758> ", " <:stream:1313474295372058758>"
+            # coding は coding 絵文字、それ以外は stream 絵文字
+            if route_mode == "coding":
+                emoji_prefix, emoji_suffix = "<a:coding:1531206254574178346> ", " <a:coding:1531206254574178346>"
+            else:
+                emoji_prefix, emoji_suffix = "<:stream:1313474295372058758> ", " <:stream:1313474295372058758>"
             max_final_retries, final_retry_delay = 3, 2.0
             is_first_update = True
             # 待機 V2 から通常 content へ切り替えたか
@@ -1952,6 +2033,7 @@ class LLMCog(commands.Cog, name="LLM"):
                 channel.id,
                 user.id,
                 on_model_fallback=_on_model_fallback if waiting_view is not None else None,
+                route_mode=route_mode,
             )
             async for content_chunk in stream_generator:
                 # シャットダウン通知後はストリーム編集を打ち切る
@@ -2008,6 +2090,17 @@ class LLMCog(commands.Cog, name="LLM"):
                 return None, "", None
             logger.debug(f"Stream completed | Total chunks: {chunk_count} | Final length: {len(full_response_text)} chars")
             if full_response_text:
+                # coding 長文はファイル添付を優先する
+                if route_mode == "coding":
+                    attached = await self._maybe_send_coding_attachment(
+                        sent_message=sent_message,
+                        channel=channel,
+                        full_text=full_response_text,
+                        route_lang=route_lang or "en",
+                        waiting_v2_cleared=waiting_v2_cleared,
+                    )
+                    if attached is not None:
+                        return attached
                 if len(full_response_text) <= SAFE_MESSAGE_LENGTH:
                     # 最終本文のみ（寄付ボタンは付けない — 待機中のみ表示）
                     final_content = full_response_text
@@ -2124,8 +2217,15 @@ class LLMCog(commands.Cog, name="LLM"):
         converted_messages.extend(other_messages)
         return converted_messages, combined_system_prompt
 
-    def _get_model_fallback_chain(self, primary_model: Optional[str]) -> List[str]:
-        """メインモデル＋fallback_models の試行順リストを返す。"""
+    def _get_model_fallback_chain(
+        self, primary_model: Optional[str], *, mode: Optional[str] = None
+    ) -> List[str]:
+        """メインモデル＋fallback_models の試行順リストを返す。mode 指定時は modes.<mode> を優先。"""
+        # モード別チェーンがあればそれを使う
+        if mode:
+            chain = mode_model_chain(self.llm_config, mode)
+            if chain:
+                return chain
         # 試行順を格納するリストを用意する
         chain: List[str] = []
         # primary が有効なら先頭に入れる
@@ -2316,15 +2416,21 @@ class LLMCog(commands.Cog, name="LLM"):
         channel_id: int,
         user_id: int,
         on_model_fallback: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        route_mode: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         # 呼び出し元クライアント参照を保持（フォールバック後のメタ書き戻し用）
         request_client = client
         # 前回の実使用モデル情報をクリアする
         request_client.last_used_model_string = None
-        # チャンネルの選択モデル文字列を解決する
-        model_string = self._resolve_model_string(channel_id)
-        # 実クライアントの provider/model を優先して試行チェーンを組む
-        primary_model_string = self._client_model_string(client, channel_id) or model_string
+        # チャンネルの選択モデル文字列を解決する（conversation のみ上書き適用）
+        if route_mode and route_mode != "conversation":
+            # coding / command 等は modes 設定を優先（チャンネル上書きを無視）
+            chain_primary = (mode_model_chain(self.llm_config, route_mode) or [None])[0]
+            primary_model_string = chain_primary or self._client_model_string(client, channel_id)
+        else:
+            model_string = self._resolve_model_string(channel_id)
+            # 実クライアントの provider/model を優先して試行チェーンを組む
+            primary_model_string = self._client_model_string(client, channel_id) or model_string
         # Google 直結 Gemini のみ初回変換する（OpenRouter 経由は除外）
         is_gemini = self._is_google_gemini_model(primary_model_string)
 
@@ -2360,8 +2466,8 @@ class LLMCog(commands.Cog, name="LLM"):
                 )
             client.provider_name = provider_name
 
-        # メイン→fallback_models の試行順を構築する
-        model_chain = self._get_model_fallback_chain(primary_model_string)
+        # メイン→fallback_models の試行順を構築する（モード別優先）
+        model_chain = self._get_model_fallback_chain(primary_model_string, mode=route_mode)
         logger.debug(f"LLM model attempt chain: {model_chain}")
 
         # +1 回目はツール上限超過後の「ツールなし強制回答」枠
@@ -2728,16 +2834,6 @@ class LLMCog(commands.Cog, name="LLM"):
             ]
             await self._process_tool_calls(tool_calls_obj, current_messages, channel_id, user_id)
 
-            # debate 開始成功後は LLM に追加の開会／反論を書かせない（自分で討論に見える事故防止）
-            if self._debate_just_started(current_messages):
-                brief = (
-                    "討論を開始しました。チャンネルのパネルと交互の投稿を見てください。\n"
-                    "Debate started. Please follow the panel and alternating posts in the channel."
-                )
-                logger.info("[%s] Skipping post-debate LLM turn; using brief notice", self._bot_tag())
-                yield brief
-                return
-
         logger.warning(f"⚠️ Tool processing exceeded max iterations ({max_iterations})")
         yield self.llm_config.get('error_msg', {}).get('tool_loop_timeout',
                                                        "Tool processing exceeded max iterations.\nツールの処理が最大反復回数を超えました.")
@@ -2753,18 +2849,86 @@ class LLMCog(commands.Cog, name="LLM"):
         # 見つからなければ False
         return False
 
-    def _debate_just_started(self, messages: List[Dict[str, Any]]) -> bool:
-        """直近の tool 結果が討論開始成功か判定する。"""
-        # 末尾の連続する tool 結果を走査する
-        for msg in reversed(messages):
-            if msg.get("role") != "tool":
-                break
-            name = (msg.get("name") or "").split(".")[-1]
-            content = str(msg.get("content") or "")
-            # debate ツールかつ開始成功メッセージ
-            if name == "debate" and "Debate started" in content:
-                return True
-        return False
+    async def _maybe_send_coding_attachment(
+        self,
+        *,
+        sent_message: discord.Message,
+        channel: discord.abc.Messageable,
+        full_text: str,
+        route_lang: str,
+        waiting_v2_cleared: bool,
+    ) -> Optional[Tuple[Optional[List[discord.Message]], str, Optional[int]]]:
+        """coding 長文を .py/.txt 添付する。添付しない場合は None。"""
+        # 添付設定を読む
+        cfg = coding_attach_settings(self.llm_config)
+        threshold = int(cfg["attach_as_file_threshold"])
+        # 閾値未満なら通常送信へ
+        if len(full_text) < threshold and full_text.count("```") < 4:
+            return None
+        # ask_attach_if_over が false なら通常分割へ
+        if not cfg.get("ask_attach_if_over", True):
+            return None
+        # チャンネル権限を確認する
+        me = channel.guild.me if getattr(channel, "guild", None) else None
+        perms = channel.permissions_for(me) if me is not None else None
+        can_attach = bool(perms and perms.attach_files)
+        ja = str(route_lang).startswith("ja")
+        if not can_attach:
+            # 権限不足を案内する
+            notice = (
+                "コードが長いためファイル添付したいですが、このチャンネルに"
+                "『ファイルを添付』権限がありません。権限を付与してください。"
+                if ja
+                else "The code is long and should be sent as a file, but I lack "
+                "the Attach Files permission in this channel. Please grant it."
+            )
+            sent_message = await self._replace_waiting_with_content(
+                sent_message, channel, notice
+            )
+            return [sent_message], notice, None
+        # 拡張子判定（コードフェンス多数なら .py）
+        prefer_py = bool(cfg.get("prefer_py_extension", True))
+        use_py = prefer_py and ("```python" in full_text.lower() or "def " in full_text or "import " in full_text)
+        filename = "response.py" if use_py else "response.txt"
+        # 履歴用に truncate
+        max_chars = int(cfg.get("max_attached_text_chars", 50000))
+        history_text = full_text if len(full_text) <= max_chars else full_text[: max_chars - 20] + "\n...(truncated)"
+        # 要約本文
+        summary = (
+            f"詳細は添付ファイル `{filename}` を参照してください。"
+            if ja
+            else f"See the attached file `{filename}` for details."
+        )
+        # ファイルを組み立てる
+        file_bytes = io.BytesIO(full_text.encode("utf-8"))
+        discord_file = discord.File(file_bytes, filename=filename)
+        try:
+            if not waiting_v2_cleared:
+                # V2 待機を外して content+file で差し替えられない場合があるので delete+send
+                try:
+                    await sent_message.delete()
+                except Exception:
+                    pass
+                new_msg = await channel.send(content=summary, file=discord_file, silent=True)
+            else:
+                # edit では file 追加が難しいので新規送信
+                try:
+                    await sent_message.edit(content=summary, embed=None, view=None)
+                except Exception:
+                    pass
+                new_msg = await channel.send(file=discord_file, silent=True)
+        except discord.Forbidden:
+            notice = (
+                "ファイル添付権限が不足しています。"
+                if ja
+                else "Missing Attach Files permission."
+            )
+            sent_message = await self._replace_waiting_with_content(
+                sent_message, channel, notice
+            )
+            return [sent_message], notice, None
+        # 履歴には全文（truncate 済み）を返す
+        return [new_msg], history_text, None
 
     async def _process_tool_calls(self, tool_calls: List[Any], messages: List[Dict[str, Any]], channel_id: int,
                                   user_id: int) -> None:
@@ -2793,27 +2957,6 @@ class LLMCog(commands.Cog, name="LLM"):
                     tool_response_content = await self.image_generator.run(arguments=function_args,
                                                                            channel_id=channel_id)
                     logger.debug(f"🔧 [TOOL] Result:\n{tool_response_content}")
-                elif self.command_manager and function_name == self.command_manager.name:
-                    # コマンド情報ツール: ユーザーがコマンドについて質問した時に呼ばれる
-                    tool_response_content = await self.command_manager.run(arguments=function_args)
-                    logger.debug(
-                        f"🔧 [TOOL] CommandInfo result (length: {len(tool_response_content)} chars)")
-                elif self.debate_tool and function_name == self.debate_tool.name:
-                    # 討論開始（バックグラウンド完走・即返し）
-                    tool_response_content = await self.debate_tool.run(
-                        arguments=function_args,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                    )
-                    logger.info("[%s] debate tool started", self._bot_tag())
-                elif self.cross_check_tool and function_name == self.cross_check_tool.name:
-                    # Step1/2 投稿後、検証全文を返す（Step3 は LLM 最終応答）
-                    tool_response_content = await self.cross_check_tool.run(
-                        arguments=function_args,
-                        channel_id=channel_id,
-                        user_id=user_id,
-                    )
-                    logger.info("[%s] cross_check completed", self._bot_tag())
                 elif self.feedback_tool and function_name == self.feedback_tool.name:
                     # フィードバック UI（form / confirm）をチャンネルへ送る
                     tool_response_content = await self.feedback_tool.run(
@@ -2966,18 +3109,75 @@ class LLMCog(commands.Cog, name="LLM"):
                     return
             try:
                 model_name = llm_client.model_name_for_api_calls
-                # /chat: app → guild → en
+                # /chat: app → guild → en（ルーター後に上書き）
                 ui_lang = resolve_interaction_lang(interaction)
-                # 待機は Components V2（Tips + 控えめ寄付）
-                waiting_view = self._create_waiting_view(model_name, lang=ui_lang)
+                # まず router 待機
+                waiting_view = self._create_waiting_view(model_name, lang=ui_lang, phase="router")
                 temp_message = await interaction.followup.send(
                     view=waiting_view, ephemeral=False, wait=True
                 )
+                # ルーター分類
+                route = await run_routed_response(
+                    self,
+                    user_text=message,
+                    channel_id=interaction.channel_id or 0,
+                )
+                self._last_route_mode = route.mode
+                self._last_route_lang = route.lang
+                ui_lang = route.lang or ui_lang
+                waiting_view.lang = "ja" if str(ui_lang).startswith("ja") else "en"
+                if route.mode == "unsupported":
+                    text = unsupported_message(route.lang, route.reason)
+                    await self._replace_waiting_with_content(
+                        temp_message, interaction.channel, text, view=self._create_support_view()
+                    )
+                    return
+                if route.mode == "command":
+                    waiting_view.update_body(waiting_phase_title("command", route.lang))
+                    try:
+                        await temp_message.edit(view=waiting_view)
+                    except Exception:
+                        pass
+                    cmd_text = await execute_command_baton(
+                        self,
+                        user_text=message,
+                        lang=route.lang,
+                        channel=interaction.channel,
+                        author=interaction.user,
+                    )
+                    await self._replace_waiting_with_content(
+                        temp_message, interaction.channel, cmd_text, view=None
+                    )
+                    return
+                if route.mode == "conversation" and self._looks_like_image_gen_request(message):
+                    if self._is_image_generator_disabled():
+                        notice = image_gen_disabled_message(route.lang)
+                        await self._replace_waiting_with_content(
+                            temp_message, interaction.channel, notice, view=self._create_support_view()
+                        )
+                        return
+                mode_chain = mode_model_chain(self.llm_config, route.mode)
+                if mode_chain:
+                    mode_client = self._get_or_create_llm_client(mode_chain[0])
+                    if mode_client:
+                        llm_client = mode_client
+                phase = "coding" if route.mode == "coding" else "conversation"
+                waiting_view.update_body(
+                    waiting_phase_title(phase, route.lang),
+                    model_name=getattr(llm_client, "model_name_for_api_calls", model_name),
+                )
+                try:
+                    await temp_message.edit(view=waiting_view)
+                except Exception:
+                    pass
                 # スレッド作成ボタンは削除（常にFalse）
                 sent_messages, full_response_text, used_key_index = await self._process_streaming_and_send_response(
                     sent_message=temp_message, channel=interaction.channel, user=interaction.user,
                     messages_for_api=messages_for_api, llm_client=llm_client, is_first_response=False,
-                    waiting_view=waiting_view)
+                    waiting_view=waiting_view,
+                    route_mode=route.mode,
+                    route_lang=route.lang,
+                )
                 if sent_messages and full_response_text:
                     # フォールバック後の実使用モデルで完了ログを出す
                     model_in_use = self._effective_model_label(llm_client, interaction.channel_id)

@@ -18,14 +18,14 @@
 
 ## Overview
 
-**MOMOKA** runs **two Discord bots in one process**: **PLANA** (primary) and **ARONA** (companion). Each bot works standalone for LLM chat and music. Debate and cross-check require both bots in the same guild.
+**MOMOKA** runs **two Discord bots in one process**: **PLANA** (primary) and **ARONA** (companion). Each bot works standalone for LLM chat and music. ARONA is optional; invite it from PLANA's `/help` or `/invite`.
 
 ### Dual Bot
 
 | Bot | Role | Invite |
 |-----|------|--------|
 | **PLANA** | Primary — LLM, music, TTS, images, notifications, trackers, Link Fix, utilities | [Invite](https://discord.com/oauth2/authorize?client_id=1031673203774464160) |
-| **ARONA** | Companion — LLM, music, utilities. TTS/images/notifications/trackers/Link Fix redirect to PLANA | [Invite](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot) |
+| **ARONA** | Companion — LLM, music, utilities. TTS/images/notifications/trackers/Link Fix redirect to PLANA | Optional via PLANA /help / /invite |
 
 - Create **two Discord Applications** and enable **Message Content Intent** on both
 - The old root `config.yaml` / `config.default.yaml` are **not used** (no compatibility)
@@ -33,7 +33,7 @@
 ### Features
 
 - 🤖 **Multi-model AI chat** — OpenAI, Google Gemini, NVIDIA NIM, OpenRouter, KoboldCPP, and more
-- 🗣️ **debate / cross_check** — Multi-round PLANA↔ARONA debate with a judge turn, or a light 3-step verification
+- 🧭 **Agent router** — Auto-dispatch to conversation / coding / command
 - 🎵 **Music playback** — YouTube, Spotify, Google Drive, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
 - 🔗 **Link Fix** — Suppress original social embeds and quote-replace via fixer proxies (`/linkfix`, **PLANA only**)
@@ -60,8 +60,7 @@ Mention `@PLANA` or `@ARONA` to chat.
 - Image recognition (supported models)
 - Conversation history
 - Web search
-- **debate** — Multi-round PLANA↔ARONA discussion, then a judge turn
-- **cross_check** — PLANA draft → ARONA review → PLANA conclusion (3 posts, no stop panel)
+- **Agent** — Classifies mode before mention / reply / /chat
 - **Automatic API key rotation** on rate limits / server errors
 
 ### 2. Music Playback
@@ -106,7 +105,7 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 
 Dice, server/user info, gacha, etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
 
-**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting/debate panels, media download, `/feedback` Modal, image-generation Modal, and related surfaces.
+**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting panels, media download, `/feedback` Modal, image-generation Modal, and related surfaces.
 
 **Slash command descriptions:** Shown according to the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian) via `configs/commands_i18n_config.default.yaml` (loaded directly; no runtime copy). Missing translations and unsupported locales fall back to English. Command names stay in English.
 
@@ -159,8 +158,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 
 4. **Invite bots**
    - [PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
-   - [ARONA](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)
-   - Invite **both** to any guild where you want debate / cross_check
+   - Add ARONA optionally from PLANA /help / /invite
 
 5. **Start**
 
@@ -324,11 +322,10 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 ## Feature Details
 
-### debate / cross_check
+### Agent router
 
-- **debate**: Alternating PLANA↔ARONA turns, then a judge turn with summary and recommendation. Both bots must be in the guild
-- **cross_check**: PLANA draft → ARONA review → PLANA conclusion; all three steps are posted. Lighter than debate; no stop panel
-- Each message is prefixed with a mention of the partner bot
+Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. Long coding replies may be attached as .py / .txt.
+
 
 ### API key rotation
 
@@ -377,10 +374,6 @@ Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.
 2. Enable **Message Content Intent** on both applications
 3. Confirm the selected model is available
 
-### debate / cross_check fail
-
-1. Ensure both PLANA and ARONA are in the same server
-2. Use `/invite` to add the missing bot
 
 ### Music won't play
 

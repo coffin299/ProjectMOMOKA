@@ -529,7 +529,6 @@ if __name__ == "__main__":
     from MOMOKA.config.loader import load_merged_config, validate_bot_tokens
     from MOMOKA.bots.registry import registry
     from MOMOKA.llm.concurrency import init_concurrency
-    from MOMOKA.llm.debate.orchestrator import init_orchestrator
     from MOMOKA.services.bgutil_provider import (
         BgutilProviderConfig,
         BgutilProviderManager,
@@ -557,15 +556,6 @@ if __name__ == "__main__":
     bgutil_config = BgutilProviderConfig.from_mapping(merged_config)
     # PLANA/ARONAで共有するProvider Managerを一度だけ生成する。
     bgutil_manager = BgutilProviderManager(bgutil_config)
-
-    # Debate オーケストレータを初期化する
-    try:
-        # グローバルオーケストレータを初期化する
-        init_orchestrator(merged_config)
-        print("INFO: Debate オーケストレータを初期化しました。")
-    except Exception as e_orch:
-        print(f"CRITICAL: Debate オーケストレータの初期化中にエラーが発生しました: {e_orch}")
-        sys.exit(1)
 
     # 通常チャット / 討論の並列背圧を初期化する
     try:

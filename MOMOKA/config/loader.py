@@ -18,13 +18,14 @@ CATEGORIES: List[str] = [
     "core",
     "bots",
     "llm",
+    # LLM 画像生成（旧 llm.image_generator）
+    "image_generator",
     "music",
     "tts",
     "images",
     "notifications",
     "tracker",
     "utilities",
-    "debate",
     "link_fix",
     "count",
     # スラッシュコマンド description の多言語カタログ

@@ -1,0 +1,42 @@
+# LLM 画像生成（Forge / ローカル diffusers）設定。
+# llm_config から分離。bot.config["image_generator"] として読まれる。
+image_generator:
+  enabled: true
+  save_images: true
+  save_directory: data/image
+  max_cache_size: 1
+  vram_usage_threshold_gb: 5.0
+  memory_optimization:
+    enable_cpu_offload: true
+    enable_vae_slicing: true
+    enable_vae_tiling: false
+    attention_slicing: max
+  default_size: 1024x1024
+  max_width: 2048
+  max_height: 2048
+  min_width: 256
+  min_height: 256
+  model: null
+  default_params:
+    steps: 20
+    cfg_scale: 7.0
+    sampler_name: DPM++ 2M Karras
+    seed: -1
+    negative_prompt: lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry
+  forge:
+    base_url: http://127.0.0.1:7861
+    txt2img_path: /sdapi/v1/txt2img
+    timeout: 180.0
+    startup_timeout: 240.0
+    override_settings_restore_afterwards: true
+    auto_start: false
+    start_script: lib/stable-diffusion-webui-forge/start-api.bat
+    skip_pip_install: true
+    api_port: 7861
+    commandline_args: null
+    env: {}
+    default_params:
+      sampler_name: DPM++ 2M Karras
+      steps: 20
+      cfg_scale: 7.0
+      seed: -1

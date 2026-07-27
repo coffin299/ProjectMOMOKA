@@ -17,9 +17,108 @@ llm:
   - openrouter/free
   # メインモデルの全APIキー失敗時に上から順に試すフォールバックモデル
   fallback_models:
-  - nvidia_nim/deepseek-ai/deepseek-v4-flash
-  - nvidia_nim/moonshotai/kimi-k2.6
-  - mistral/mistral-medium-latest
+  - nvidia_nim/mistralai/mistral-medium-3.5-128b
+  - nvidia_nim/minimaxai/minimax-m3
+  - nvidia_nim/z-ai/glm-5.2
+  - openrouter/free
+  # Agent ルーター（メンション / reply / /chat の前段分類）
+  router:
+    enabled: true
+    model: google/gemma-4-26b-a4b-it
+    # 失敗時は上から順に試行（キー回転後に次モデルへ）。全失敗時は conversation へフォールスルー
+    fallback_models:
+    - nvidia_nim/deepseek-ai/deepseek-v4-flash
+    - nvidia_nim/google/gemma-4-31b-it
+    classify_prompt: |
+      You are a router LLM. Classify the user's request into exactly one of the following modes,
+      then hand off to the corresponding downstream mode.
+
+      1) Output ONLY a JSON object (no Markdown, no extra text)
+      2) `lang` MUST be inferred from the user's message text.
+         (On mention-based routing, Discord locale is not available.)
+
+      lang inference (priority):
+      - Japanese (hiragana/katakana/kanji dominate): "ja"
+      - Korean (Hangul dominates): "ko"
+      - Chinese:
+        - More Traditional-leaning characters: "zh-TW"
+        - Otherwise: "zh-CN"
+      - Vietnamese features dominate: "vi"
+      - Otherwise: "en"
+      - If mixed languages, decide by the majority in the message text.
+
+      mode rules:
+      - "command": The user explicitly asks to execute an existing Discord bot command
+        (e.g., music play/stop/skip/queue control, image search-related commands, etc.),
+        OR asks how to use / list bot commands ("使い方は？", "コマンド一覧").
+      - "coding": The main goal is to generate or modify code
+        (implementation, bug fix, refactor, patches/diffs, etc.).
+      - "conversation": All other cases (Q&A, consultation, explanation, research,
+        image generation/drawing when available, feedback, vision/OCR of attachments,
+        translation, summarization).
+        If code appears but the main goal is learning/advice, use this.
+        **Research / lookup requests also belong here** — the downstream LLM will use the
+        `search` tool (web search). Examples:
+        - "Pythonについて調べて" / "look up X" / "search for information about Y"
+        - "最新のニュースを教えて" / "what is X?" when external facts are needed
+        Do NOT route these to "command". "command" is for running Discord bot actions,
+        not for general web research.
+        **Image generation / drawing** ("絵を描いて", "画像を生成して", "draw me a cat")
+        → "conversation" (downstream image_generator tool). NOT "command"
+        unless the user clearly wants a bot image-search slash command.
+      - "unsupported": The request cannot be fulfilled with the bot's provided tools/capabilities,
+        and pretending success would be dishonest
+        (e.g. changing Discord server settings/roles/permissions, controlling external
+        accounts, claiming completed work the bot cannot do).
+
+      Ambiguous cases:
+      - If unsure, choose "conversation".
+      - "調べて" / "search" / "look up" about a topic → "conversation" (web search tool).
+      - "曲を流して" / "pause music" / bot slash-command actions → "command".
+      - "/play の使い方" / "what commands exist?" → "command" (explain via commands_i18n;
+        no execution required).
+      - "このコードの意味は？" / explain / learn code → "conversation".
+        "書いて" / "直して" / implement or patch code → "coding".
+      - "猫の画像を検索して" → if clearly a bot image-search command, "command";
+        if asking for general info/images on the web, "conversation".
+      - "絵を描いて" / "generate an image" → "conversation" (image gen tool path).
+        Do not confuse with image-search commands.
+      - However, if it's clearly an external forced action or unauthorized execution
+        presented as completed work, choose "unsupported".
+
+      Output format (must use exactly these keys):
+      {
+        "mode": "conversation|coding|command|unsupported",
+        "lang": "ja|en|ko|vi|zh-CN|zh-TW",
+        "reason": "A short reason (~20-40 characters)"
+      }
+  # モード別モデル（チャンネル /switch-models 上書きは conversation のみ）
+  modes:
+    conversation:
+      model: mistral/mistral-medium-latest
+      fallback_models:
+      - nvidia_nim/mistralai/mistral-medium-3.5-128b
+      - nvidia_nim/minimaxai/minimax-m3
+      - nvidia_nim/z-ai/glm-5.2
+      - openrouter/free
+    coding:
+      model: nvidia_nim/z-ai/glm-5.2
+      fallback_models:
+      - nvidia_nim/minimaxai/minimax-m3
+      - nvidia_nim/minimaxai/minimax-m2.7
+      - nvidia_nim/mistralai/mistral-medium-3.5-128b
+      attach_as_file_threshold: 1800
+      prefer_py_extension: true
+      ask_attach_if_over: true
+      max_attached_text_chars: 50000
+    command:
+      model: nvidia_nim/minimaxai/minimax-m3
+      fallback_models:
+      - openrouter/free
+      - google/gemini-3.5-flash-lite
+      - google/gemini-3.1-flash-lite
+      baton_pass: true
+      feed_commands_i18n: true
   providers:
     openai:
       base_url: https://api.openai.com/v1
@@ -28,7 +127,8 @@ llm:
       base_url: https://integrate.api.nvidia.com/v1
       api_key1: key
     google:
-      base_url: https://generativelanguage.googleapis.com/v1beta/
+      # Gemini / Gemma（router 含む）OpenAI 互換エンドポイント
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai/
       api_key1: null
       api_key2: null
       api_key3: null
@@ -52,46 +152,6 @@ llm:
       api_key1: koboldcpp-dummy-key
       timeout: 300.0
       supports_tools: true
-  image_generator:
-    enabled: true
-    save_images: true
-    save_directory: data/image
-    max_cache_size: 1
-    vram_usage_threshold_gb: 5.0
-    memory_optimization:
-      enable_cpu_offload: true
-      enable_vae_slicing: true
-      enable_vae_tiling: false
-      attention_slicing: max
-    default_size: 1024x1024
-    max_width: 2048
-    max_height: 2048
-    min_width: 256
-    min_height: 256
-    model: null
-    default_params:
-      steps: 20
-      cfg_scale: 7.0
-      sampler_name: DPM++ 2M Karras
-      seed: -1
-      negative_prompt: lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry
-    forge:
-      base_url: http://127.0.0.1:7861
-      txt2img_path: /sdapi/v1/txt2img
-      timeout: 180.0
-      startup_timeout: 240.0
-      override_settings_restore_afterwards: true
-      auto_start: false
-      start_script: lib/stable-diffusion-webui-forge/start-api.bat
-      skip_pip_install: true
-      api_port: 7861
-      commandline_args: null
-      env: {}
-      default_params:
-        sampler_name: DPM++ 2M Karras
-        steps: 20
-        cfg_scale: 7.0
-        seed: -1
   extra_api_parameters:
     max_tokens: 4096
     temperature: 0.4
@@ -104,16 +164,14 @@ llm:
   active_tools:
   - search
   - image_generator
-  - get_commands_info
-  - debate
-  - cross_check
   - feedback
   # ツール往復の上限。超過時はツールなしで最終回答を1回生成する
   max_tool_iterations: 5
   concurrency:
     max_inflight_chat: 64
     max_inflight_per_channel: 1
-  agent:
+  # Web 検索（SearchAgent）。旧キー名 agent からリネーム
+  search:
     max_results: 10
     timeout: 30.0
     backend: auto
@@ -142,36 +200,31 @@ llm:
 
     Actively call tools when they help the user. Do not announce tool names in character unless asked.
 
-    - The `search` tool: use when up-to-date or external facts are needed. Prefer 1-2 focused queries. Do not keep re-searching with near-identical queries; synthesize from results you already have, and state uncertainty if sources disagree or lack a clear number.
+    - The `search` tool: use when up-to-date or external facts are needed, including research requests
+      like "調べて" / "look up". Prefer 1-2 focused queries. Do not keep re-searching with near-identical
+      queries; synthesize from results you already have, and state uncertainty if sources disagree.
 
     - The `image_generator` tool: use when the user asks to create, generate, draw, or visualize images.
+      If image generation is disabled by config, do not pretend you generated an image; tell the user
+      and suggest related slash commands instead.
 
-    - The `command_executor` tool: use when the user asks to run Discord bot commands (e.g. play music, search images, pause/resume).
+    - The `feedback` tool: use when the user wants to report a bug, request a feature, or send feedback
+      to the developers. Prefer mode=form if details are incomplete; use mode=submit when you can draft
+      from the conversation (user must still confirm). Do not claim submission succeeded until confirmed.
 
-    - The `get_commands_info` tool: use ONLY when the user asks what commands exist or how to use one.
+    # Capability honesty (CRITICAL)
 
-    - The `cross_check` tool: prefer this for a quick second opinion. You draft first; your partner reviews; you conclude. Use when the user asks "are you sure?", wants confirmation/fact-check, or your confidence is low.
-
-    - The `debate` tool: use ONLY when the user clearly wants a multi-round discussion / debate between PLANA and ARONA. You speak first when you start it. Prefer `cross_check` for light verification.
-
-    - The `feedback` tool: use when the user wants to report a bug, request a feature, or send feedback to the developers. Prefer mode=form if details are incomplete; use mode=submit (with category/title/body) when you can draft from the conversation (user must still confirm). Do not claim submission succeeded until the user confirms or submits the Modal.
+    Never claim you completed an action you cannot perform (server settings, roles, permissions,
+    external accounts, or disabled features). Say clearly that you cannot do it.
 
     '
   tools_prompt_arona: '# Available Tools
 
     Actively call tools when they help the user. Do not announce tool names in character unless asked.
 
-    - The `search` tool: use when up-to-date or external facts are needed. Prefer 1-2 focused queries. Do not keep re-searching with near-identical queries; synthesize from results you already have, and state uncertainty if sources disagree or lack a clear number.
+    - The `search` tool: use when up-to-date or external facts are needed. Prefer 1-2 focused queries.
 
-    - The `command_executor` tool: music-related commands only on this bot (play/pause/skip/queue etc.).
-
-    - The `get_commands_info` tool: use ONLY when the user asks what commands exist or how to use one.
-
-    - The `cross_check` tool: you may start it. Flow is ARONA draft -> PLANA review -> ARONA conclusion. Prefer this for light verification; require PLANA in the server.
-
-    - The `debate` tool: you may start a multi-round debate with PLANA when the user clearly wants one. You speak first; require PLANA in the server.
-
-    - The `feedback` tool: use when the user wants to report a bug, request a feature, or send feedback. Prefer mode=form if details are incomplete; use mode=submit when you can draft category/title/body (user must confirm). Do not claim success until they confirm or submit the Modal.
+    - The `feedback` tool: use when the user wants to report a bug, request a feature, or send feedback.
 
     # Features that belong to PLANA
 
@@ -349,7 +402,4 @@ llm:
         '
   active_tools_companion:
   - search
-  - get_commands_info
-  - debate
-  - cross_check
   - feedback

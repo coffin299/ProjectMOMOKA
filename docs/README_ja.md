@@ -18,14 +18,14 @@
 
 ## 概要
 
-**MOMOKA** は、**PLANA** と **ARONA** の2つの Discord ボットを1プロセスで動かす多機能ボットです。AI対話・音楽は各ボット単体でも利用できます。討論（debate）やクロスチェック（cross_check）は、同じギルドに両方いる必要があります。
+**MOMOKA** は、**PLANA** と **ARONA** の2つの Discord ボットを1プロセスで動かす多機能ボットです。AI対話・音楽は各ボット単体でも利用できます。ARONA は任意のコンパニオンで、招待は PLANA の `/help` / `/invite` から行えます。
 
 ### デュアルボット
 
 | Bot | 役割 | 招待 |
 |-----|------|------|
 | **PLANA** | プライマリ。LLM・音楽・TTS・画像・通知・tracker・Link Fix・ユーティリティ | [招待リンク](https://discord.com/oauth2/authorize?client_id=1031673203774464160) |
-| **ARONA** | コンパニオン。LLM・音楽・ユーティリティ。TTS/画像/通知/tracker/Link Fix は PLANA へ誘導 | [招待リンク](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot) |
+| **ARONA** | コンパニオン。LLM・音楽・ユーティリティ。TTS/画像/通知/tracker/Link Fix は PLANA へ誘導 | PLANA の /help / /invite から任意追加 |
 
 - Discord Developer Portal で **2つの Application** を用意し、両方に **Message Content Intent** を有効化してください
 - 旧ルートの `config.yaml` / `config.default.yaml` は **使用しません**（互換なし）
@@ -33,7 +33,7 @@
 ### 特徴
 
 - 🤖 **マルチモデルAI対話** - OpenAI、Google Gemini、NVIDIA NIM、OpenRouter、KoboldCPP など
-- 🗣️ **debate / cross_check** - PLANA↔ARONA の多ラウンド討論＋評定、または軽量3ステップ検証
+- 🧭 **Agent ルーター** - 会話 / コーディング / コマンドへ自動振り分け
 - 🎵 **音楽再生** - YouTube、Spotify、Google Drive など（両ボット）
 - 🎨 **画像生成 / TTS / 通知 / tracker** - **PLANA 専用**
 - 🔗 **Link Fix** - 公式 SNS embed を抑制し Fix URL で引用置換（`/linkfix`・**PLANA 専用**）
@@ -60,8 +60,7 @@
 - 画像認識（対応モデルの場合）
 - 会話履歴
 - Web 検索
-- **debate** — 多ラウンドの PLANA↔ARONA 討論のあと評定ターン
-- **cross_check** — PLANA案 → ARONA検証 → PLANA結論の軽量3ステップ（パネルなし）
+- **Agent** — メンション・reply・/chat の前段で mode を分類
 - **自動APIキーローテーション** — 複数キーでレートリミット時に切り替え
 
 ### 2. 音楽再生機能
@@ -159,8 +158,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 4. **ボットの招待**
    - [PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
-   - [ARONA](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)
-   - debate / cross_check を使うサーバーには **両方** を入れてください
+   - ARONA は PLANA の /help / /invite から任意追加
 
 5. **起動**
 
@@ -280,7 +278,7 @@ music:
 | `/clear_history` | 会話履歴リセット |
 | `/switch-models` | チャンネル専用モデル切替 |
 
-※ debate / cross_check / feedback は LLM ツールとして呼び出されます（討論・検証・開発者へのフィードバック送信）。
+※ feedback は LLM ツールとして呼び出されます。コマンド実行は Agent の command モードが担当します。
 ※ `max_tool_iterations`（既定 5）はツール往復の上限です。超過時は手元の検索結果などからツールなしで最終回答を生成します。
 ※ LLM 応答（待機・本文・分割続き・討論投稿）は既定で `@silent`（通知抑制）送信。
 
@@ -344,11 +342,10 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ## 機能詳細
 
-### debate / cross_check
+### Agent ルーター
 
-- **debate**: PLANA と ARONA が交互に発言し、最後に評定ターンで要点と推奨を出します。同じギルドに両ボットが必要です
-- **cross_check**: PLANA の案 → ARONA の検証 → PLANA の結論。3ステップすべてチャンネルに投稿。debate より気軽で停止パネルなし
-- 各発言の文頭に相手ボットへのメンションが付きます
+メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。coding の長文は .py / .txt 添付になります。
+
 
 ### APIキーローテーション
 
@@ -398,10 +395,6 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 2. Developer Portal で **Message Content Intent** が両ボット有効か確認
 3. 使用モデルが利用可能か確認
 
-### debate / cross_check が動かない
-
-1. 同じサーバーに PLANA と ARONA の両方がいるか確認
-2. `/invite` から不足しているボットを追加
 
 ### 音楽が再生されない
 

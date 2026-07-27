@@ -9,7 +9,6 @@
 
 [![Website](https://img.shields.io/badge/Website-momoka--project.com-1c1917?style=for-the-badge)](https://momoka-project.com/)
 [![Invite PLANA](https://img.shields.io/badge/Invite%20PLANA-24/7%20Online-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
-[![Invite ARONA](https://img.shields.io/badge/Invite%20ARONA-Companion-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)
 
 </div>
 
@@ -43,8 +42,7 @@
 
 1. **[Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)**  
    **JA:** フル機能 · **EN:** full feature set
-2. **[Invite ARONA](https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot)**  
-   **JA:** debate / cross_check を使うなら同じサーバーに追加 · **EN:** add to the same server for debate / cross_check
+2. **ARONA（任意）** — **JA:** PLANA の `/help` または `/invite` から追加 · **EN:** add via PLANA `/help` or `/invite`
 3. **[Website](https://momoka-project.com/)** — [FAQ](https://momoka-project.com/faq.html) · [Troubleshooting](https://momoka-project.com/troubleshooting.html)
 
 **JA:** サポート — [Discord](https://discord.gg/H79HKKqx3s) · DM [coffin299](https://discord.com/users/270446628622696449)  
@@ -60,18 +58,16 @@
 | Bot | JA | EN |
 |-----|----|----|
 | **PLANA** | LLM・音楽・TTS・画像・通知・tracker・Link Fix・メディアDL・utilities | LLM, music, TTS, images, notifications, trackers, Link Fix, media download, utilities |
-| **ARONA** | LLM・音楽・slash。TTS/画像/通知/tracker/Link Fix は PLANA へ誘導 | LLM, music, slash. TTS / images / notifications / trackers / Link Fix redirect to PLANA |
-| **Both required** | debate / cross_check（同じギルド） | debate / cross_check (same guild) |
+| **ARONA** | LLM・音楽・slash。TTS/画像/通知/tracker/Link Fix は PLANA へ誘導（`/help`・`/invite` から任意追加） | LLM, music, slash. TTS / images / notifications / trackers / Link Fix redirect to PLANA (optional via `/help` / `/invite`) |
 
 > **Built-ins（セルフホスト時 / when self-hosting）**
-> - Image generation — `MOMOKA/generator/image` (diffusers)
+> - Image generation — `MOMOKA/generator/image` (diffusers) / `image_generator_config`
 > - Style-Bert-VITS2 TTS — `third_party/style_bert_vits2` + wrapper `MOMOKA/generator/tts` (see `NOTICE`)
 > - Log viewer GUI — `MOMOKA/GUI/` (version: `MOMOKA/version.py`; Discord status date = last git commit)
 
 ### Key Features / 主な機能
 
-- **AI Chat (LLM)** — `@PLANA` / `@ARONA`, `/chat`, model switch, web search, image understanding (`max_tool_iterations` caps tool loops; then answers from results already gathered)
-- **debate / cross_check** — **JA:** PLANA↔ARONA 討論（両ボット必要） · **EN:** PLANA↔ARONA debate (both bots required)
+- **AI Chat (LLM)** — `@PLANA` / `@ARONA`, `/chat`, **Agent router** (conversation / coding / command), web search, image understanding
 - **Music** — YouTube / Spotify, etc. (**JA:** 両ボット · **EN:** both bots)
 - **TTS / images / notifications / trackers** — **JA:** PLANA のみ · **EN:** PLANA only
 - **Link Fix** — **JA:** 公式 SNS embed を抑制し Fix URL で引用置換（`/linkfix` で全体・サイト別・一括 on/off、デフォルト無効・必要時に有効化、PLANA のみ） · **EN:** suppress original social embeds and quote-replace via fixers (`/linkfix` master/site/bulk toggles, disabled by default — enable when needed, PLANA only)

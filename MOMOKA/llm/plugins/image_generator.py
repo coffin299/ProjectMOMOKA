@@ -49,17 +49,23 @@ class ImageGenerator:
 
     def __init__(self, bot):
         self.bot = bot
+        # 独立 config（image_generator_config）を優先し、旧 llm.image_generator もフォールバック
+        top_level = bot.config.get("image_generator") or {}
+        # 旧パス（移行期間用）
+        legacy = bot.config.get("llm", {}).get("image_generator") or {}
+        # トップレベルがあればそれを使い、無ければ旧キー
+        self.image_gen_config = top_level if top_level else legacy
+        # 互換のため llm セクション参照も残す（他コードが self.config を触る場合）
         self.config = bot.config.get("llm", {})
-        self.image_gen_config = self.config.get("image_generator", {})
         self._last_progress_update = 0
         self._update_interval = 1.0  # Minimum seconds between progress updates
 
-        # config.yaml の enabled フラグを確認（VRAM不足環境向けキルスイッチ）
+        # config の enabled フラグを確認（VRAM不足環境向けキルスイッチ）
         if not self.image_gen_config.get("enabled", True):
             # パイプライン・モデルレジストリを一切ロードせずに無効化
             logger.info(
-                "ImageGenerator is disabled in config.yaml "
-                "(llm.image_generator.enabled=false). "
+                "ImageGenerator is disabled in config "
+                "(image_generator.enabled=false). "
                 "Skipping pipeline/model initialization to conserve VRAM."
             )
             self.model_registry = None

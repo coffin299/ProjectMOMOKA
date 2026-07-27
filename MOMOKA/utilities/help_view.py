@@ -136,8 +136,9 @@ class HelpLayoutView(discord.ui.LayoutView):
                 )
                 # 追加済みにする
                 has_invite_btn = True
-            # ARONA 招待が有効ならリンクボタンを追加
-            if _is_valid_invite_url(self.arona_invite):
+            # ARONA 招待は PLANA（primary）の help からのみ案内する
+            bot_role = getattr(self.bot, "bot_role", "primary")
+            if bot_role == "primary" and _is_valid_invite_url(self.arona_invite):
                 invite_row.add_item(
                     discord.ui.Button(
                         label="Invite ARONA",
@@ -345,7 +346,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "**メモ**\n"
                 "• 対応モデルなら画像添付を認識できます\n"
                 "• 履歴はチャンネル単位で保持されます\n"
-                "• 討論（debate）/ クロスチェックはメンション経由のツール呼び出し"
+                "• Agent ルーターが会話 / コーディング / コマンドを振り分けます"
                 f"{note}"
             )
         note_en = ""
@@ -369,7 +370,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "**Notes**\n"
             "• Vision-capable models can read attached images\n"
             "• History is kept per channel\n"
-            "• Debate / cross_check run as mention-triggered tools"
+            "• Agent router dispatches conversation / coding / command"
             f"{note_en}"
         )
 
@@ -670,6 +671,8 @@ class InviteLayoutView(discord.ui.LayoutView):
         self.lang = "ja" if lang == "ja" else "en"
         # 招待 URL 解決
         self.plana_invite, self.arona_invite = resolve_invite_urls(bot)
+        # ARONA 招待は PLANA（primary）からのみ
+        self.show_arona = getattr(bot, "bot_role", "primary") == "primary"
         # UI 構築
         self._rebuild()
 
@@ -679,24 +682,37 @@ class InviteLayoutView(discord.ui.LayoutView):
         self.clear_items()
         # 有効判定
         plana_ok = _is_valid_invite_url(self.plana_invite)
-        arona_ok = _is_valid_invite_url(self.arona_invite)
-        # 本文（単一言語）
+        arona_ok = self.show_arona and _is_valid_invite_url(self.arona_invite)
+        # 本文（単一言語）— ARONA は控えめ案内
         if plana_ok or arona_ok:
-            body = pick_str(
-                self.lang,
-                ja=(
-                    "### 💌 PLANA / ARONA を招待\n"
-                    "下のボタンから Bot をサーバーに招待できます。\n\n"
-                    "• **PLANA** — フル機能（LLM / 音楽 / TTS / Link Fix / 通知 など）\n"
-                    "• **ARONA** — コンパニオン（LLM / 音楽 / ユーティリティ）"
-                ),
-                en=(
-                    "### 💌 Invite PLANA / ARONA\n"
-                    "Use the buttons below to invite the bots to your server.\n\n"
-                    "• **PLANA** — Full features (LLM / music / TTS / Link Fix / notifications, etc.)\n"
-                    "• **ARONA** — Companion (LLM / music / utilities)"
-                ),
-            )
+            if arona_ok:
+                body = pick_str(
+                    self.lang,
+                    ja=(
+                        "### 💌 Bot を招待\n"
+                        "下のボタンから Bot をサーバーに招待できます。\n\n"
+                        "• **PLANA** — メイン機能\n"
+                        "• **ARONA** — コンパニオン（任意）"
+                    ),
+                    en=(
+                        "### 💌 Invite bots\n"
+                        "Use the buttons below to invite bots to your server.\n\n"
+                        "• **PLANA** — Main features\n"
+                        "• **ARONA** — Optional companion"
+                    ),
+                )
+            else:
+                body = pick_str(
+                    self.lang,
+                    ja=(
+                        "### 💌 PLANA を招待\n"
+                        "下のボタンから PLANA をサーバーに招待できます。"
+                    ),
+                    en=(
+                        "### 💌 Invite PLANA\n"
+                        "Use the button below to invite PLANA to your server."
+                    ),
+                )
         else:
             body = pick_str(
                 self.lang,
@@ -733,7 +749,7 @@ class InviteLayoutView(discord.ui.LayoutView):
                         emoji="💌",
                     )
                 )
-            # ARONA
+            # ARONA（PLANA からのみ）
             if arona_ok:
                 row.add_item(
                     discord.ui.Button(

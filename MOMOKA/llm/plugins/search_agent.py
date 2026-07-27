@@ -48,11 +48,14 @@ class SearchAgent:
         gcfg = None
         if config:
             logger.info(f"SearchAgent init with config. Keys: {list(config.keys())}")
-            # configはllmセクション全体 → "agent"キーで検索設定を取得
-            gcfg = config.get("agent")
+            # 新キー llm.search を優先し、旧 llm.agent も受け付ける
+            gcfg = config.get("search") or config.get("agent")
         elif hasattr(self.bot, "cfg") and self.bot.cfg:
             logger.info("SearchAgent init with bot.cfg.")
-            gcfg = self.bot.cfg.get("llm", {}).get("agent")
+            # bot.cfg が llm 直下の場合と llm ネストの場合の両方を見る
+            llm_section = self.bot.cfg if "search" in self.bot.cfg or "agent" in self.bot.cfg else self.bot.cfg.get("llm", {})
+            # search を優先、無ければ agent
+            gcfg = llm_section.get("search") or llm_section.get("agent")
 
         # デフォルト設定（ddgsはAPIキー不要・autoで複数バックエンドを試行）
         self.max_results = 10

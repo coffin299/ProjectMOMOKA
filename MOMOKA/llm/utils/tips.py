@@ -324,16 +324,16 @@ class TipsManager:
         # tip 文言を言語別に取る
         tip_title = self._tip_title(tip_data, lang)
         tip_desc = self._tip_description(tip_data, lang)
-        # フッター文言
+        # フッター文言（GPU 寄付募集）
         footer = pick_str(
             lang,
             ja=(
-                "-# メインサーバーで技術的な問題が発生しています。\n"
-                "-# ドキュメント: https://coffin299.net"
+                "-# メインサーバーのGPUを寄付してくれる方を募集しています...\n"
+                "-# コンタクト: https://discord.com/users/270446628622696449"
             ),
             en=(
-                "-# we are experiencing technical difficulties with our main server.\n"
-                "-# full documentation : https://coffin299.net"
+                "-# Looking for GPU donations for our main server...\n"
+                "-# Contact: https://discord.com/users/270446628622696449"
             ),
         )
         # 見出し
