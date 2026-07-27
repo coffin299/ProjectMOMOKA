@@ -344,7 +344,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### Agent ルーター
 
-メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。coding の長文は .py / .txt 添付になります。
+メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。coding では冒頭の挨拶文のみ Discord 本文に出し、説明は `article.md`、各コードブロックは言語に応じた拡張子のファイルで添付します。
 
 
 ### APIキーローテーション

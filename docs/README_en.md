@@ -324,7 +324,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 ### Agent router
 
-Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. Long coding replies may be attached as .py / .txt.
+Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension.
 
 
 ### API key rotation

@@ -107,10 +107,23 @@ llm:
       - nvidia_nim/minimaxai/minimax-m3
       - nvidia_nim/minimaxai/minimax-m2.7
       - nvidia_nim/mistralai/mistral-medium-3.5-128b
+      # coding: plain 本文 + article.md + 言語別コードファイル
+      always_attach_if_code_fence: true
+      skip_stream_preview: true
+      plain_text_max_chars: 500
+      article_filename: article.md
       attach_as_file_threshold: 1800
-      prefer_py_extension: true
       ask_attach_if_over: true
       max_attached_text_chars: 50000
+      output_prompt: |
+        [Coding output format]
+        - Line 1–2: a brief conversational opener only (e.g. "了解しました。以下がコードです。").
+          This opener is shown as plain Discord text — keep it short.
+        - After that, put substantive explanation (usage, design, steps) as Markdown prose.
+          Do NOT repeat the opener in the explanation section.
+        - Put EVERY code sample inside fenced code blocks with a language tag (```python, ```js, ...).
+        - Do not put runnable code outside fences. The bot attaches explanation as article.md and each
+          code block as a language-specific file.
     command:
       model: nvidia_nim/minimaxai/minimax-m3
       fallback_models:

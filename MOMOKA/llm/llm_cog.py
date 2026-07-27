@@ -44,10 +44,14 @@ from MOMOKA.llm.concurrency import chat_limiter
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
 from MOMOKA.llm.router.mode_runner import (
     coding_attach_settings,
+    coding_output_prompt,
     execute_command_baton,
+    format_coding_attachment_note,
     image_gen_disabled_message,
     mode_model_chain,
     run_routed_response,
+    should_attach_coding_output,
+    split_coding_response,
     unsupported_message,
     waiting_phase_title,
 )
@@ -1896,12 +1900,16 @@ class LLMCog(commands.Cog, name="LLM"):
                 routed_model,
                 phase=phase,
             )
+            # coding 向け出力形式指示を API メッセージへ追加
+            api_messages = initial_messages
+            if route.mode == "coding":
+                api_messages = await self._inject_coding_mode_prompt(initial_messages)
             # ストリーミング開始前に計測タイマーをスタート
             stream_start_time = time.time()
             result = await self._process_streaming_and_send_response(
                 sent_message=sent_message, channel=message.channel,
                 user=message.author,
-                messages_for_api=initial_messages, llm_client=client,
+                messages_for_api=api_messages, llm_client=client,
                 is_first_response=is_first_response,
                 waiting_view=waiting_view,
                 route_mode=route.mode,
@@ -2075,6 +2083,15 @@ class LLMCog(commands.Cog, name="LLM"):
                 on_model_fallback=_on_model_fallback if waiting_view is not None else None,
                 route_mode=route_mode,
             )
+            # coding は生成中に本文を流さず、完了後に要約+.md 添付へ
+            coding_cfg = (
+                coding_attach_settings(self.llm_config)
+                if route_mode == "coding"
+                else None
+            )
+            skip_stream_preview = bool(
+                coding_cfg and coding_cfg.get("skip_stream_preview", True)
+            )
             async for content_chunk in stream_generator:
                 # シャットダウン通知後はストリーム編集を打ち切る
                 if self._shutting_down:
@@ -2088,8 +2105,16 @@ class LLMCog(commands.Cog, name="LLM"):
                     f"Stream chunk #{chunk_count}, total length: {len(full_response_text)} chars")
                 current_time, chars_accumulated = time.time(), len(full_response_text) - last_displayed_length
 
-                should_update = is_first_update or (
-                        current_time - last_update > update_interval and chars_accumulated >= min_update_chars)
+                should_update = (
+                    not skip_stream_preview
+                    and (
+                        is_first_update
+                        or (
+                            current_time - last_update > update_interval
+                            and chars_accumulated >= min_update_chars
+                        )
+                    )
+                )
 
                 if should_update and full_response_text:
                     is_first_update = False
@@ -2889,6 +2914,18 @@ class LLMCog(commands.Cog, name="LLM"):
         # 見つからなければ False
         return False
 
+    async def _inject_coding_mode_prompt(
+        self,
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """coding モード用の出力形式指示を system に追加したコピーを返す。"""
+        prompt = coding_output_prompt(self.llm_config)
+        if not prompt:
+            return messages
+        copied = [dict(m) for m in messages]
+        copied.append({"role": "system", "content": prompt})
+        return copied
+
     async def _maybe_send_coding_attachment(
         self,
         *,
@@ -2898,65 +2935,82 @@ class LLMCog(commands.Cog, name="LLM"):
         route_lang: str,
         waiting_v2_cleared: bool,
     ) -> Optional[Tuple[Optional[List[discord.Message]], str, Optional[int]]]:
-        """coding 長文を .py/.txt 添付する。添付しない場合は None。"""
+        """coding 応答を plain 本文 + article.md + 言語別コードファイルで送る。"""
         # 添付設定を読む
         cfg = coding_attach_settings(self.llm_config)
-        threshold = int(cfg["attach_as_file_threshold"])
-        # 閾値未満なら通常送信へ
-        if len(full_text) < threshold and full_text.count("```") < 4:
+        # 添付条件を満たさなければ通常送信へ
+        if not should_attach_coding_output(full_text, cfg):
             return None
-        # ask_attach_if_over が false なら通常分割へ
         if not cfg.get("ask_attach_if_over", True):
+            return None
+        # 応答を分割する
+        route_lang_norm = route_lang or "en"
+        split = split_coding_response(
+            full_text,
+            lang=route_lang_norm,
+            plain_text_max_chars=int(cfg.get("plain_text_max_chars", 500)),
+        )
+        # 添付対象が無ければ通常送信へ
+        if not split.article_md.strip() and not split.code_files:
             return None
         # チャンネル権限を確認する
         me = channel.guild.me if getattr(channel, "guild", None) else None
         perms = channel.permissions_for(me) if me is not None else None
         can_attach = bool(perms and perms.attach_files)
-        ja = str(route_lang).startswith("ja")
+        ja = str(route_lang_norm).startswith("ja")
         if not can_attach:
-            # 権限不足を案内する
             notice = (
-                "コードが長いためファイル添付したいですが、このチャンネルに"
+                "説明・コードをファイル添付したいですが、このチャンネルに"
                 "『ファイルを添付』権限がありません。権限を付与してください。"
                 if ja
-                else "The code is long and should be sent as a file, but I lack "
+                else "The explanation and code should be sent as files, but I lack "
                 "the Attach Files permission in this channel. Please grant it."
             )
             sent_message = await self._replace_waiting_with_content(
                 sent_message, channel, notice
             )
             return [sent_message], notice, None
-        # 拡張子判定（コードフェンス多数なら .py）
-        prefer_py = bool(cfg.get("prefer_py_extension", True))
-        use_py = prefer_py and ("```python" in full_text.lower() or "def " in full_text or "import " in full_text)
-        filename = "response.py" if use_py else "response.txt"
+        article_filename = str(cfg.get("article_filename", "article.md"))
+        attach_note = format_coding_attachment_note(
+            split,
+            lang=route_lang_norm,
+            article_filename=article_filename,
+        )
+        channel_content = f"{split.plain_text}{attach_note}"
+        # 添付ファイルを組み立てる
+        discord_files: List[discord.File] = []
+        if split.article_md.strip():
+            article_bytes = io.BytesIO(split.article_md.encode("utf-8"))
+            discord_files.append(
+                discord.File(article_bytes, filename=article_filename)
+            )
+        for filename, content in split.code_files:
+            code_bytes = io.BytesIO(content.encode("utf-8"))
+            discord_files.append(discord.File(code_bytes, filename=filename))
         # 履歴用に truncate
         max_chars = int(cfg.get("max_attached_text_chars", 50000))
-        history_text = full_text if len(full_text) <= max_chars else full_text[: max_chars - 20] + "\n...(truncated)"
-        # 要約本文
-        summary = (
-            f"詳細は添付ファイル `{filename}` を参照してください。"
-            if ja
-            else f"See the attached file `{filename}` for details."
+        history_text = (
+            full_text
+            if len(full_text) <= max_chars
+            else full_text[: max_chars - 20] + "\n...(truncated)"
         )
-        # ファイルを組み立てる
-        file_bytes = io.BytesIO(full_text.encode("utf-8"))
-        discord_file = discord.File(file_bytes, filename=filename)
         try:
             if not waiting_v2_cleared:
-                # V2 待機を外して content+file で差し替えられない場合があるので delete+send
                 try:
                     await sent_message.delete()
                 except Exception:
                     pass
-                new_msg = await channel.send(content=summary, file=discord_file, silent=True)
+                new_msg = await channel.send(
+                    content=channel_content,
+                    files=discord_files,
+                    silent=True,
+                )
             else:
-                # edit では file 追加が難しいので新規送信
                 try:
-                    await sent_message.edit(content=summary, embed=None, view=None)
+                    await sent_message.edit(content=channel_content, embed=None, view=None)
                 except Exception:
                     pass
-                new_msg = await channel.send(file=discord_file, silent=True)
+                new_msg = await channel.send(files=discord_files, silent=True)
         except discord.Forbidden:
             notice = (
                 "ファイル添付権限が不足しています。"
@@ -2967,7 +3021,6 @@ class LLMCog(commands.Cog, name="LLM"):
                 sent_message, channel, notice
             )
             return [sent_message], notice, None
-        # 履歴には全文（truncate 済み）を返す
         return [new_msg], history_text, None
 
     async def _process_tool_calls(self, tool_calls: List[Any], messages: List[Dict[str, Any]], channel_id: int,
@@ -3209,10 +3262,13 @@ class LLMCog(commands.Cog, name="LLM"):
                     routed_model,
                     phase=phase,
                 )
+                api_messages = messages_for_api
+                if route.mode == "coding":
+                    api_messages = await self._inject_coding_mode_prompt(messages_for_api)
                 # スレッド作成ボタンは削除（常にFalse）
                 sent_messages, full_response_text, used_key_index = await self._process_streaming_and_send_response(
                     sent_message=temp_message, channel=interaction.channel, user=interaction.user,
-                    messages_for_api=messages_for_api, llm_client=llm_client, is_first_response=False,
+                    messages_for_api=api_messages, llm_client=llm_client, is_first_response=False,
                     waiting_view=waiting_view,
                     route_mode=route.mode,
                     route_lang=route.lang,
