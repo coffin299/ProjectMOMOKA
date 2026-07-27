@@ -1,11 +1,12 @@
 # ルーター LLM による mode / lang 分類。
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+from MOMOKA.llm.router.json_extract import parse_llm_json_object
 
 if TYPE_CHECKING:
     # llm_cog への循環 import を避ける
@@ -55,30 +56,9 @@ def _heuristic_lang(text: str) -> str:
 
 
 def _parse_route_json(raw: str) -> Optional[Dict[str, Any]]:
-    """モデル出力から JSON オブジェクトを取り出す。"""
-    # 前後空白を落とす
-    text = (raw or "").strip()
-    # 空なら失敗
-    if not text:
-        return None
-    # フェンス除去
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
-    if fence:
-        text = fence.group(1)
-    # 最初の {…} を拾う
-    brace = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace:
-        text = brace.group(0)
-    try:
-        # JSON パース
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        # パース失敗
-        return None
-    # dict 以外は無効
-    if not isinstance(data, dict):
-        return None
-    return data
+    """モデル出力から JSON オブジェクトを取り出す（thought 除去込み）。"""
+    # 共有抽出ロジックへ委譲する
+    return parse_llm_json_object(raw)
 
 
 async def classify_request(
@@ -133,21 +113,20 @@ async def classify_request(
         {"role": "system", "content": classify_prompt},
         {"role": "user", "content": user_text[:4000]},
     ]
-    # 各モデルを順に試す
+    # 各モデルを順に試す（各モデル内で API キー全巡回）
     last_error: Optional[Exception] = None
     for model_string in chain:
         try:
-            # クライアント取得（キー回転は既存経路に任せる）
+            # クライアント取得
             client = cog._get_or_create_llm_client(model_string)
             if not client:
                 continue
             # Gemini 形式が必要なら変換
             api_messages = cog._ensure_messages_for_model(messages, model_string)
-            # 短めの完了呼び出し
-            resp = await client.chat.completions.create(
-                model=client.model_name_for_api_calls,
+            # キー巡回付きの短め完了呼び出し
+            resp, client = await cog._chat_completion_with_key_rotation(
+                client,
                 messages=api_messages,
-                stream=False,
                 max_tokens=256,
                 temperature=0.0,
             )
@@ -155,7 +134,7 @@ async def classify_request(
             raw = ""
             if resp.choices:
                 raw = (resp.choices[0].message.content or "").strip()
-            # JSON 解釈
+            # JSON 解釈（パース失敗はキー問題ではないので次モデルへ）
             data = _parse_route_json(raw)
             if not data:
                 logger.warning(
@@ -185,7 +164,7 @@ async def classify_request(
             )
             return RouteResult(mode=mode, lang=lang, reason=reason, router_failed=False)
         except Exception as e:
-            # 次モデルへ
+            # キー尽きた／未処理例外 → 次モデルへ
             last_error = e
             logger.warning(
                 "[%s] router model %s failed: %s",

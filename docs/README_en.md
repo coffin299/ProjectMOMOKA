@@ -324,12 +324,12 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 ### Agent router
 
-Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension.
+Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension. Leaked `<thought>` / `<think>` blocks in router output are stripped before JSON parsing. On failure, all API keys for the same provider are tried before moving to `fallback_models`.
 
 
 ### API key rotation
 
-Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error, the next key is tried automatically.
+Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error, the next key is tried automatically (main chat and Agent router).
 
 ### Music
 

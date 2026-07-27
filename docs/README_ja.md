@@ -344,12 +344,12 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### Agent ルーター
 
-メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。coding では冒頭の挨拶文のみ Discord 本文に出し、説明は `article.md`、各コードブロックは言語に応じた拡張子のファイルで添付します。
+メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。coding では冒頭の挨拶文のみ Discord 本文に出し、説明は `article.md`、各コードブロックは言語に応じた拡張子のファイルで添付します。ルーター応答に混入した `<thought>` / `<think>` は JSON 抽出前に除去します。失敗時は同一プロバイダーの API キーをすべて巡回し、その後に `fallback_models` へ進みます。
 
 
 ### APIキーローテーション
 
-`llm_config.yaml` の各プロバイダに `api_key1`, `api_key2`, … を並べると、レートリミット／サーバーエラー時に次のキーへ自動切替します。
+`llm_config.yaml` の各プロバイダに `api_key1`, `api_key2`, … を並べると、レートリミット／サーバーエラー時に次のキーへ自動切替します（本チャットおよび Agent ルーター共通）。
 
 ### 音楽
 

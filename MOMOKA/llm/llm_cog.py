@@ -2474,6 +2474,93 @@ class LLMCog(commands.Cog, name="LLM"):
         # 新しいクライアントを返す
         return new_client
 
+    async def _chat_completion_with_key_rotation(
+        self,
+        client: openai.AsyncOpenAI,
+        *,
+        messages: List[Dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+        stream: bool = False,
+    ) -> Tuple[Any, openai.AsyncOpenAI]:
+        """非ストリーム completion を同一プロバイダーの全キーで試す。尽きたら最後の例外を再送出。"""
+        # プロバイダー名をクライアントから取る
+        provider_name = getattr(client, "provider_name", None) or "unknown"
+        # 登録済み API キー一覧を取る
+        api_keys = self.provider_api_keys.get(provider_name, [])
+        # キー数（最低 1 回は試す）
+        num_keys = max(len(api_keys), 1)
+        # 最後に起きた例外を保持する
+        last_error: Optional[Exception] = None
+        # 作業用クライアント参照
+        working = client
+        # 同一モデル内でキーを順に試す
+        for attempt in range(num_keys):
+            # 現在のキーインデックスを読む
+            current_key_index = self.provider_key_index.get(provider_name, 0)
+            # ログ用に使用キーを記録する
+            working.last_used_key_index = current_key_index
+            try:
+                # completion を発行する
+                resp = await working.chat.completions.create(
+                    model=working.model_name_for_api_calls,
+                    messages=messages,
+                    stream=stream,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                # 成功したら応答とクライアントを返す
+                return resp, working
+            except (openai.RateLimitError, openai.InternalServerError) as e:
+                # 最終失敗として保持する
+                last_error = e
+                # エラー種別ラベルを決める
+                error_type = "Rate limit" if isinstance(e, openai.RateLimitError) else "Server"
+                # ステータスを取り出す
+                status_code = getattr(e, "status_code", "N/A")
+                logger.warning(
+                    "⚠️ %s error (%s) for provider '%s' with key index %s (router/non-stream). Details: %s",
+                    error_type,
+                    status_code,
+                    provider_name,
+                    current_key_index,
+                    e,
+                )
+                # キーが無い、または使い切ったら抜ける
+                if not api_keys or attempt + 1 >= num_keys:
+                    break
+                # 次キーへローテーションする
+                working = await self._rotate_provider_api_key(
+                    working, provider_name, api_keys, current_key_index
+                )
+            except (openai.BadRequestError, openai.APIStatusError) as e:
+                # 最終失敗として保持する
+                last_error = e
+                # ステータスを取り出す
+                status_code = getattr(e, "status_code", None)
+                logger.warning(
+                    "⚠️ API status error (%s) for provider '%s' with key index %s (router/non-stream). Details: %s",
+                    status_code,
+                    provider_name,
+                    current_key_index,
+                    e,
+                )
+                # キーが無い、または使い切ったら抜ける
+                if not api_keys or attempt + 1 >= num_keys:
+                    break
+                # 次キーへローテーションする
+                working = await self._rotate_provider_api_key(
+                    working, provider_name, api_keys, current_key_index
+                )
+            except Exception:
+                # 想定外はキー巡回せず呼び出し側へ渡す
+                raise
+        # 全キー失敗時は最後の例外を上げる
+        if last_error is not None:
+            raise last_error
+        # キー無し等で例外が無い場合の保険
+        raise Exception(f"No API keys available for provider {provider_name}")
+
     async def _llm_stream_and_tool_handler(
         self,
         messages: List[Dict[str, Any]],

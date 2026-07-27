@@ -34,6 +34,7 @@ llm:
       then hand off to the corresponding downstream mode.
 
       1) Output ONLY a JSON object (no Markdown, no extra text)
+         Do not output <thought>, <think>, or any reasoning text.
       2) `lang` MUST be inferred from the user's message text.
          (On mention-based routing, Discord locale is not available.)
 

@@ -1,9 +1,7 @@
 # command モード実行（Music は公開 hybrid_command 経路を利用）。
 from __future__ import annotations
 
-import json
 import logging
-import re
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import discord
@@ -14,6 +12,7 @@ from MOMOKA.llm.router.commands_catalog import (
     format_catalog_for_prompt,
     load_commands_catalog,
 )
+from MOMOKA.llm.router.json_extract import parse_llm_json_object
 
 if TYPE_CHECKING:
     from MOMOKA.llm.llm_cog import LLMCog
@@ -74,21 +73,9 @@ class AgentMusicContext:
 
 
 def _parse_json(raw: str) -> Optional[Dict[str, Any]]:
-    """モデル出力から JSON を取り出す。"""
-    text = (raw or "").strip()
-    if not text:
-        return None
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
-    if fence:
-        text = fence.group(1)
-    brace = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace:
-        text = brace.group(0)
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
+    """モデル出力から JSON を取り出す（thought 除去込み）。"""
+    # 共有抽出ロジックへ委譲する
+    return parse_llm_json_object(raw)
 
 
 async def _invoke_music(
@@ -198,10 +185,10 @@ async def run_command_mode(
             if not client:
                 continue
             converted = cog._ensure_messages_for_model(api_messages, model_string)
-            resp = await client.chat.completions.create(
-                model=client.model_name_for_api_calls,
+            # 同一プロバイダーの全キーを試してから次モデルへ
+            resp, client = await cog._chat_completion_with_key_rotation(
+                client,
                 messages=converted,
-                stream=False,
                 max_tokens=1024,
                 temperature=0.1,
             )
