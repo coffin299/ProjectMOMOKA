@@ -58,6 +58,8 @@ PROGRESS_UPDATE_INTERVAL = 10
 QUEUE_PAGE_SIZE = 5
 # Components V2 上で表示するプログレスバーの長さ（インラインコード1行向け）
 PROGRESS_BAR_LENGTH = 28
+# Discord VC ステータス文字数上限
+VC_STATUS_MAX_LEN = 500
 
 
 def format_duration(duration_seconds: int) -> str:
@@ -140,6 +142,18 @@ class GuildState:
         self.ui_load_error_seen: bool = False
         # /play の query が URL だったときの履歴（停止パネル用・サムネ不要）
         self.last_history_url: Optional[str] = None
+        # ユーザーが VC ステータスを手動編集したら以降 Bot は書き換えない
+        self.vc_status_locked: bool = False
+        # Bot が最後に設定した VC ステータス文字列（未設定時は None）
+        self.vc_status_last_bot: Optional[str] = None
+        # Bot 自身の更新反映待ち（ゲートウェイ echo 照合用）
+        self.vc_status_pending_active: bool = False
+        # 反映待ち中の Bot 設定値（クリア時も None を保持）
+        self.vc_status_pending: Optional[str] = None
+        # 権限不足等で VC ステータス更新を諦めたギルド
+        self.vc_status_permission_denied: bool = False
+        # Bot が管理対象としている VC チャンネル ID
+        self.vc_status_channel_id: Optional[int] = None
 
     def update_activity(self):
         self.last_activity = datetime.now()
@@ -873,6 +887,31 @@ class MusicCog(commands.Cog, name="music_cog"):
         # ミキサーを停止（read()がb''を返す→voice_clientのプレイヤーが停止）
         mixer.stop()
 
+    async def _leave_vc_on_queue_empty(self, guild_id: int) -> None:
+        """キュー終了後、TTS 等がミキサーに残っていなければ VC から退出する。"""
+        # ギルド状態を取得する（存在しなければ何もしない）
+        state = self.get_existing_guild_state(guild_id)
+        # 状態が無ければ早期リターン
+        if not state:
+            return
+        # VC 未接続なら退出不要
+        if not state.voice_client or not state.voice_client.is_connected():
+            return
+        # 再生中またはキューに曲が残っていれば退出しない
+        if state.is_playing or not state.queue.empty():
+            return
+        # TTS 等のソースがミキサーに残っていれば VC を維持する
+        if state.mixer and state.mixer.has_sources():
+            return
+        # Bot が設定した VC ステータスをクリアする（ユーザーロック時は触らない）
+        await self._clear_voice_channel_status(guild_id)
+        # キュー終了に伴う VC 退出をログに残す
+        logger.info("Guild %s: Queue empty, leaving voice channel", guild_id)
+        # 音声接続のみ切断する（Queue Finished UI は維持する）
+        await state.cleanup_voice_client()
+        # VC 退出後はステータス追跡を初期化する
+        self._reset_vc_status_tracking(state)
+
     async def _play_next_song(
         self,
         guild_id: int,
@@ -943,6 +982,10 @@ class MusicCog(commands.Cog, name="music_cog"):
             # キュー終了時：ミキサーにソースが残っていなければ停止してクリーンアップ
             # （TTS等が残っている場合はミキサーを維持する）
             await self._cleanup_idle_mixer(state)
+            # キュー終了に合わせて VC ステータスをクリアする
+            await self._clear_voice_channel_status(guild_id)
+            # キューが空になったら VC から退出する（TTS 再生中はミキサー残存でスキップ）
+            await self._leave_vc_on_queue_empty(guild_id)
             # 次曲再生処理を終了する
             return
 
@@ -1135,6 +1178,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                             state.last_now_playing_message = await channel.send(view=view, silent=True)
                         # Now Playing 表示後にプログレスバーの定期更新を開始する
                         self._start_progress_updater(guild_id)
+                        # 再生開始に合わせて VC ステータスを更新する
+                        await self._sync_voice_channel_status(guild_id)
                     # 送信または編集処理中に例外が発生した場合のハンドリング
                     except Exception as e:
                         # 編集失敗時は新規送信で復旧を試みる
@@ -1146,6 +1191,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                             state.last_now_playing_message = await channel.send(view=view, silent=True)
                             # 復旧後もプログレス更新を開始する
                             self._start_progress_updater(guild_id)
+                            # 復旧後も VC ステータスを同期する
+                            await self._sync_voice_channel_status(guild_id)
                         except Exception as send_error:
                             # 復旧にも失敗した旨をログへ残す
                             logger.error(
@@ -1250,7 +1297,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             logger.debug("Guild %s: Applied server deafen to bot", guild.id)
         except (discord.Forbidden, discord.HTTPException) as e:
             # Mute/Deafen Members 権限不足などで失敗した場合は自己deafへフォールバック
-            logger.warning(
+            # 権限不足は想定内のため debug のみ（WARNING は出さない）
+            logger.debug(
                 "Guild %s: Server deafen failed (%s); falling back to self_deaf",
                 guild.id,
                 e,
@@ -1268,6 +1316,144 @@ class MusicCog(commands.Cog, name="music_cog"):
                     guild.id,
                     fallback_error,
                 )
+
+    @staticmethod
+    def _reset_vc_status_tracking(state: GuildState) -> None:
+        """VC ステータス追跡フラグを初期化する。"""
+        # ユーザーロックを解除する
+        state.vc_status_locked = False
+        # Bot が設定した最後の文字列を忘れる
+        state.vc_status_last_bot = None
+        # 反映待ちフラグを下ろす
+        state.vc_status_pending_active = False
+        # 反映待ち文字列をクリアする
+        state.vc_status_pending = None
+        # 権限不足フラグもセッション終了時に戻す
+        state.vc_status_permission_denied = False
+        # 管理対象 VC ID も忘れる
+        state.vc_status_channel_id = None
+
+    def _format_vc_status_text(self, state: GuildState) -> Optional[str]:
+        """再生状態から VC ステータス文字列を組み立てる。"""
+        # 再生中トラックが無ければクリア対象
+        if not state.current_track or not state.is_playing:
+            # None はステータス削除を意味する
+            return None
+        # 曲名が空のときのフォールバック
+        title = (state.current_track.title or "Unknown").strip()
+        # 一時停止中かどうかで接頭辞を切り替える
+        prefix = "Paused" if state.is_paused else "NowPlaying"
+        # ユーザー指定形式「NowPlaying - 曲名」で返す
+        return f"{prefix} - {title}"[:VC_STATUS_MAX_LEN]
+
+    def _get_vc_status_voice_channel(
+        self, state: GuildState,
+    ) -> Optional[discord.VoiceChannel]:
+        """VC ステータス更新対象の VoiceChannel を返す。"""
+        # 接続中 VoiceClient が無ければ対象外
+        if not state.voice_client or not state.voice_client.is_connected():
+            # 更新不可
+            return None
+        # 接続先チャンネルを取得する
+        channel = state.voice_client.channel
+        # VoiceChannel 以外（Stage 等）は未対応
+        if not isinstance(channel, discord.VoiceChannel):
+            # 更新不可
+            return None
+        # 対象チャンネルを返す
+        return channel
+
+    async def _apply_voice_channel_status(
+        self,
+        guild_id: int,
+        status_text: Optional[str],
+    ) -> None:
+        """VC ステータスを API 経由で設定する（権限不足時は INFO のみ）。"""
+        # ギルド状態を取得する
+        state = self.get_existing_guild_state(guild_id)
+        # 状態が無い、ロック中、権限諦め済みなら何もしない
+        if not state or state.vc_status_locked or state.vc_status_permission_denied:
+            return
+        # 前回 Bot が設定した値と同じなら API を叩かない
+        if status_text == state.vc_status_last_bot:
+            return
+        # 更新対象 VC を解決する
+        channel = self._get_vc_status_voice_channel(state)
+        # VC が取れなければ終了
+        if channel is None:
+            return
+        # ギルドと Bot メンバーを取得する
+        guild = channel.guild
+        me = guild.me
+        # me が無ければ権限判定できない
+        if me is None:
+            return
+        # Set Voice Channel Status 権限を確認する
+        if not channel.permissions_for(me).set_voice_channel_status:
+            # 初回のみ INFO で知らせ、以降は静かにスキップ
+            if not state.vc_status_permission_denied:
+                logger.info(
+                    "Guild %s: Missing set_voice_channel_status permission; "
+                    "skipping VC status updates",
+                    guild_id,
+                )
+                # 再試行しない
+                state.vc_status_permission_denied = True
+            return
+        # Bot 自身の更新 echo を待つため pending をセットする
+        state.vc_status_pending_active = True
+        # 設定予定文字列を保持する（クリア時は None）
+        state.vc_status_pending = status_text
+        # 管理対象 VC ID を記録する
+        state.vc_status_channel_id = channel.id
+        try:
+            # Discord API で VC ステータスを書き換える
+            await channel.edit(
+                status=status_text,
+                reason="Music bot: sync now playing to voice channel status",
+            )
+            # 成功した値を Bot 設定済みとして記録する
+            state.vc_status_last_bot = status_text
+        except discord.Forbidden as exc:
+            # 権限不足は INFO のみで、以降は更新しない
+            state.vc_status_permission_denied = True
+            logger.info(
+                "Guild %s: Cannot set VC status (%s); skipping future updates",
+                guild_id,
+                exc,
+            )
+        except discord.HTTPException as exc:
+            # その他 HTTP 失敗も INFO に留める
+            logger.info(
+                "Guild %s: VC status update failed (%s)",
+                guild_id,
+                exc,
+            )
+        finally:
+            # echo 待ちを終了する
+            state.vc_status_pending_active = False
+
+    async def _sync_voice_channel_status(self, guild_id: int) -> None:
+        """現在の再生状態を VC ステータスへ反映する。"""
+        # ギルド状態を取得する
+        state = self.get_existing_guild_state(guild_id)
+        # 状態が無ければ何もしない
+        if not state:
+            return
+        # 表示文字列を組み立てる
+        status_text = self._format_vc_status_text(state)
+        # API で反映する
+        await self._apply_voice_channel_status(guild_id, status_text)
+
+    async def _clear_voice_channel_status(self, guild_id: int) -> None:
+        """Bot が設定した VC ステータスをクリアする。"""
+        # ギルド状態を取得する
+        state = self.get_existing_guild_state(guild_id)
+        # 状態が無い、ロック中、Bot が一度も設定していなければ触らない
+        if not state or state.vc_status_locked or state.vc_status_last_bot is None:
+            return
+        # ステータスを None（削除）で反映する
+        await self._apply_voice_channel_status(guild_id, None)
 
     def _schedule_auto_leave(self, guild_id: int):
         # 対象ギルドの再生状態を取得する
@@ -1314,6 +1500,8 @@ class MusicCog(commands.Cog, name="music_cog"):
         state = self.get_existing_guild_state(guild_id)
         # 状態が存在するか判定する
         if state:
+            # 退出前に Bot 設定の VC ステータスを消す
+            await self._clear_voice_channel_status(guild_id)
             # 破棄中に到着した終了コールバックが次曲再生を始めないよう停止状態へ移行する
             state.stopping = True
             # ギルド破棄前にプログレスバー更新を停止する
@@ -1348,6 +1536,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                 state.auto_leave_task.cancel()
             # キューを空にする
             await state.clear_queue()
+            # VC ステータス追跡を初期化する
+            self._reset_vc_status_tracking(state)
             # ギルド名解決用にギルドオブジェクトを取得する
             guild = self.bot.get_guild(guild_id)
             # クリーンアップ完了をログに残す
@@ -1412,6 +1602,48 @@ class MusicCog(commands.Cog, name="music_cog"):
     @commands.Cog.listener()
     async def on_ready(self):
         logger.info(f"{self.bot.user.name} の MusicCog が正常にロードされました。")
+
+    @commands.Cog.listener()
+    async def on_socket_raw_receive(self, msg: dict):
+        """VC ステータスの手動編集を検知して Bot 側の自動更新をロックする。"""
+        # 関心のないイベントは無視する
+        if msg.get("t") != "VOICE_CHANNEL_STATUS_UPDATE":
+            return
+        # イベント payload を取り出す
+        data = msg.get("d")
+        # payload が無ければ処理不能
+        if not data:
+            return
+        # チャンネル ID を整数化する
+        channel_id = int(data["id"])
+        # ギルド ID を整数化する
+        guild_id = int(data["guild_id"])
+        # 新しいステータス文字列（クリア時は None）
+        new_status = data.get("status")
+        # 対象ギルドの再生状態を取得する
+        state = self.get_existing_guild_state(guild_id)
+        # 状態が無い、または Bot 管理対象 VC でなければ無視
+        if not state or state.vc_status_channel_id != channel_id:
+            # 接続中 VC と一致する場合は channel_id を補完する
+            channel = self._get_vc_status_voice_channel(state) if state else None
+            if not state or channel is None or channel.id != channel_id:
+                return
+            # 初回イベントで管理 ID を覚える
+            state.vc_status_channel_id = channel_id
+        # Bot 自身の更新 echo なら last_bot を同期して終了
+        if state.vc_status_pending_active:
+            # pending と一致すれば Bot 更新として確定
+            if new_status == state.vc_status_pending:
+                state.vc_status_last_bot = new_status
+                return
+        # Bot が設定した値と異なる変更はユーザー編集とみなしてロック
+        if new_status != state.vc_status_last_bot:
+            state.vc_status_locked = True
+            logger.info(
+                "Guild %s: VC status manually edited; bot will no longer update channel %s",
+                guild_id,
+                channel_id,
+            )
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState,
@@ -1694,6 +1926,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         state.paused_at = time.time()
         await self._send_response(ctx, "playback_paused")
         await self._update_now_playing_message_ui(ctx.guild.id)
+        await self._sync_voice_channel_status(ctx.guild.id)
 
     @commands.hybrid_command(name="resume", description="Resume paused playback.")
     async def resume(self, ctx: commands.Context):
@@ -1713,6 +1946,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         state.paused_at = None
         await self._send_response(ctx, "playback_resumed")
         await self._update_now_playing_message_ui(ctx.guild.id)
+        await self._sync_voice_channel_status(ctx.guild.id)
 
     @commands.hybrid_command(name="skip", description="Skip the current track.")
     async def skip(self, ctx: commands.Context):
@@ -1777,6 +2011,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         state.stop_progress_updater()
         await self._send_response(ctx, "stopped_playback")
         await self._update_now_playing_message_ui(ctx.guild.id)
+        await self._clear_voice_channel_status(ctx.guild.id)
 
     @commands.hybrid_command(name="leave", description="Disconnect the bot from the voice channel.")
     async def leave(self, ctx: commands.Context):
@@ -2937,6 +3172,8 @@ class MusicControllerView(discord.ui.LayoutView):
         self.rebuild_ui()
         # メッセージを編集して反映する
         await self._edit_after_interaction(interaction, state)
+        # 一時停止/再開に合わせて VC ステータスも更新する
+        await self.cog._sync_voice_channel_status(self.guild_id)
 
     async def skip_callback(self, interaction: discord.Interaction):
         # インタラクションへの遅延応答を開始する
@@ -3035,6 +3272,8 @@ class MusicControllerView(discord.ui.LayoutView):
         if state.last_now_playing_message:
             # 参照を初期化する
             state.last_now_playing_message = None
+        # 停止に合わせて VC ステータスをクリアする
+        await self.cog._clear_voice_channel_status(self.guild_id)
 
     async def stop_cancel_callback(self, interaction: discord.Interaction):
         # インタラクションへの遅延応答を開始する

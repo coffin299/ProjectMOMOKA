@@ -333,7 +333,7 @@ Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit
 
 ### Music
 
-Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the VC is empty.
+Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the queue finishes, auto-leave when the VC is empty. While playing, the voice channel status is synced as `NowPlaying - track title` (if a user edits it manually, the bot stops updating; requires **Set Voice Channel Status** permission).
 
 ### Image generation (PLANA)
 
