@@ -357,11 +357,14 @@ class LLMCog(commands.Cog, name="LLM"):
         tip_data: Optional[Dict[str, Any]] = None
         # フェーズ見出しを先頭に置く
         phase_line = waiting_phase_title(phase, lang)
+        # router 中はモデル名を出さない
+        show_model = phase != "router"
         # Tips が無ければ簡易本文
         if self.tips_manager:
             tip_body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
                 model_name,
                 lang=ui_lang,
+                include_model=show_model,
             )
             body = f"{phase_line}\n\n{tip_body}"
         else:
@@ -409,6 +412,7 @@ class LLMCog(commands.Cog, name="LLM"):
         model_name: str,
         *,
         fallback_from: Optional[str] = None,
+        phase: Optional[str] = None,
     ) -> None:
         """待機 UI の試行中モデル名を差し替え、必要ならフォールバック案内を付ける。"""
         # 再利用する tip（無ければ新規抽選）
@@ -422,6 +426,7 @@ class LLMCog(commands.Cog, name="LLM"):
                 tip_data=tip_data,
                 fallback_from=fallback_from,
                 lang=ui_lang,
+                include_model=True,
             )
         else:
             # Tips 無し時の簡易本文
@@ -441,6 +446,9 @@ class LLMCog(commands.Cog, name="LLM"):
                 else f"### ⏳ Waiting for '{model_name}' response...{notice}"
             )
             accent = waiting_view.accent
+        # 振り分け完了後はフェーズ見出し（Streaming 等）を先頭に付ける
+        if phase:
+            body = f"{waiting_phase_title(phase, ui_lang)}\n\n{body}"
         # View 内部状態を更新して再構築する
         waiting_view.update_body(
             body,
@@ -454,6 +462,37 @@ class LLMCog(commands.Cog, name="LLM"):
         except discord.HTTPException as e:
             # 編集失敗でもストリーム本体は続行する
             logger.debug("Failed to refresh waiting view for model fallback: %s", e)
+
+    async def _refresh_waiting_view_for_phase_only(
+        self,
+        sent_message: discord.Message,
+        waiting_view: WaitingLayoutView,
+        *,
+        phase: str,
+    ) -> None:
+        """振り分け後の command 等、モデル名なしでフェーズだけ更新する。"""
+        # View に保存した UI 言語を使う
+        ui_lang = getattr(waiting_view, "lang", "en") or "en"
+        # フェーズ見出し
+        phase_line = waiting_phase_title(phase, ui_lang)
+        # tip を維持しつつモデル情報は出さない
+        tip_data = getattr(waiting_view, "tip_data", None)
+        if self.tips_manager:
+            tip_body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
+                "",
+                tip_data=tip_data,
+                lang=ui_lang,
+                include_model=False,
+            )
+            body = f"{phase_line}\n\n{tip_body}"
+        else:
+            body = phase_line
+            accent = waiting_view.accent
+        waiting_view.update_body(body, accent=accent, tip_data=tip_data)
+        try:
+            await sent_message.edit(view=waiting_view)
+        except discord.HTTPException as e:
+            logger.debug("Failed to refresh waiting view for phase: %s", e)
 
     async def _append_chat_history_hint(
             self,
@@ -1812,11 +1851,11 @@ class LLMCog(commands.Cog, name="LLM"):
                 return [sent_message], unsupported_message(route.lang, route.reason), None
             # command: バトンタッチ（ストリーム本体へは戻さない）
             if route.mode == "command":
-                waiting_view.update_body(waiting_phase_title("command", route.lang))
-                try:
-                    await sent_message.edit(view=waiting_view)
-                except Exception:
-                    pass
+                await self._refresh_waiting_view_for_phase_only(
+                    sent_message,
+                    waiting_view,
+                    phase="command",
+                )
                 cmd_text = await execute_command_baton(
                     self,
                     user_text=user_text_for_router or "",
@@ -1848,16 +1887,15 @@ class LLMCog(commands.Cog, name="LLM"):
                 mode_client = self._get_or_create_llm_client(mode_chain[0])
                 if mode_client:
                     client = mode_client
-            # 待機 UI をモード別見出しへ更新
+            # 待機 UI をモード別（モデル名表示）へ更新
             phase = "coding" if route.mode == "coding" else "conversation"
-            waiting_view.update_body(
-                waiting_phase_title(phase, route.lang),
-                model_name=getattr(client, "model_name_for_api_calls", model_name),
+            routed_model = getattr(client, "model_name_for_api_calls", model_name)
+            await self._refresh_waiting_view_for_model(
+                sent_message,
+                waiting_view,
+                routed_model,
+                phase=phase,
             )
-            try:
-                await sent_message.edit(view=waiting_view)
-            except Exception:
-                pass
             # ストリーミング開始前に計測タイマーをスタート
             stream_start_time = time.time()
             result = await self._process_streaming_and_send_response(
@@ -2019,12 +2057,14 @@ class LLMCog(commands.Cog, name="LLM"):
                 # シャットダウン中は編集しない
                 if self._shutting_down:
                     return
-                # Waiting for のモデル名と切替案内をリアルタイム更新する
+                # 振り分け後フェーズ見出しを維持したままモデル名だけ差し替える
+                fallback_phase = "coding" if route_mode == "coding" else "conversation"
                 await self._refresh_waiting_view_for_model(
                     sent_message,
                     waiting_view,
                     new_model,
                     fallback_from=failed_model,
+                    phase=fallback_phase,
                 )
 
             stream_generator = self._llm_stream_and_tool_handler(
@@ -3133,11 +3173,11 @@ class LLMCog(commands.Cog, name="LLM"):
                     )
                     return
                 if route.mode == "command":
-                    waiting_view.update_body(waiting_phase_title("command", route.lang))
-                    try:
-                        await temp_message.edit(view=waiting_view)
-                    except Exception:
-                        pass
+                    await self._refresh_waiting_view_for_phase_only(
+                        temp_message,
+                        waiting_view,
+                        phase="command",
+                    )
                     cmd_text = await execute_command_baton(
                         self,
                         user_text=message,
@@ -3162,14 +3202,13 @@ class LLMCog(commands.Cog, name="LLM"):
                     if mode_client:
                         llm_client = mode_client
                 phase = "coding" if route.mode == "coding" else "conversation"
-                waiting_view.update_body(
-                    waiting_phase_title(phase, route.lang),
-                    model_name=getattr(llm_client, "model_name_for_api_calls", model_name),
+                routed_model = getattr(llm_client, "model_name_for_api_calls", model_name)
+                await self._refresh_waiting_view_for_model(
+                    temp_message,
+                    waiting_view,
+                    routed_model,
+                    phase=phase,
                 )
-                try:
-                    await temp_message.edit(view=waiting_view)
-                except Exception:
-                    pass
                 # スレッド作成ボタンは削除（常にFalse）
                 sent_messages, full_response_text, used_key_index = await self._process_streaming_and_send_response(
                     sent_message=temp_message, channel=interaction.channel, user=interaction.user,

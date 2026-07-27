@@ -287,15 +287,41 @@ class TipsManager:
         tip_data: Optional[Dict[str, Any]] = None,
         fallback_from: Optional[str] = None,
         lang: str = "en",
+        include_model: bool = True,
     ) -> tuple[str, discord.Color, Dict[str, Any]]:
         """待機 LayoutView 用の本文・アクセント色・使用 tip を返す。
 
         tip_data を渡すと同一 tip を維持したままモデル名だけ差し替えできる。
         fallback_from があるときのみクォータ起因のモデル切替案内を付ける。
+        include_model=False のときは tip のみ（router 振り分け中向け）。
         """
         # tip 未指定ならランダムに1つ選ぶ（再利用時は呼び出し側で渡す）
         if tip_data is None:
             tip_data = random.choice(self.tips)
+        # tip 文言を言語別に取る
+        tip_title = self._tip_title(tip_data, lang)
+        tip_desc = self._tip_description(tip_data, lang)
+        # フッター文言（GPU 寄付募集）
+        footer = pick_str(
+            lang,
+            ja=(
+                "-# メインサーバーのGPUを寄付してくれる方を募集しています...\n"
+                "-# コンタクト: https://discord.com/users/270446628622696449"
+            ),
+            en=(
+                "-# Looking for GPU donations for our main server...\n"
+                "-# Contact: https://discord.com/users/270446628622696449"
+            ),
+        )
+        # router 振り分け中はモデル名・予想時間を出さない
+        if not include_model:
+            body = (
+                f"**{tip_title}**\n"
+                f"{tip_desc}\n\n"
+                f"{footer}"
+            )
+            accent = tip_data.get("color") or discord.Color.orange()
+            return body, accent, tip_data
         # 予想時間文字列（試行中モデル基準）
         time_estimate = self.response_tracker.format_estimate(model_name, lang=lang)
         # 遅いモデルなら切替提案
@@ -321,21 +347,6 @@ class TipsManager:
                     f"`{fallback_from}` hit quota/API limits..."
                 ),
             )
-        # tip 文言を言語別に取る
-        tip_title = self._tip_title(tip_data, lang)
-        tip_desc = self._tip_description(tip_data, lang)
-        # フッター文言（GPU 寄付募集）
-        footer = pick_str(
-            lang,
-            ja=(
-                "-# メインサーバーのGPUを寄付してくれる方を募集しています...\n"
-                "-# コンタクト: https://discord.com/users/270446628622696449"
-            ),
-            en=(
-                "-# Looking for GPU donations for our main server...\n"
-                "-# Contact: https://discord.com/users/270446628622696449"
-            ),
-        )
         # 見出し
         heading = pick_str(
             lang,
