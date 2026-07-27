@@ -11,19 +11,18 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 - Official site: https://momoka-project.com/
 - Support Discord: https://discord.gg/H79HKKqx3s
 - Operator contact (DM): https://discord.com/users/270446628622696449 (display name: coffin299)
-- Source code: https://github.com/coffin399/ProjectMOMOKA
+- Source code: https://github.com/coffin299/ProjectMOMOKA
 - Invite PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot
-- Invite ARONA: https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot
 
 ## What to invite
 
 - Most users should invite **PLANA** first.
-- Invite **both PLANA and ARONA** only if you need LLM debate / cross_check in the same server.
+- **ARONA** (companion) is optional — add via PLANA `/help` or `/invite` if you want LLM/music on a second bot.
 - TTS, image generation, earthquake/Twitch notifications, game trackers, Link Fix, and media download are **PLANA-only**. ARONA redirects users to PLANA for those.
 
 ## Features (summary)
 
-- AI chat (mention / reply / `/chat`), model switching, web search, image understanding
+- AI chat (mention / reply / `/chat`), **Agent router** (conversation / coding / command), model switching, web search, image understanding
 - Music (both bots)
 - TTS / speech (PLANA)
 - Notifications: earthquake/tsunami (Japan), Twitch (PLANA)

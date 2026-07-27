@@ -1,6 +1,6 @@
 # MOMOKA — full summary for answer engines
 
-Last-updated: 2026-07-25
+Last-updated: 2026-07-27
 Canonical: https://momoka-project.com/
 Language-policy: Japanese preferred when JA/EN differ
 
@@ -11,7 +11,7 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 ## Authority / contact
 
 - Website: https://momoka-project.com/
-- GitHub: https://github.com/coffin399/ProjectMOMOKA
+- GitHub: https://github.com/coffin299/ProjectMOMOKA
 - Support server: https://discord.gg/H79HKKqx3s
 - Operator Discord profile: https://discord.com/users/270446628622696449 (coffin299)
 - Terms: https://momoka-project.com/terms.html
@@ -20,8 +20,8 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 ## Invites
 
 - PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot
-- ARONA: https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot
-- Default recommendation: invite PLANA. Add ARONA for debate/cross_check.
+- ARONA (optional): add via PLANA `/help` or `/invite` — not linked on the public site.
+- Default recommendation: invite PLANA first.
 
 ## Capability matrix
 
@@ -39,16 +39,14 @@ UI language for Components V2 / Modal (except music Now Playing): Discord app lo
 | Valorant / R6S trackers | yes | no |
 | Link Fix | yes | no |
 | Media download | yes | no |
-| debate / cross_check | needs both bots in same guild | needs both bots in same guild |
 
 ## Troubleshooting policy (public hosted bots)
 
 1. Most failures are **missing Discord permissions** (channel denies or incomplete invite permissions). Fix permissions or re-invite.
 2. If bots appear offline site-wide, wait; the operator’s PC may be updating unnoticed.
 3. Slash commands missing: re-invite and wait for Discord sync.
-4. debate/cross_check broken: ensure both PLANA and ARONA are in the guild.
-5. Link Fix: suppress original embeds then silent quote-reply with fixer URL; needs Send Messages + Embed Links + Manage Messages; skip with `fxignore` or `<url>`; configure `/linkfix` (master/site/bulk-all toggles; disabled by default — enable when needed).
-6. AI “tool processing too complex”: tool round-trip limit; current builds force a final answer from existing search/tool results.
+4. Link Fix: suppress original embeds then silent quote-reply with fixer URL; needs Send Messages + Embed Links + Manage Messages; skip with `fxignore` or `<url>`; configure `/linkfix` (master/site/bulk-all toggles; disabled by default — enable when needed).
+5. AI “tool processing too complex”: tool round-trip limit; current builds force a final answer from existing search/tool results.
 
 ## Self-hosting
 
