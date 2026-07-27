@@ -175,6 +175,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    python main.py
    ```
    On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
+   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
    The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit).
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled

@@ -183,6 +183,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    python main.py
    ```
    起動時 GUI のログ区画は「一般 / LLM / TTS+Music / エラー」。音楽ログは TTS+Music に出ます。  
+   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン（日時付き行全体）。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
    ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。
 
 ---

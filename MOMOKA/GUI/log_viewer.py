@@ -729,33 +729,50 @@ class LogViewerApp:
         # 上限超過なら古い行を落とす
         if lines > self.config["max_lines"]:
             text_widget.delete(1.0, f"{lines - self.config['max_lines']}.0")
-        # ボット識別タグの色付け
+        # ボット識別タグの色付け（変更しない）
         text_widget.tag_config(
             "plana_tag", foreground="#b388ff", font=("Meiryo UI", 9, "bold")
         )
         text_widget.tag_config(
             "arona_tag", foreground="#ff6b9d", font=("Meiryo UI", 9, "bold")
         )
-        # レベルに応じた色タグを決める
-        if level == "ERROR" or level == "CRITICAL":
-            text_widget.tag_config("error", foreground=self.theme["error"])
+        # USER_INPUT 行は黄緑で日時付き行全体を塗る
+        text_widget.tag_config("user_input_tag", foreground="#A9E34B")
+        # LLM_RESPONSE 行はシアンで日時付き行全体を塗る
+        text_widget.tag_config("llm_output_tag", foreground="#3BC9DB")
+        # レベル色タグを用意する（専用マーカーが無い行用）
+        text_widget.tag_config("error", foreground=self.theme["error"])
+        text_widget.tag_config("warning", foreground=self.theme["warning"])
+        text_widget.tag_config("info", foreground=self.theme["info"])
+        text_widget.tag_config("debug", foreground=self.theme["debug"])
+        # USER_INPUT / LLM_RESPONSE を level 色より優先する
+        if "[USER_INPUT]" in message:
+            # ユーザー入力行は黄緑
+            tag = "user_input_tag"
+        elif "[LLM_RESPONSE]" in message:
+            # LLM 出力行はシアン
+            tag = "llm_output_tag"
+        elif level == "ERROR" or level == "CRITICAL":
+            # エラーレベル
             tag = "error"
         elif level == "WARNING":
-            text_widget.tag_config("warning", foreground=self.theme["warning"])
+            # 警告レベル
             tag = "warning"
         elif level == "INFO":
-            text_widget.tag_config("info", foreground=self.theme["info"])
+            # 情報レベル
             tag = "info"
         elif level == "DEBUG":
-            text_widget.tag_config("debug", foreground=self.theme["debug"])
+            # デバッグレベル
             tag = "debug"
         else:
+            # 不明レベルは無色
             tag = None
-        # [PLANA] を色分け挿入する
+        # [PLANA] を色分け挿入する（本文は専用色または level 色）
         if "[PLANA]" in message or "[LLM_RESPONSE][PLANA]" in message:
             parts = message.split("[PLANA]")
             for i, part in enumerate(parts):
                 if i > 0:
+                    # タグ文字列だけ PLANA 色・太字
                     text_widget.insert(tk.END, "[PLANA]", "plana_tag")
                 if tag:
                     text_widget.insert(tk.END, part, tag)
@@ -767,6 +784,7 @@ class LogViewerApp:
             parts = message.split("[ARONA]")
             for i, part in enumerate(parts):
                 if i > 0:
+                    # タグ文字列だけ ARONA 色・太字
                     text_widget.insert(tk.END, "[ARONA]", "arona_tag")
                 if tag:
                     text_widget.insert(tk.END, part, tag)
@@ -774,7 +792,7 @@ class LogViewerApp:
                     text_widget.insert(tk.END, part)
             text_widget.insert(tk.END, "\n")
         else:
-            # タグ無しは通常挿入する
+            # ボットタグ無しは行全体を一括挿入する
             if tag:
                 text_widget.insert(tk.END, message + "\n", tag)
             else:
