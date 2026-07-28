@@ -67,10 +67,14 @@ llm:
         **Image generation / drawing** ("絵を描いて", "画像を生成して", "draw me a cat")
         → "conversation" (downstream image_generator tool). NOT "command"
         unless the user clearly wants a bot image-search slash command.
+        **NSFW / adult / explicit requests** (adult chat, lewd roleplay, R18 image generation,
+        erotic writing, etc.) → **"conversation"**. Do NOT route to "unsupported" merely because
+        the topic is adult/NSFW. Downstream conversation handles content policy.
       - "unsupported": The request cannot be fulfilled with the bot's provided tools/capabilities,
         and pretending success would be dishonest
         (e.g. changing Discord server settings/roles/permissions, controlling external
         accounts, claiming completed work the bot cannot do).
+        **Never** use "unsupported" for NSFW/adult/explicit chat or image-generation requests.
 
       Ambiguous cases:
       - If unsure, choose "conversation".
@@ -84,6 +88,7 @@ llm:
         if asking for general info/images on the web, "conversation".
       - "絵を描いて" / "generate an image" → "conversation" (image gen tool path).
         Do not confuse with image-search commands.
+      - NSFW / R18 / adult / explicit chat or image requests → "conversation" (NOT "unsupported").
       - However, if it's clearly an external forced action or unauthorized execution
         presented as completed work, choose "unsupported".
 

@@ -55,6 +55,7 @@ from MOMOKA.llm.router.mode_runner import (
     unsupported_message,
     waiting_phase_title,
 )
+from MOMOKA.llm.router.json_extract import extract_completion_text
 from MOMOKA.utilities.restart_notice import RESTART_NOTICE_TEXT
 from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
 from MOMOKA.utilities.feedback import (
@@ -553,6 +554,8 @@ class LLMCog(commands.Cog, name="LLM"):
         self.jst = timezone(timedelta(hours=+9))
         # 応答生成中メッセージ（message_id → Message）の追跡用辞書
         self._active_response_messages: Dict[int, discord.Message] = {}
+        # 応答生成中ギルド数（GUI 稼働モニタ用・finally で必ず減算）
+        self._active_llm_guild_counts: Dict[int, int] = {}
         # シャットダウン通知済みならストリーム編集を止めるためのフラグ
         self._shutting_down = False
         # プラグインの初期化（BioManager/MemoryManagerは削除済み）
@@ -850,7 +853,7 @@ class LLMCog(commands.Cog, name="LLM"):
         logger.info("LLMCog's aiohttp session has been closed.")
 
     def _register_active_response(self, message: discord.Message) -> None:
-        """応答生成中メッセージを追跡辞書へ登録する。"""
+        """応答生成中メッセージを追跡辞書へ登録する（再起動通知用）。"""
         # メッセージが無ければ何もしない
         if message is None:
             # 早期リターン
@@ -859,7 +862,7 @@ class LLMCog(commands.Cog, name="LLM"):
         self._active_response_messages[message.id] = message
 
     def _unregister_active_response(self, message: Optional[discord.Message]) -> None:
-        """応答生成中メッセージの追跡を解除する。"""
+        """応答生成中メッセージの追跡を解除する（再起動通知用）。"""
         # メッセージが無ければ何もしない
         if message is None:
             # 早期リターン
@@ -867,16 +870,36 @@ class LLMCog(commands.Cog, name="LLM"):
         # 辞書から該当 ID を取り除く（無ければ無視）
         self._active_response_messages.pop(message.id, None)
 
+    def _begin_active_llm_guild(self, guild_id: Optional[int]) -> None:
+        """LLM 応答生成開始時にギルド稼働カウントを加算する。"""
+        # DM 等 guild 無しは GUI 対象外
+        if guild_id is None:
+            # 加算しない
+            return
+        # 同一ギルドの同時応答数をインクリメントする
+        self._active_llm_guild_counts[guild_id] = (
+            self._active_llm_guild_counts.get(guild_id, 0) + 1
+        )
+
+    def _end_active_llm_guild(self, guild_id: Optional[int]) -> None:
+        """LLM 応答生成終了時にギルド稼働カウントを減算する。"""
+        # DM 等 guild 無しはスキップ
+        if guild_id is None:
+            # 減算しない
+            return
+        # 現在の同時応答数を取得する
+        count = self._active_llm_guild_counts.get(guild_id, 0)
+        # 1 以下ならギルドエントリごと削除する
+        if count <= 1:
+            self._active_llm_guild_counts.pop(guild_id, None)
+        else:
+            # 複数同時応答中なら 1 だけ減らす
+            self._active_llm_guild_counts[guild_id] = count - 1
+
     def get_active_llm_guild_count(self) -> int:
         """応答生成中のユニークギルド数を返す（GUI 稼働モニタ用）。"""
-        # 生成中メッセージからギルド ID を集める（DM 等 guild 無しは除外）
-        guild_ids = {
-            m.guild.id
-            for m in self._active_response_messages.values()
-            if m.guild is not None
-        }
-        # ユニーク件数を返す
-        return len(guild_ids)
+        # 稼働中（count > 0）のギルド数を返す
+        return len(self._active_llm_guild_counts)
 
     async def notify_admin_restart(self) -> None:
         """再起動前に、生成中の LLM 応答メッセージを再起動文言で上書きする。"""
@@ -886,6 +909,8 @@ class LLMCog(commands.Cog, name="LLM"):
         active_messages = list(self._active_response_messages.values())
         # 追跡辞書を先に空にして二重編集を防ぐ
         self._active_response_messages.clear()
+        # GUI 用ギルドカウントもリセットする
+        self._active_llm_guild_counts.clear()
         # 各メッセージを再起動文言で上書きする
         for message in active_messages:
             try:
@@ -1206,8 +1231,8 @@ class LLMCog(commands.Cog, name="LLM"):
                 stream=False,
                 **{k: v for k, v in extra.items() if k != "stream"},
             )
-            # 本文取り出し
-            text = (resp.choices[0].message.content or "").strip()
+            # 本文取り出し（message が null の応答にも対応）
+            text = extract_completion_text(resp)
             # 文字数制限
             if len(text) > max_chars:
                 text = text[: max_chars - 1] + "…"
@@ -1443,7 +1468,12 @@ class LLMCog(commands.Cog, name="LLM"):
                 return {"type": "image_url",
                         "image_url": {"url": f"data:{mime_type};base64,{encoded_image}", "detail": "auto"}}
         except asyncio.TimeoutError:
-            logger.error(f"Timeout while downloading image: {url}")
+            # 外部画像の一時的な取得失敗は想定内のため WARNING にする
+            logger.warning(f"Timeout while downloading image: {url}")
+            return None
+        except aiohttp.ClientError as e:
+            # 接続エラーも画像なしで続行できるため WARNING にする
+            logger.warning(f"Failed to download image from {url}: {e}")
             return None
         except Exception as e:
             logger.error(f"Error processing image URL {url}: {e}", exc_info=True)
@@ -1991,10 +2021,12 @@ class LLMCog(commands.Cog, name="LLM"):
         content: str,
         *,
         view: Optional[discord.ui.View] = None,
+        track_active: bool = False,
     ) -> discord.Message:
         """Components V2 待機メッセージを通常の content メッセージへ切り替える。
 
         V2 は content と併用できないため、edit できなければ削除して送り直す。
+        track_active=True のときのみ再起動通知用のメッセージ追跡を更新する。
         """
         # まず edit で V2 解除を試す
         try:
@@ -2002,8 +2034,9 @@ class LLMCog(commands.Cog, name="LLM"):
             return sent_message
         except discord.HTTPException as e:
             logger.debug("Waiting V2 edit-to-content failed (%s); replacing message", e)
-        # 追跡から外す
-        self._unregister_active_response(sent_message)
+        # ストリーム追跡中のみ旧メッセージを追跡から外す
+        if track_active:
+            self._unregister_active_response(sent_message)
         # 元メッセージの返信先を可能な範囲で引き継ぐ
         reference = getattr(sent_message, "reference", None)
         try:
@@ -2027,8 +2060,9 @@ class LLMCog(commands.Cog, name="LLM"):
         except discord.HTTPException:
             # 参照付きが失敗したら参照なしで再送する
             new_msg = await channel.send(content, **send_kwargs)
-        # 再追跡する
-        self._register_active_response(new_msg)
+        # ストリーム追跡中のみ新メッセージを追跡する
+        if track_active:
+            self._register_active_response(new_msg)
         return new_msg
 
     async def _process_streaming_and_send_response(self, sent_message: discord.Message,
@@ -2041,6 +2075,9 @@ class LLMCog(commands.Cog, name="LLM"):
                                                    route_mode: Optional[str] = None,
                                                    route_lang: Optional[str] = None) -> Tuple[
         Optional[List[discord.Message]], str, Optional[int]]:
+        # 応答生成中ギルド数を加算する（finally で必ず減算）
+        guild_id = sent_message.guild.id if sent_message.guild else None
+        self._begin_active_llm_guild(guild_id)
         # 応答生成中として追跡登録する（再起動通知の対象にする）
         self._register_active_response(sent_message)
         try:
@@ -2128,7 +2165,7 @@ class LLMCog(commands.Cog, name="LLM"):
                             # 初回は V2 待機 UI を通常 content に切り替える（寄付ボタンも消える）
                             if not waiting_v2_cleared:
                                 sent_message = await self._replace_waiting_with_content(
-                                    sent_message, channel, display_text
+                                    sent_message, channel, display_text, track_active=True
                                 )
                                 waiting_v2_cleared = True
                             else:
@@ -2165,6 +2202,9 @@ class LLMCog(commands.Cog, name="LLM"):
                         waiting_v2_cleared=waiting_v2_cleared,
                     )
                     if attached is not None:
+                        # 添付処理でメッセージ差し替えがあれば finally 用に同期する
+                        if attached[0]:
+                            sent_message = attached[0][0]
                         return attached
                 if len(full_response_text) <= SAFE_MESSAGE_LENGTH:
                     # 最終本文のみ（寄付ボタンは付けない — 待機中のみ表示）
@@ -2174,7 +2214,7 @@ class LLMCog(commands.Cog, name="LLM"):
                             if not waiting_v2_cleared:
                                 # ストリーム更新が無かった場合も V2 待機を外す
                                 sent_message = await self._replace_waiting_with_content(
-                                    sent_message, channel, final_content
+                                    sent_message, channel, final_content, track_active=True
                                 )
                                 waiting_v2_cleared = True
                             elif final_content != sent_message.content:
@@ -2209,7 +2249,7 @@ class LLMCog(commands.Cog, name="LLM"):
                         try:
                             if not waiting_v2_cleared:
                                 sent_message = await self._replace_waiting_with_content(
-                                    sent_message, channel, first_chunk
+                                    sent_message, channel, first_chunk, track_active=True
                                 )
                                 waiting_v2_cleared = True
                             else:
@@ -2259,11 +2299,14 @@ class LLMCog(commands.Cog, name="LLM"):
                     channel,
                     f"❌ **Error / エラー** ❌\n\n{error_msg}",
                     view=self._create_support_view(),
+                    track_active=True,
                 )
                 return None, "", None
         finally:
             # 正常終了・中断・例外いずれでも追跡を解除する
             self._unregister_active_response(sent_message)
+            # GUI 用ギルドカウントも必ず減算する
+            self._end_active_llm_guild(guild_id)
 
     def _convert_messages_for_gemini(self, messages: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], str]:
         system_prompts_content, other_messages, has_system_message = [], [], False
@@ -3096,7 +3139,7 @@ class LLMCog(commands.Cog, name="LLM"):
                 "the Attach Files permission in this channel. Please grant it."
             )
             sent_message = await self._replace_waiting_with_content(
-                sent_message, channel, notice
+                sent_message, channel, notice, track_active=True
             )
             return [sent_message], notice, None
         article_filename = str(cfg.get("article_filename", "article.md"))
@@ -3147,7 +3190,7 @@ class LLMCog(commands.Cog, name="LLM"):
                 else "Missing Attach Files permission."
             )
             sent_message = await self._replace_waiting_with_content(
-                sent_message, channel, notice
+                sent_message, channel, notice, track_active=True
             )
             return [sent_message], notice, None
         return [new_msg], history_text, None

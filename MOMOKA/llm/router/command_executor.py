@@ -12,7 +12,7 @@ from MOMOKA.llm.router.commands_catalog import (
     format_catalog_for_prompt,
     load_commands_catalog,
 )
-from MOMOKA.llm.router.json_extract import parse_llm_json_object
+from MOMOKA.llm.router.json_extract import extract_completion_text, parse_llm_json_object
 
 if TYPE_CHECKING:
     from MOMOKA.llm.llm_cog import LLMCog
@@ -193,7 +193,7 @@ async def run_command_mode(
                 temperature=0.1,
             )
             if resp.choices:
-                raw = (resp.choices[0].message.content or "").strip()
+                raw = extract_completion_text(resp)
             if raw:
                 break
         except Exception as e:

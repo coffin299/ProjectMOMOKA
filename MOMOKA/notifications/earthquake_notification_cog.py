@@ -280,16 +280,16 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
                     # ノイズを抑えるため WARNING にする
                     logger.warning(f"WebSocket切断中の書き込みを無視: {e}")
                 else:
-                    # その他の接続エラーは ERROR で残す
-                    logger.error(f"WebSocket接続エラー: {e}")
+                    # P2P WS は頻繁に途切れるため INFO で残す
+                    logger.info(f"WebSocket接続エラー: {e}")
                 # ネットワーク／切断統計を加算する
                 self.error_stats['network_errors'] += 1
                 self.error_stats['ws_disconnects'] += 1
                 # 壊れたセッションは次回作り直すためクローズする
                 await self._reset_ws_session()
             except aiohttp.ClientError as e:
-                # その他の aiohttp クライアントエラーを ERROR で残す
-                logger.error(f"WebSocket接続エラー: {e}")
+                # P2P WS は頻繁に途切れるため INFO で残す
+                logger.info(f"WebSocket接続エラー: {e}")
                 # 統計を加算する
                 self.error_stats['network_errors'] += 1
                 self.error_stats['ws_disconnects'] += 1

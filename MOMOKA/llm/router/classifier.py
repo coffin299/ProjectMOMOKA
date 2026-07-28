@@ -6,7 +6,11 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from MOMOKA.llm.router.json_extract import parse_llm_json_object
+from MOMOKA.llm.router.json_extract import (
+    completion_has_null_message,
+    extract_completion_text,
+    parse_llm_json_object,
+)
 
 if TYPE_CHECKING:
     # llm_cog への循環 import を避ける
@@ -18,6 +22,46 @@ logger = logging.getLogger(__name__)
 _VALID_MODES = frozenset({"conversation", "coding", "command", "unsupported"})
 # 許可言語コード
 _VALID_LANGS = frozenset({"ja", "en", "ko", "vi", "zh-CN", "zh-TW"})
+# NSFW 系キーワード（unsupported → conversation へ矯正する）
+_NSFW_ROUTE_MARKERS = (
+    "nsfw",
+    "r18",
+    "r-18",
+    "adult",
+    "explicit",
+    "lewd",
+    "hentai",
+    "nude",
+    "porn",
+    "erotic",
+    "エロ",
+    "性的",
+    "成人向",
+    "アダルト",
+    "ヌード",
+    "過激",
+    "r18g",
+)
+
+
+def _is_nsfw_related_request(user_text: str, reason: str = "") -> bool:
+    """ユーザー文またはルーター reason が NSFW 系かどうか。"""
+    # 判定用に小文字化した結合文字列を作る
+    combined = f"{user_text}\n{reason}".lower()
+    # いずれかのマーカーが含まれれば NSFW 系とみなす
+    return any(marker in combined for marker in _NSFW_ROUTE_MARKERS)
+
+
+def _normalize_route_mode(mode: str, user_text: str, reason: str) -> str:
+    """mode を正規化し、NSFW は unsupported から conversation へ矯正する。"""
+    # 未知 mode は conversation へ
+    if mode not in _VALID_MODES:
+        return "conversation"
+    # NSFW が unsupported に振られた場合は conversation へ上書き
+    if mode == "unsupported" and _is_nsfw_related_request(user_text, reason):
+        return "conversation"
+    # それ以外はそのまま
+    return mode
 
 
 @dataclass
@@ -131,10 +175,16 @@ async def classify_request(
                 temperature=0.0,
                 suppress_thinking=True,
             )
-            # 本文取り出し
-            raw = ""
-            if resp.choices:
-                raw = (resp.choices[0].message.content or "").strip()
+            # 本文取り出し（message が null のモデル応答にも対応）
+            raw = extract_completion_text(resp)
+            # message 自体が null なら次モデルへ
+            if completion_has_null_message(resp):
+                logger.warning(
+                    "[%s] router model %s returned null message; trying next",
+                    cog._bot_tag(),
+                    model_string,
+                )
+                continue
             # JSON 解釈（パース失敗はキー問題ではないので次モデルへ）
             data = _parse_route_json(raw)
             if not data:
@@ -152,14 +202,23 @@ async def classify_request(
                 continue
             # mode 正規化
             mode = str(data.get("mode") or "conversation").strip().lower()
+            # reason（NSFW 矯正判定にも使う）
+            reason = str(data.get("reason") or "")[:80]
+            # NSFW は unsupported ではなく conversation へ
+            normalized_mode = _normalize_route_mode(mode, user_text, reason)
+            if normalized_mode != mode:
+                logger.info(
+                    "[%s] router remapped %s→conversation (NSFW request)",
+                    cog._bot_tag(),
+                    mode,
+                )
+                mode = normalized_mode
             if mode not in _VALID_MODES:
                 mode = "conversation"
             # lang 正規化
             lang = str(data.get("lang") or "").strip()
             if lang not in _VALID_LANGS:
                 lang = _heuristic_lang(user_text)
-            # reason
-            reason = str(data.get("reason") or "")[:80]
             logger.info(
                 "[%s] router classified mode=%s lang=%s via %s (%s)",
                 cog._bot_tag(),

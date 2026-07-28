@@ -63,7 +63,7 @@
 > **Built-ins（セルフホスト時 / when self-hosting）**
 > - Image generation — `MOMOKA/generator/image` (diffusers) / `image_generator_config`
 > - Style-Bert-VITS2 TTS — `third_party/style_bert_vits2` + wrapper `MOMOKA/generator/tts` (see `NOTICE`)
-> - Log viewer GUI — `MOMOKA/GUI/` (version: `MOMOKA/version.py`; Discord status date = last git commit; `[USER_INPUT]` yellow-green / `[LLM_RESPONSE]` cyan; `[PLANA]` / `[ARONA]` tags unchanged)
+> - Log viewer GUI — `MOMOKA/GUI/` (version: `MOMOKA/version.py`; Discord status date = last git commit; `[USER_INPUT]` yellow-green / `[LLM_RESPONSE]` cyan; `[PLANA]` / `[ARONA]` tags unchanged; status bar **VC / LLM** = PLANA + ARONA combined active guild counts)
 
 ### Key Features / 主な機能
 

@@ -7,7 +7,7 @@ import queue
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
-from MOMOKA.GUI.bot_bridge import get_bot_ref
+from MOMOKA.GUI.bot_bridge import aggregate_cog_metric, get_bot_ref
 from MOMOKA.GUI.theme import (
     apply_windows_dark_mode_to_foreground,
     get_theme_colors,
@@ -852,35 +852,29 @@ class LogViewerApp:
         about_window.wait_window()
 
     def poll_status(self) -> None:
-        """VC / LLM 稼働ギルド数を約 1 秒ごとに更新する。"""
+        """VC / LLM 稼働ギルド数を約 1 秒ごとに更新する（PLANA + ARONA 合算）。"""
         try:
-            # Bot 参照を橋渡しモジュールから取る
-            bot = get_bot_ref()
-            # 未生成ならプレースホルダを維持する
-            if bot is None:
+            # Bot 未起動ならプレースホルダを維持する
+            if get_bot_ref() is None:
                 self.vc_status_var.set("VC: -")
                 self.llm_status_var.set("LLM: -")
             else:
-                # MusicCog から接続中ギルド数を取得する
-                music_cog = bot.get_cog("music_cog")
-                if music_cog is not None and hasattr(
-                    music_cog, "get_active_vc_guild_count"
-                ):
-                    self.vc_status_var.set(
-                        f"VC: {music_cog.get_active_vc_guild_count()}"
-                    )
-                else:
+                # 全 Bot の VC 接続ギルド数を合算する
+                vc_count = aggregate_cog_metric(
+                    "music_cog", "get_active_vc_guild_count"
+                )
+                if vc_count is None:
                     self.vc_status_var.set("VC: -")
-                # LLMCog から生成中ギルド数を取得する
-                llm_cog = bot.get_cog("LLM")
-                if llm_cog is not None and hasattr(
-                    llm_cog, "get_active_llm_guild_count"
-                ):
-                    self.llm_status_var.set(
-                        f"LLM: {llm_cog.get_active_llm_guild_count()}"
-                    )
                 else:
+                    self.vc_status_var.set(f"VC: {vc_count}")
+                # 全 Bot の LLM 生成中ギルド数を合算する
+                llm_count = aggregate_cog_metric(
+                    "LLM", "get_active_llm_guild_count"
+                )
+                if llm_count is None:
                     self.llm_status_var.set("LLM: -")
+                else:
+                    self.llm_status_var.set(f"LLM: {llm_count}")
         except Exception:
             # GUI スレッドを落とさないため表示はそのまま維持する
             pass

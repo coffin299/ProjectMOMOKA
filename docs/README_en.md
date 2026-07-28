@@ -178,7 +178,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    ```
    On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
-   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit).
+   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **VC / LLM** counts combine PLANA + ARONA active guilds.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
    Provider v1.3.1. MOMOKA starts it before the bots, checks `/ping`, and
@@ -327,7 +327,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 ### Agent router
 
-Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension. Leaked `<thought>` / `<think>` blocks are stripped before JSON parsing, and JSON embedded inside thoughts is also scanned. Google Gemma router calls use `thinking_level=minimal` to suppress thought output. On failure, all API keys for the same provider are tried before moving to `fallback_models`.
+Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. **NSFW / adult requests are routed to conversation**, not unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension. Leaked `<thought>` / `<think>` blocks are stripped before JSON parsing, and JSON embedded inside thoughts is also scanned. Google Gemma router calls use `thinking_level=minimal` to suppress thought output. On failure, all API keys for the same provider are tried before moving to `fallback_models`.
 
 
 ### API key rotation

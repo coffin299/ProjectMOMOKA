@@ -980,12 +980,13 @@ class YtdlpGdriveCog(commands.Cog):
             )
             await interaction.followup.send(view=view)
         except Exception as e:
-            # エラー LayoutView
+            # エラー文言（1 回だけ生成しログ重複を防ぐ）
+            error_msg = self.exception_handler.handle_exception(e, lang=lang)
             err_view = StatusLayoutView(
                 pick_str(
                     lang,
-                    ja=f"### ❌ エラー\n{self.exception_handler.handle_exception(e, lang=lang)}",
-                    en=f"### ❌ Error\n{self.exception_handler.handle_exception(e, lang=lang)}",
+                    ja=f"### ❌ エラー\n{error_msg}",
+                    en=f"### ❌ Error\n{error_msg}",
                 ),
                 accent=_ACCENT_ERROR,
             )

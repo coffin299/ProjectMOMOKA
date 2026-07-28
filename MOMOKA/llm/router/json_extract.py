@@ -19,6 +19,33 @@ _REASONING_OPEN_RE = re.compile(
 _MODE_KEY_RE = re.compile(r'"mode"\s*:', re.IGNORECASE)
 
 
+def extract_completion_text(resp: Any) -> str:
+    """Chat completion 応答から assistant 本文を安全に取り出す。"""
+    # choices 配列を取り出す
+    choices = getattr(resp, "choices", None) or []
+    # 空なら本文なし
+    if not choices:
+        return ""
+    # 先頭 choice の message を取る（None のモデルもある）
+    message = getattr(choices[0], "message", None)
+    # message 自体が null なら空文字
+    if message is None:
+        return ""
+    # content が null でも空文字に正規化する
+    return (getattr(message, "content", None) or "").strip()
+
+
+def completion_has_null_message(resp: Any) -> bool:
+    """choices はあるが message が null の異常応答か判定する。"""
+    # choices 配列を取り出す
+    choices = getattr(resp, "choices", None) or []
+    # choice が無ければ null message ではない
+    if not choices:
+        return False
+    # message が明示的に None なら True
+    return getattr(choices[0], "message", None) is None
+
+
 def _strip_reasoning_blocks(text: str) -> str:
     """モデルが漏らした thought / think ブロックを除去する。"""
     # 閉じタグ付きブロックを先に落とす

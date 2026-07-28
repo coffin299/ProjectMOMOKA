@@ -80,25 +80,33 @@ class MusicCogExceptionHandler:
             # 例外メッセージそのものを返す
             return self.get_message("error_fetching_song", error=err_text)
 
-        logger.error(f"{guild_log_info}: An error occurred: {error}", exc_info=True)
-
-        # --- Voice Channel Connection Errors ---
+        # --- Voice Channel Connection Errors（Discord 側の一時的失敗は想定内） ---
         if isinstance(error, asyncio.TimeoutError):
+            # 接続タイムアウトは頻発するため traceback なし WARNING にする
+            logger.warning("%s: Voice channel connection timed out", guild_log_info)
             return self.get_message("error_playing", error="ボイスチャンネルへの接続がタイムアウトしました。")
         if isinstance(error, discord.ClientException):
+            # 既に接続中・権限不足なども想定内として WARNING にする
+            logger.warning("%s: Voice channel connection failed: %s", guild_log_info, error)
             return self.get_message("error_playing", error="ボイスチャンネルへの接続に失敗しました。ボットが既に他の操作を行っている可能性があります。")
 
         # --- Song Fetching/Extraction Errors ---
         # ytdlp_wrapperからのRuntimeErrorを想定
         if isinstance(error, RuntimeError) and ("ストリーム" in str(error) or "DRM" in str(error) or "非対応" in str(error)):
+            # 取得失敗は想定内として WARNING にする
+            logger.warning("%s: Song fetch error: %s", guild_log_info, error)
             return self.get_message("error_fetching_song", error=str(error))
 
         # --- Playback Errors ---
         # FFmpegが見つからない場合など
         if "No such file or directory: 'ffmpeg'" in str(error):
-             return self.get_message("error_playing", error="再生に必要なコンポーネント(FFmpeg)が見つかりません。")
+            # 環境未設定は ERROR で残す
+            logger.error("%s: FFmpeg not found", guild_log_info)
+            return self.get_message("error_playing", error="再生に必要なコンポーネント(FFmpeg)が見つかりません。")
 
         # --- Generic Fallback ---
+        # 想定外のみ ERROR + traceback を残す
+        logger.error(f"{guild_log_info}: An error occurred: {error}", exc_info=True)
         return self.get_message("error_playing", error=f"予期せぬエラーが発生しました: {type(error).__name__}")
 
     async def handle_generic_command_error(self, ctx_or_interaction: discord.Interaction | commands.Context, error: Exception):

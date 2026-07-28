@@ -53,8 +53,38 @@ def _classify_ytdlp_download_error(error_text: str) -> str:
     # 選択フォーマットが取得できない場合
     if "requested format is not available" in lowered:
         return "format_unavailable"
+    # コンテンツ制限（非公開・年齢制限・地域制限・Instagram 等）
+    content_restricted_markers = (
+        "isn't available to everyone",
+        "isn't available",
+        "video unavailable",
+        "private video",
+        "sign in to confirm",
+        "members only",
+        "geo restricted",
+        "not available in your country",
+        "removed by the uploader",
+        "login required",
+        "account authentication",
+        "this content isn't available",
+    )
+    # いずれかに一致すればコンテンツ制限扱い
+    if any(marker in lowered for marker in content_restricted_markers):
+        return "content_restricted"
     # 上記以外は汎用 DownloadError 扱い
     return "generic"
+
+
+def _is_expected_ytdlp_error(e: Exception) -> bool:
+    """ユーザー入力・コンテンツ側の問題で起きる想定内エラーか判定する。"""
+    # DownloadError は大半が URL / 権限 / コンテンツ制限由来
+    if isinstance(e, yt_dlp.utils.DownloadError):
+        return True
+    # Google Drive API の 4xx もユーザー設定起因が多い
+    if isinstance(e, HttpError) and e.resp.status < 500:
+        return True
+    # それ以外は想定外
+    return False
 
 
 class LLMExceptionHandler:
@@ -106,7 +136,11 @@ class YTDLPExceptionHandler:
         Returns:
             str: Discordに返信するエラーメッセージ。
         """
-        logger.error(f"An error occurred in YTDLP/GDrive process: {e}", exc_info=True)
+        # 想定内（URL / コンテンツ制限）は WARNING、それ以外は ERROR + traceback
+        if _is_expected_ytdlp_error(e):
+            logger.warning("YTDLP/GDrive expected error: %s", e)
+        else:
+            logger.error(f"An error occurred in YTDLP/GDrive process: {e}", exc_info=True)
 
         if isinstance(e, yt_dlp.utils.DownloadError):
             # yt-dlp の長い詳細を Discord の表示上限内へ収める
@@ -141,6 +175,21 @@ class YTDLPExceptionHandler:
                     en=(
                         f"The selected format is not available. "
                         f"Please try another quality or a different URL."
+                        f"\n```{error_detail}```"
+                    ),
+                )
+            # 非公開・年齢制限・地域制限などコンテンツ側の制限
+            if error_kind == "content_restricted":
+                return pick_str(
+                    lang,
+                    ja=(
+                        f"このコンテンツはダウンロードできません。"
+                        f"非公開・制限付き・地域限定の可能性があります。"
+                        f"\n```{error_detail}```"
+                    ),
+                    en=(
+                        f"This content cannot be downloaded. "
+                        f"It may be private, restricted, or region-locked."
                         f"\n```{error_detail}```"
                     ),
                 )
