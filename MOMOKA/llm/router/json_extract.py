@@ -15,6 +15,8 @@ _REASONING_OPEN_RE = re.compile(
     r"<(thought|think)\b[^>]*>",
     re.IGNORECASE,
 )
+# ルーター JSON の必須キーっぽい目印
+_MODE_KEY_RE = re.compile(r'"mode"\s*:', re.IGNORECASE)
 
 
 def _strip_reasoning_blocks(text: str) -> str:
@@ -30,28 +32,11 @@ def _strip_reasoning_blocks(text: str) -> str:
     return cleaned.strip()
 
 
-def parse_llm_json_object(raw: str) -> Optional[Dict[str, Any]]:
-    """モデル出力から JSON オブジェクトを取り出す。失敗時は None。"""
-    # 前後空白を落とす
-    text = (raw or "").strip()
-    # 空なら失敗
-    if not text:
+def _loads_dict(text: str) -> Optional[Dict[str, Any]]:
+    """文字列を dict JSON として読む。失敗時は None。"""
+    # 空は無効
+    if not text or not text.strip():
         return None
-    # 思考タグを除去してから抽出する
-    text = _strip_reasoning_blocks(text)
-    # 除去後に空なら失敗
-    if not text:
-        return None
-    # Markdown フェンス内の JSON を優先
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL | re.IGNORECASE)
-    # フェンスがあればその中身を使う
-    if fence:
-        text = fence.group(1)
-    # 最初の {…} を貪欲に拾う
-    brace = re.search(r"\{.*\}", text, re.DOTALL)
-    # ブレースがあればその範囲を使う
-    if brace:
-        text = brace.group(0)
     try:
         # JSON として解釈する
         data = json.loads(text)
@@ -62,3 +47,72 @@ def parse_llm_json_object(raw: str) -> Optional[Dict[str, Any]]:
     if not isinstance(data, dict):
         return None
     return data
+
+
+def _extract_fence_or_brace(text: str) -> Optional[Dict[str, Any]]:
+    """フェンス / ブレース抽出からのパースを試す。"""
+    # 作業用コピー
+    candidate = text
+    # Markdown フェンス内の JSON を優先
+    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", candidate, re.DOTALL | re.IGNORECASE)
+    # フェンスがあればその中身を使う
+    if fence:
+        parsed = _loads_dict(fence.group(1))
+        # 成功なら返す
+        if parsed is not None:
+            return parsed
+    # 最初の {…} を貪欲に拾う
+    brace = re.search(r"\{.*\}", candidate, re.DOTALL)
+    # ブレースがあればその範囲を試す
+    if brace:
+        return _loads_dict(brace.group(0))
+    return None
+
+
+def _scan_json_objects_with_mode(text: str) -> Optional[Dict[str, Any]]:
+    """本文のどこか（thought 内含む）から mode キー付き JSON を探す。"""
+    # 逐次デコーダで { 位置から raw_decode する
+    decoder = json.JSONDecoder()
+    # 最後に見つかった mode 付きオブジェクトを採用する
+    last_hit: Optional[Dict[str, Any]] = None
+    # 先頭から走査する
+    for index, char in enumerate(text):
+        # オブジェクト開始以外はスキップ
+        if char != "{":
+            continue
+        try:
+            # この位置から JSON オブジェクトを読む
+            obj, _end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            # この { は JSON ではない
+            continue
+        # dict かつ mode があるものだけ候補にする
+        if isinstance(obj, dict) and "mode" in obj:
+            last_hit = obj
+    return last_hit
+
+
+def parse_llm_json_object(raw: str) -> Optional[Dict[str, Any]]:
+    """モデル出力から JSON オブジェクトを取り出す。失敗時は None。"""
+    # 前後空白を落とす
+    text = (raw or "").strip()
+    # 空なら失敗
+    if not text:
+        return None
+    # 思考タグ除去後の本文を作る
+    stripped = _strip_reasoning_blocks(text)
+    # 除去後に中身があれば通常抽出を試す
+    if stripped:
+        hit = _extract_fence_or_brace(stripped)
+        # 除去後テキストから取れたら成功
+        if hit is not None:
+            return hit
+    # thought 内に JSON が埋もれている場合も拾う
+    if _MODE_KEY_RE.search(text):
+        # 生テキスト全体をスキャンする
+        embedded = _scan_json_objects_with_mode(text)
+        # 見つかれば返す
+        if embedded is not None:
+            return embedded
+    # 除去前テキストでもフェンス／ブレースを最後に試す
+    return _extract_fence_or_brace(text)

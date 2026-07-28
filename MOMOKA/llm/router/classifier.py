@@ -123,12 +123,13 @@ async def classify_request(
                 continue
             # Gemini 形式が必要なら変換
             api_messages = cog._ensure_messages_for_model(messages, model_string)
-            # キー巡回付きの短め完了呼び出し
+            # キー巡回付きの短め完了呼び出し（Gemma thought 抑制付き）
             resp, client = await cog._chat_completion_with_key_rotation(
                 client,
                 messages=api_messages,
-                max_tokens=256,
+                max_tokens=4096,
                 temperature=0.0,
+                suppress_thinking=True,
             )
             # 本文取り出し
             raw = ""
@@ -137,10 +138,15 @@ async def classify_request(
             # JSON 解釈（パース失敗はキー問題ではないので次モデルへ）
             data = _parse_route_json(raw)
             if not data:
+                # thought のみ残った切り捨てっぽいかをログに残す
+                thought_only = bool(
+                    re.search(r"<(thought|think)\b", raw or "", re.IGNORECASE)
+                ) and not re.search(r'"mode"\s*:', raw or "", re.IGNORECASE)
                 logger.warning(
-                    "[%s] router JSON parse failed for %s: %r",
+                    "[%s] router JSON parse failed for %s%s: %r",
                     cog._bot_tag(),
                     model_string,
+                    " (thought-only/truncated?)" if thought_only else "",
                     raw[:200],
                 )
                 continue

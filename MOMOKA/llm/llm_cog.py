@@ -2482,6 +2482,7 @@ class LLMCog(commands.Cog, name="LLM"):
         max_tokens: int,
         temperature: float,
         stream: bool = False,
+        suppress_thinking: bool = False,
     ) -> Tuple[Any, openai.AsyncOpenAI]:
         """非ストリーム completion を同一プロバイダーの全キーで試す。尽きたら最後の例外を再送出。"""
         # プロバイダー名をクライアントから取る
@@ -2494,6 +2495,21 @@ class LLMCog(commands.Cog, name="LLM"):
         last_error: Optional[Exception] = None
         # 作業用クライアント参照
         working = client
+        # Gemma / Google 向け thinking 抑制用 extra_body（ルーター等）
+        thinking_extra: Optional[Dict[str, Any]] = None
+        # Google 直結のみ（NIM 等に google.thinking_config を送らない）
+        if suppress_thinking and provider_name.lower() == "google":
+            # Gemma 4 は thinking_level=minimal で thought を抑えられる
+            thinking_extra = {
+                "google": {
+                    "thinking_config": {
+                        "thinking_level": "minimal",
+                        "include_thoughts": False,
+                    }
+                }
+            }
+        # thinking 抑制を外して同キー再試行したか
+        thinking_retry_done = False
         # 同一モデル内でキーを順に試す
         for attempt in range(num_keys):
             # 現在のキーインデックスを読む
@@ -2501,14 +2517,19 @@ class LLMCog(commands.Cog, name="LLM"):
             # ログ用に使用キーを記録する
             working.last_used_key_index = current_key_index
             try:
+                # create 引数を組み立てる
+                create_kwargs: Dict[str, Any] = {
+                    "model": working.model_name_for_api_calls,
+                    "messages": messages,
+                    "stream": stream,
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                }
+                # thinking 抑制を付ける
+                if thinking_extra is not None:
+                    create_kwargs["extra_body"] = thinking_extra
                 # completion を発行する
-                resp = await working.chat.completions.create(
-                    model=working.model_name_for_api_calls,
-                    messages=messages,
-                    stream=stream,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                )
+                resp = await working.chat.completions.create(**create_kwargs)
                 # 成功したら応答とクライアントを返す
                 return resp, working
             except (openai.RateLimitError, openai.InternalServerError) as e:
@@ -2538,6 +2559,24 @@ class LLMCog(commands.Cog, name="LLM"):
                 last_error = e
                 # ステータスを取り出す
                 status_code = getattr(e, "status_code", None)
+                # thinking 抑制パラメータ非対応なら外して同キー再試行する（1 回だけ）
+                if (
+                    thinking_extra is not None
+                    and not thinking_retry_done
+                    and isinstance(status_code, int)
+                    and status_code == 400
+                ):
+                    logger.warning(
+                        "⚠️ thinking suppress rejected by '%s' (400); retrying without it. Details: %s",
+                        provider_name,
+                        e,
+                    )
+                    # 以降の試行では付けない
+                    thinking_extra = None
+                    # 再試行済みフラグ
+                    thinking_retry_done = True
+                    # 同キーでもう一度（attempt は進めない扱いのため continue）
+                    continue
                 logger.warning(
                     "⚠️ API status error (%s) for provider '%s' with key index %s (router/non-stream). Details: %s",
                     status_code,
