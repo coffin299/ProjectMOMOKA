@@ -2495,16 +2495,19 @@ class LLMCog(commands.Cog, name="LLM"):
         last_error: Optional[Exception] = None
         # 作業用クライアント参照
         working = client
-        # Gemma / Google 向け thinking 抑制用 extra_body（ルーター等）
+        # Gemma / Google 向け thinking 抑制（OpenAI 互換の extra_body 二重ネスト）
         thinking_extra: Optional[Dict[str, Any]] = None
         # Google 直結のみ（NIM 等に google.thinking_config を送らない）
         if suppress_thinking and provider_name.lower() == "google":
-            # Gemma 4 は thinking_level=minimal で thought を抑えられる
+            # SDK の extra_body はリクエスト本体へマージされるため、
+            # REST の top-level "extra_body.google" になるようもう一段ネストする
             thinking_extra = {
-                "google": {
-                    "thinking_config": {
-                        "thinking_level": "minimal",
-                        "include_thoughts": False,
+                "extra_body": {
+                    "google": {
+                        "thinking_config": {
+                            "thinking_level": "minimal",
+                            "include_thoughts": False,
+                        }
                     }
                 }
             }
