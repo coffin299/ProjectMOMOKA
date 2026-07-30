@@ -419,6 +419,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 3. `http://127.0.0.1:4416/ping` がversion `1.3.1`を返すことを確認
 4. Providerビルドが無い場合はNode.js 20+をPATHへ入れ、`startMOMOKA.bat`を再実行
 5. `tv client ... DRM protected` が出る場合は、古い設定/プロセスではなく現行MOMOKAが起動したyt-dlpを使用しているか確認
+6. `Voice WS timeout; reconnecting in …`（WARN）は discord.py の一時切断＋自動再接続。再接続後に再生が戻れば問題なし。ループする場合はネットワークを確認
 
 ### 画像生成ができない
 

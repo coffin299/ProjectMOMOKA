@@ -79,6 +79,38 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("asyncio").setLevel(logging.WARNING)
 logging.getLogger("PIL").setLevel(logging.WARNING)
 
+
+class _VoiceWsTimeoutLogFilter(logging.Filter):
+    """discord.voice_state の WS TimeoutError 再接続ログを1行 WARN に圧縮する。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # 対象メッセージ以外はそのまま通す
+        if "Disconnected from voice" not in record.msg:
+            return True
+        # 再接続待ちログ以外はそのまま通す
+        if "Reconnecting" not in record.msg:
+            return True
+        # 例外種別を取り出す（無い場合は対象外）
+        exc = record.exc_info[1] if record.exc_info else None
+        # TimeoutError 以外（ConnectionClosed 等）は ERROR+traceback のまま残す
+        if not isinstance(exc, TimeoutError):
+            return True
+        # ERROR を WARNING へ落とす
+        record.levelno = logging.WARNING
+        # レベル名も合わせて書き換え
+        record.levelname = "WARNING"
+        # traceback を出さない
+        record.exc_info = None
+        # 整形済み traceback キャッシュも消す
+        record.exc_text = None
+        # 1行メッセージに差し替える（args の retry 秒を再利用）
+        record.msg = "Voice WS timeout; reconnecting in %.2fs."
+        return True
+
+
+# VC 制御 WS の一時切断 traceback を抑制する
+logging.getLogger("discord.voice_state").addFilter(_VoiceWsTimeoutLogFilter())
+
 # GUI ログキューへルートロガー / stdout を接続する
 # 注意: DiscordLogHandler は setup_hook 内で追加されるため、GUI と Discord の両方にログが送信される
 log_queue, queue_handler, stdout_capture = attach_gui_logging(root_logger)

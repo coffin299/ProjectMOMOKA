@@ -398,6 +398,7 @@ Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.
 3. Confirm `http://127.0.0.1:4416/ping` reports version `1.3.1`
 4. If the Provider build is missing, install Node.js 20+ and rerun `startMOMOKA.bat`
 5. If `tv client ... DRM protected` appears, confirm the current MOMOKA-managed yt-dlp process is being used
+6. `Voice WS timeout; reconnecting in …` (WARN) is a transient discord.py voice WS disconnect with auto-reconnect; ignore if playback resumes. If it loops, check the network
 
 ### Image generation fails
 
