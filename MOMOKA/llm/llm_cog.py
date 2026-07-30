@@ -3005,79 +3005,79 @@ class LLMCog(commands.Cog, name="LLM"):
             # ストリームからチャンクを非同期で順番に受け取るループ処理
             try:
                 async for chunk in stream:
-                # チャンク内に選択肢（choices）が含まれていない場合は処理をスキップする
-                if not chunk.choices:
-                    # 次のチャンクの処理へ進む
-                    continue
-                # ストリームの最初の選択肢オブジェクトを取得する
-                choice = chunk.choices[0]
-                # 選択肢に終了理由（finish_reason）が設定されているか確認する
-                if choice.finish_reason:
-                    # 終了理由を後続処理のために記録しておく
-                    finish_reason = choice.finish_reason
-                # 差分（delta）オブジェクトを取得する
-                delta = choice.delta
-                # 差分オブジェクトが存在し、かつ内容（content）が含まれているか判定する
-                if delta and delta.content:
-                    # 抽出した文字列を格納するための変数を初期化する
-                    content_str = ""
-                    # 内容が通常の文字列型であるか判定する
-                    if isinstance(delta.content, str):
-                        # 文字列型であればそのまま内容を代入する
-                        content_str = delta.content
-                    # 内容がリスト型（Gemini APIなどで稀に返る形式）であるか判定する
-                    elif isinstance(delta.content, list):
-                        # リスト内の各要素を順番に処理してテキストを抽出する
-                        for part in delta.content:
-                            # 要素が文字列型である場合
-                            if isinstance(part, str):
-                                # 文字列をそのまま結合用変数に追加する
-                                content_str += part
-                            # 要素が辞書型である場合
-                            elif isinstance(part, dict):
-                                # "text"キーの値を取り出し、なければ要素全体を文字列化して追加する
-                                content_str += part.get("text", str(part))
-                            # それ以外の型（オブジェクトなど）である場合
-                            else:
-                                # オブジェクトに"text"属性があるか確認し、取得する
-                                text_attr = getattr(part, "text", None)
-                                # "text"属性が存在する場合
-                                if text_attr is not None:
-                                    # 属性の値を文字列として追加する
-                                    content_str += text_attr
-                                # 属性が存在しない場合
+                    # チャンク内に選択肢（choices）が含まれていない場合は処理をスキップする
+                    if not chunk.choices:
+                        # 次のチャンクの処理へ進む
+                        continue
+                    # ストリームの最初の選択肢オブジェクトを取得する
+                    choice = chunk.choices[0]
+                    # 選択肢に終了理由（finish_reason）が設定されているか確認する
+                    if choice.finish_reason:
+                        # 終了理由を後続処理のために記録しておく
+                        finish_reason = choice.finish_reason
+                    # 差分（delta）オブジェクトを取得する
+                    delta = choice.delta
+                    # 差分オブジェクトが存在し、かつ内容（content）が含まれているか判定する
+                    if delta and delta.content:
+                        # 抽出した文字列を格納するための変数を初期化する
+                        content_str = ""
+                        # 内容が通常の文字列型であるか判定する
+                        if isinstance(delta.content, str):
+                            # 文字列型であればそのまま内容を代入する
+                            content_str = delta.content
+                        # 内容がリスト型（Gemini APIなどで稀に返る形式）であるか判定する
+                        elif isinstance(delta.content, list):
+                            # リスト内の各要素を順番に処理してテキストを抽出する
+                            for part in delta.content:
+                                # 要素が文字列型である場合
+                                if isinstance(part, str):
+                                    # 文字列をそのまま結合用変数に追加する
+                                    content_str += part
+                                # 要素が辞書型である場合
+                                elif isinstance(part, dict):
+                                    # "text"キーの値を取り出し、なければ要素全体を文字列化して追加する
+                                    content_str += part.get("text", str(part))
+                                # それ以外の型（オブジェクトなど）である場合
                                 else:
-                                    # 要素自体を文字列に変換して追加する
-                                    content_str += str(part)
-                    # 内容が辞書型であるか判定する
-                    elif isinstance(delta.content, dict):
-                        # "text"キーの値を取得し、なければ辞書全体を文字列化して格納する
-                        content_str = delta.content.get("text", str(delta.content))
-                    # 文字列、リスト、辞書のいずれでもない未知の型の場合
-                    else:
-                        # 安全性のためにオブジェクト全体を文字列に変換して格納する
-                        content_str = str(delta.content)
+                                    # オブジェクトに"text"属性があるか確認し、取得する
+                                    text_attr = getattr(part, "text", None)
+                                    # "text"属性が存在する場合
+                                    if text_attr is not None:
+                                        # 属性の値を文字列として追加する
+                                        content_str += text_attr
+                                    # 属性が存在しない場合
+                                    else:
+                                        # 要素自体を文字列に変換して追加する
+                                        content_str += str(part)
+                        # 内容が辞書型であるか判定する
+                        elif isinstance(delta.content, dict):
+                            # "text"キーの値を取得し、なければ辞書全体を文字列化して格納する
+                            content_str = delta.content.get("text", str(delta.content))
+                        # 文字列、リスト、辞書のいずれでもない未知の型の場合
+                        else:
+                            # 安全性のためにオブジェクト全体を文字列に変換して格納する
+                            content_str = str(delta.content)
 
-                    # 抽出された文字列が空でないか確認する
-                    if content_str:
-                        # アシスタントの応答全体を記録する変数に文字列を追加する
-                        assistant_response_content += content_str
-                        # 呼び出し元へストリーミングのチャンク文字列を返却する
-                        yield content_str
-                if delta and delta.tool_calls:
-                    for tool_call_chunk in delta.tool_calls:
-                        chunk_index = tool_call_chunk.index if tool_call_chunk.index is not None else 0
-                        if len(tool_calls_buffer) <= chunk_index:
-                            tool_calls_buffer.append(
-                                {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-                        buffer = tool_calls_buffer[chunk_index]
-                        if tool_call_chunk.id:
-                            buffer["id"] = tool_call_chunk.id
-                        if tool_call_chunk.function:
-                            if tool_call_chunk.function.name:
-                                buffer["function"]["name"] = tool_call_chunk.function.name
-                            if tool_call_chunk.function.arguments:
-                                buffer["function"]["arguments"] += tool_call_chunk.function.arguments
+                        # 抽出された文字列が空でないか確認する
+                        if content_str:
+                            # アシスタントの応答全体を記録する変数に文字列を追加する
+                            assistant_response_content += content_str
+                            # 呼び出し元へストリーミングのチャンク文字列を返却する
+                            yield content_str
+                    if delta and delta.tool_calls:
+                        for tool_call_chunk in delta.tool_calls:
+                            chunk_index = tool_call_chunk.index if tool_call_chunk.index is not None else 0
+                            if len(tool_calls_buffer) <= chunk_index:
+                                tool_calls_buffer.append(
+                                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                            buffer = tool_calls_buffer[chunk_index]
+                            if tool_call_chunk.id:
+                                buffer["id"] = tool_call_chunk.id
+                            if tool_call_chunk.function:
+                                if tool_call_chunk.function.name:
+                                    buffer["function"]["name"] = tool_call_chunk.function.name
+                                if tool_call_chunk.function.arguments:
+                                    buffer["function"]["arguments"] += tool_call_chunk.function.arguments
             except _TRANSIENT_LLM_NETWORK_ERRORS as e:
                 if assistant_response_content or tool_calls_buffer:
                     logger.warning(
