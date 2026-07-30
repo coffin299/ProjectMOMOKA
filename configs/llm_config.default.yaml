@@ -201,14 +201,27 @@ llm:
     empty_reply: '何かお話しください。
 
       Please say something.'
-    msg_max_image_size: ⚠️ 一度に処理できる画像は {max_images} 枚までです。
-    ratelimit_error: ⚠️ AIが現在大変混雑しています。しばらく経ってからもう一度お試しください。
+    msg_max_image_size: '⚠️ 一度に処理できる画像は {max_images} 枚までです。
+
+      ⚠️ You can process up to {max_images} images at once.'
+    ratelimit_error: '⚠️ AIが現在大変混雑しています。しばらく経ってからもう一度お試しください。
+
+      ⚠️ The AI is currently very busy. Please try again in a little while.'
+    connection_error: '⚠️ AIサービスとの通信が切断されました。しばらくしてからもう一度お試しください。
+
+      ⚠️ Connection to the AI service was interrupted. Check your network or try again shortly.'
     busy_error: '⚠️ 現在リクエストが集中しています。しばらくしてからもう一度お試しください。
 
       ⚠️ The bot is busy with many requests. Please try again shortly.'
-    api_status_error: '⚠️AIとの通信でエラーが発生しました。 (Code: {status_code})'
-    general_error: ⚠️ 予期しないエラーが発生しました。もう一度お試しください。
-    tool_loop_timeout: ⚠️ツールの処理が複雑すぎたため、応答を生成できませんでした。
+    api_status_error: '⚠️ AIとの通信でエラーが発生しました。(Code: {status_code})
+
+      ⚠️ An error occurred while communicating with the AI. (Code: {status_code})'
+    general_error: '⚠️ 予期しないエラーが発生しました。もう一度お試しください。
+
+      ⚠️ An unexpected error occurred. Please try again.'
+    tool_loop_timeout: '⚠️ ツールの処理が複雑すぎたため、応答を生成できませんでした。
+
+      ⚠️ Tool processing was too complex to generate a response.'
     content_filter_error: 'AIの応答がコンテンツフィルターによってブロックされました。不適切な内容が含まれている可能性があります。
 
       The response was blocked by the content filter, likely due to inappropriate content.'

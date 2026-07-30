@@ -4,6 +4,11 @@ import logging
 import re
 import openai
 
+try:
+    import httpx
+except ImportError:
+    httpx = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +68,27 @@ class LLMExceptionHandler:
             logger.error(f"LLM API connection error: {exception}")
             return self.config.get('connection_error',
                                    "AIサービスへの接続に失敗しました。ネットワーク状態を確認するか、後でもう一度お試しください。")
+
+        if isinstance(exception, openai.APITimeoutError):
+            logger.error(f"LLM API timeout error: {exception}")
+            return self.config.get('connection_error',
+                                   "AIサービスへの接続がタイムアウトしました。しばらくしてからもう一度お試しください。")
+
+        if httpx is not None and isinstance(
+            exception,
+            (
+                httpx.RemoteProtocolError,
+                httpx.ReadError,
+                httpx.ConnectError,
+                httpx.WriteError,
+                httpx.PoolTimeout,
+            ),
+        ):
+            logger.error(f"LLM API transient network error: {exception}")
+            return self.config.get(
+                'connection_error',
+                "AIサービスとの通信が途中で切断されました。ネットワーク状態を確認するか、後でもう一度お試しください。",
+            )
 
         if isinstance(exception, openai.APIStatusError):
             status_code = exception.status_code

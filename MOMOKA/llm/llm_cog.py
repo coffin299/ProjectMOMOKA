@@ -25,6 +25,7 @@ from typing import (
 
 import aiohttp
 import discord
+import httpx
 import openai
 from discord import app_commands
 from discord.ext import commands
@@ -77,6 +78,21 @@ except ImportError:
                     "Install with: pip install aiofiles")
 
 logger = logging.getLogger(__name__)
+
+# LLM API 呼び出しでキー／モデル切替リトライ対象とする一時的ネットワークエラー
+_TRANSIENT_LLM_NETWORK_ERRORS: tuple = (
+    openai.APIConnectionError,
+    openai.APITimeoutError,
+    httpx.RemoteProtocolError,
+    httpx.ReadError,
+    httpx.ConnectError,
+    httpx.WriteError,
+    httpx.PoolTimeout,
+)
+# ストリーム確立〜受信の同一試行内リトライ回数（接続切断などの瞬断向け）
+_LLM_STREAM_ATTEMPT_RETRIES = 2
+# 一時的ネットワークエラー後の待機秒数
+_LLM_TRANSIENT_RETRY_SLEEP_SEC = 1.0
 
 # Constants
 SUPPORTED_IMAGE_EXTENSIONS = ('.png', '.jpeg', '.jpg', '.gif', '.webp')
@@ -2637,6 +2653,21 @@ class LLMCog(commands.Cog, name="LLM"):
                 working = await self._rotate_provider_api_key(
                     working, provider_name, api_keys, current_key_index
                 )
+            except _TRANSIENT_LLM_NETWORK_ERRORS as e:
+                last_error = e
+                logger.warning(
+                    "⚠️ Transient network error for provider '%s' with key index %s "
+                    "(router/non-stream). Details: %s",
+                    provider_name,
+                    current_key_index,
+                    e,
+                )
+                await asyncio.sleep(_LLM_TRANSIENT_RETRY_SLEEP_SEC)
+                if not api_keys or attempt + 1 >= num_keys:
+                    break
+                working = await self._rotate_provider_api_key(
+                    working, provider_name, api_keys, current_key_index
+                )
             except Exception:
                 # 想定外はキー巡回せず呼び出し側へ渡す
                 raise
@@ -2911,6 +2942,23 @@ class LLMCog(commands.Cog, name="LLM"):
                         client = await self._rotate_provider_api_key(
                             client, provider_name, api_keys, current_key_index
                         )
+                    except _TRANSIENT_LLM_NETWORK_ERRORS as e:
+                        logger.warning(
+                            f"⚠️ Transient network error for provider '{provider_name}' "
+                            f"with key index {current_key_index}. Details: {e}"
+                        )
+                        last_model_error = e
+                        await asyncio.sleep(_LLM_TRANSIENT_RETRY_SLEEP_SEC)
+                        if attempt + 1 >= num_keys:
+                            keys_exhausted = True
+                            logger.warning(
+                                f"⚠️ All {num_keys} API keys for provider '{provider_name}' "
+                                f"have failed (transient network)."
+                            )
+                            break
+                        client = await self._rotate_provider_api_key(
+                            client, provider_name, api_keys, current_key_index
+                        )
                     except Exception as e:
                         logger.error(f"❌ Unhandled error calling LLM API: {e}", exc_info=True)
                         raise
@@ -2955,7 +3003,8 @@ class LLMCog(commands.Cog, name="LLM"):
             finish_reason = None
 
             # ストリームからチャンクを非同期で順番に受け取るループ処理
-            async for chunk in stream:
+            try:
+                async for chunk in stream:
                 # チャンク内に選択肢（choices）が含まれていない場合は処理をスキップする
                 if not chunk.choices:
                     # 次のチャンクの処理へ進む
@@ -3029,6 +3078,20 @@ class LLMCog(commands.Cog, name="LLM"):
                                 buffer["function"]["name"] = tool_call_chunk.function.name
                             if tool_call_chunk.function.arguments:
                                 buffer["function"]["arguments"] += tool_call_chunk.function.arguments
+            except _TRANSIENT_LLM_NETWORK_ERRORS as e:
+                if assistant_response_content or tool_calls_buffer:
+                    logger.warning(
+                        "⚠️ Stream interrupted after partial data "
+                        "(content=%d chars, tool_calls=%d); continuing. Details: %s",
+                        len(assistant_response_content),
+                        len(tool_calls_buffer),
+                        e,
+                    )
+                else:
+                    logger.error(
+                        "❌ Stream interrupted before any data received: %s", e
+                    )
+                    raise
 
             client.last_finish_reason = finish_reason
             assistant_message = {"role": "assistant", "content": assistant_response_content or None}

@@ -332,7 +332,7 @@ Before mention, reply-to-bot, and /chat, a lightweight router classifies convers
 
 ### API key rotation
 
-Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error, the next key is tried automatically (main chat and Agent router).
+Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error / transient network disconnect, the next key is tried automatically (main chat and Agent router).
 
 ### Music
 
