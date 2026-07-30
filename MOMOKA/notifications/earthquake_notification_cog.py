@@ -86,9 +86,9 @@ from MOMOKA.notifications.error.earthquake_errors import (
     ConfigError,
     NotificationError
 )
+from MOMOKA.storage import NS_EARTHQUAKE_CONFIG, resolve_settings_db
 
 DATA_DIR = 'data'
-CONFIG_FILE = os.path.join(DATA_DIR, 'earthquake_tsunami_notification_config.json')
 
 # 通知対象になり得る震度コード（P2P API v2。-1 は不明、99 は震度7程度以上）
 ALL_NOTIFY_SCALES = [-1, 0, 10, 20, 30, 40, 45, 50, 55, 60, 70, 99]
@@ -140,6 +140,8 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         self.bot = bot
         logger.info("🔄 EarthquakeTsunamiCog 初期化開始...")
 
+        # SettingsDB
+        self.settings_db = resolve_settings_db(bot)
         self.ensure_data_dir()
         self.config = self.load_config()
 
@@ -557,49 +559,36 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
     def load_config(self) -> Dict[str, Any]:
         try:
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    for guild_id, value in list(config.items()):
-                        if isinstance(value, int):
-                            config[guild_id] = {it.value: value for it in InfoType if it != InfoType.UNKNOWN}
-                        # ギルド設定を正規化する
-                        if isinstance(config.get(guild_id), dict):
-                            # フィルタ系キーの欠落を埋める
-                            self._normalize_guild_config(config[guild_id])
-                    return config
-        except (json.JSONDecodeError, FileNotFoundError) as e:
-            logger.warning(f"設定ファイル読み込みエラー: {e}")
+            # SettingsDB から設定全体を読む
+            config = self.settings_db.load(NS_EARTHQUAKE_CONFIG)
+            # 無ければ空
+            if config is None:
+                return {}
+            # dict でなければ空
+            if not isinstance(config, dict):
+                return {}
+            for guild_id, value in list(config.items()):
+                if isinstance(value, int):
+                    config[guild_id] = {it.value: value for it in InfoType if it != InfoType.UNKNOWN}
+                # ギルド設定を正規化する
+                if isinstance(config.get(guild_id), dict):
+                    # フィルタ系キーの欠落を埋める
+                    self._normalize_guild_config(config[guild_id])
+            return config
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"設定読み込みエラー: {e}")
         return {}
 
     async def save_config(self) -> None:
-        """設定を排他制御付きの原子的置換で保存する。"""
+        """設定を排他制御付きで SettingsDB へ保存する。"""
         # 同時実行される設定変更を直列化する
         async with self.config_save_lock:
-            # 同一ディレクトリへ一時ファイルを作り、置換時の原子性を確保する
-            temp_file = f"{CONFIG_FILE}.tmp"
             try:
-                # 一時ファイルへ完全な JSON を書き出す
-                with open(temp_file, "w", encoding="utf-8") as file:
-                    # 可読性を保った JSON として設定全体を保存する
-                    json.dump(self.config, file, indent=4, ensure_ascii=False)
-                    # Python のバッファを OS へ渡す
-                    file.flush()
-                    # 電源断時の破損を抑えるためディスク同期する
-                    os.fsync(file.fileno())
-                # 完全に書き込まれた一時ファイルで既存設定を置き換える
-                os.replace(temp_file, CONFIG_FILE)
+                # 設定全体を namespace に書く
+                await self.settings_db.save_async(NS_EARTHQUAKE_CONFIG, self.config)
             except Exception as error:
-                # 失敗時に残った一時ファイルを可能な限り削除する
-                if os.path.exists(temp_file):
-                    try:
-                        # 次回保存を妨げないよう不要な一時ファイルを消す
-                        os.remove(temp_file)
-                    except OSError:
-                        # クリーンアップ失敗は元の保存エラーを優先する
-                        pass
                 # 呼び出し元が扱える設定エラーとして送出する
-                raise ConfigError(f"設定ファイルの保存に失敗しました: {error}") from error
+                raise ConfigError(f"設定の保存に失敗しました: {error}") from error
 
     def _normalize_guild_config(self, guild_config: Dict[str, Any]) -> None:
         """ギルド設定にフィルタ用キーのデフォルトを補完する。"""

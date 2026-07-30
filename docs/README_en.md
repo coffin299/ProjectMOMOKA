@@ -97,7 +97,7 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 - Skip with `fxignore` in the message, or wrap the URL in `<>`
 - For X posts, if the guild `preferred_locale` is known, `🌐` / flag buttons switch original vs translated embeds (FxEmbed-compatible fixers only)
 - `/linkfix` (Manage Server): per-guild master/site toggles, **bulk enable/disable all sites**, and fixer source/destination domains (Components V2; **disabled by default** — enable when needed)
-- Config: `configs/link_fix_config.yaml`; guild overrides in `data/link_fix_settings.json`
+- Config: `configs/link_fix_config.yaml`; guild overrides in `data/momoka.db` (namespace: `link_fix_settings`)
 - If the fixer reply gets no embed, it is deleted and the original embed suppress is undone
 - Suppressing the original embed requires **Manage Messages**
 
@@ -177,7 +177,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    python main.py
    ```
    On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
-   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
+   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). Guild join/leave `[GUILD_EVENT]` is blue `#0000ff` (includes `[primary]` / `[companion]` in the message; same color for both roles). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
    The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **VC / LLM** counts combine PLANA + ARONA active guilds.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
@@ -209,6 +209,19 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 | `utilities_config.yaml` | Utilities |
 | `core_config.yaml` | Shared core settings |
 | `commands_i18n_config.default.yaml` | Slash command description i18n catalog (loaded directly; no runtime copy) |
+
+### Runtime data (SQLite)
+
+Per-guild / per-channel overrides are stored in `data/momoka.db` (formerly `data/*.json`).
+
+To migrate existing JSON (stop the bot first):
+
+```powershell
+python scripts/migrate_json_to_sqlite.py
+```
+
+- JSON files are not deleted (kept as backup)
+- After a successful migration you may delete the JSON files and `scripts/migrate_json_to_sqlite.py`
 
 #### Bot tokens (`bots_config.yaml`)
 

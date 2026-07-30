@@ -1,9 +1,7 @@
 # MOMOKA/services/discord_handler.py
 
 import asyncio
-import json
 import logging
-import os
 import re
 from asyncio import Queue
 from typing import List
@@ -11,6 +9,8 @@ from typing import List
 import discord
 import discord.errors
 from discord import Client, TextChannel
+
+from MOMOKA.storage import NS_LOGGING_CHANNELS, resolve_settings_db
 
 # channel.send() の最大待機時間（秒）
 # discord.py内部の5xxリトライが長時間ブロックするのを防止
@@ -51,13 +51,13 @@ class DiscordLogHandler(logging.Handler):
     レートリミットを回避するため、ログをキューに溜め、定期的にまとめて送信します。
     """
 
-    def __init__(self, bot: Client, channel_ids: List[int], interval: float = 5.0,
-                 config_path: str = "data/logging_channels.json"):
+    def __init__(self, bot: Client, channel_ids: List[int], interval: float = 5.0):
         super().__init__()
         self.bot = bot
         self.channel_ids = channel_ids
         self.interval = interval
-        self.config_path = config_path
+        # ランタイム設定ストア（bot 注入 or デフォルト）
+        self.settings_db = resolve_settings_db(bot)
 
         self.queue: Queue[str] = Queue()
         self.channels: List[TextChannel] = []
@@ -101,22 +101,13 @@ class DiscordLogHandler(logging.Handler):
             asyncio.create_task(self._save_config())
 
     async def _save_config(self):
-        """チャンネルIDリストをJSONファイルに保存"""
+        """チャンネルIDリストを SettingsDB に保存"""
         try:
-            os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-
             # main.py と同じ JSON 配列形式でチャンネル ID を保存する
             data = self.channel_ids
-
-            try:
-                import aiofiles
-                async with aiofiles.open(self.config_path, 'w', encoding='utf-8') as f:
-                    await f.write(json.dumps(data, indent=4, ensure_ascii=False))
-            except ImportError:
-                with open(self.config_path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-
-            print(f"DiscordLogHandler: Saved log channel configuration to {self.config_path}")
+            # SQLite へ非同期保存する
+            await self.settings_db.save_async(NS_LOGGING_CHANNELS, data)
+            print("DiscordLogHandler: Saved log channel configuration to SettingsDB")
         except Exception as e:
             print(f"DiscordLogHandler: Failed to save config: {e}")
 

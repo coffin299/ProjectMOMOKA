@@ -97,7 +97,7 @@ Rainbow Six Siege / VALORANT の統計表示。
 - 本文に `fxignore` を含める、または URL を `<>` で囲むとスキップ
 - X 投稿はサーバー言語（`preferred_locale`）が取れると、返信下に `🌐` / 国旗ボタンで原文・翻訳を切替（FxEmbed 系の Fix 先のみ）
 - `/linkfix`（Manage Server）で全体・サイト別 on/off、**全サイト一括**有効化/無効化、Fix 元／Fix 先（宗派）をギルド単位で変更（Components V2・**デフォルト無効**・必要時に有効化）
-- 設定: `configs/link_fix_config.yaml`、ギルド上書きは `data/link_fix_settings.json`
+- 設定: `configs/link_fix_config.yaml`、ギルド上書きは `data/momoka.db`（namespace: `link_fix_settings`）
 - Fix 側に embed が付かない場合は返信を削除し、元 embed の抑制を戻します
 - 元 embed 抑制には **Manage Messages** が必要です
 
@@ -185,7 +185,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    python main.py
    ```
    起動時 GUI のログ区画は「一般 / LLM / TTS+Music / エラー」。音楽ログは TTS+Music に出ます。  
-   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン（日時付き行全体）。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
+   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン（日時付き行全体）。サーバー加入・脱退の `[GUILD_EVENT]` は青 `#0000ff`（文言に `[primary]` / `[companion]` を付与、役割で色は分けない）。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
    ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。ステータスバーの **VC / LLM** は PLANA + ARONA の稼働ギルド数合算。
 
 ---
@@ -209,6 +209,19 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 | `utilities_config.yaml` | ユーティリティ |
 | `core_config.yaml` | コア共通設定 |
 | `commands_i18n_config.default.yaml` | スラッシュコマンド説明の多言語カタログ（コピーせず直接読み込み） |
+
+### ランタイムデータ（SQLite）
+
+ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に保存します（旧 `data/*.json`）。
+
+既存 JSON から移行する場合（ボット停止後）:
+
+```powershell
+python scripts/migrate_json_to_sqlite.py
+```
+
+- JSON は削除されません（バックアップとして残る）
+- 移行後に不要なら JSON と `scripts/migrate_json_to_sqlite.py` は削除してよい
 
 #### ボット設定例（`bots_config.yaml`）
 

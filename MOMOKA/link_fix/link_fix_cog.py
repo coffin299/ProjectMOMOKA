@@ -44,7 +44,7 @@ class LinkFixCog(commands.Cog):
         # プロジェクトルート（MOMOKA/link_fix → 親の親の親）
         root = Path(__file__).resolve().parents[2]
         # ギルド設定ストア
-        self.store = LinkFixSettingsStore(self.bot_config, project_root=root)
+        self.store = LinkFixSettingsStore(self.bot_config, project_root=root, bot=bot)
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         """link_fix セクションから値を取る。"""

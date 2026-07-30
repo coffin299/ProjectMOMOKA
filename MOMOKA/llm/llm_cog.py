@@ -59,6 +59,7 @@ from MOMOKA.llm.router.mode_runner import (
 from MOMOKA.llm.router.json_extract import extract_completion_text
 from MOMOKA.utilities.restart_notice import RESTART_NOTICE_TEXT
 from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
+from MOMOKA.storage import NS_CHANNEL_LLM_MODELS, resolve_settings_db
 from MOMOKA.utilities.feedback import (
     create_support_report_view,
     support_footer_text,
@@ -562,11 +563,14 @@ class LLMCog(commands.Cog, name="LLM"):
         self.provider_key_index: Dict[str, int] = {}
         self.model_reset_tasks: Dict[int, asyncio.Task] = {}
         self.exception_handler = LLMExceptionHandler(self.llm_config)
-        self.channel_settings_path = "data/channel_llm_models.json"
+        # チャンネル別モデルは SettingsDB の channel_llm_models
+        self.settings_db = resolve_settings_db(bot)
         # {bot_id: {channel_id: {"model": str, "expires_at": float}}} 形式
         self.channel_models: Dict[str, Any] = self._load_channel_models_nested()
         logger.info(
-            f"[{self.display_name}] Loaded channel model settings from '{self.channel_settings_path}'.")
+            f"[{self.display_name}] Loaded channel model settings from SettingsDB "
+            f"('{NS_CHANNEL_LLM_MODELS}')."
+        )
         self.jst = timezone(timedelta(hours=+9))
         # 応答生成中メッセージ（message_id → Message）の追跡用辞書
         self._active_response_messages: Dict[int, discord.Message] = {}
@@ -801,9 +805,9 @@ class LLMCog(commands.Cog, name="LLM"):
             )
 
     def _load_channel_models_nested(self) -> Dict[str, Any]:
-        """channel_llm_models.json を {bot_id:{channel:override}} として読む。"""
-        # 生データを読む
-        raw = self._load_json_data(self.channel_settings_path)
+        """channel_llm_models を {bot_id:{channel:override}} として読む。"""
+        # DB から生データを読む
+        raw = self._load_settings_dict(NS_CHANNEL_LLM_MODELS)
         # 空なら自 Bot 用空 dict
         if not raw:
             return {self.bot_id: {}}
@@ -940,29 +944,31 @@ class LLMCog(commands.Cog, name="LLM"):
                     e,
                 )
 
-    def _load_json_data(self, path: str) -> Dict[str, Any]:
+    def _load_settings_dict(self, namespace: str) -> Dict[str, Any]:
+        """SettingsDB から dict を読む（無ければ空）。"""
         try:
-            if os.path.exists(path):
-                with open(path, 'r', encoding='utf-8') as f: return {str(k): v for k, v in json.load(f).items()}
-        except (IOError, json.JSONDecodeError) as e:
-            logger.error(f"Failed to load JSON file '{path}': {e}")
+            # namespace の payload を取る
+            raw = self.settings_db.load(namespace)
+            # 無ければ空
+            if raw is None:
+                return {}
+            # dict 以外は拒否
+            if not isinstance(raw, dict):
+                return {}
+            # キーを文字列に揃える
+            return {str(k): v for k, v in raw.items()}
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to load settings namespace '{namespace}': {e}")
         return {}
 
-    async def _save_json_data(self, data: Dict[str, Any], path: str) -> None:
-        try:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            if aiofiles:
-                async with aiofiles.open(path, 'w', encoding='utf-8') as f:
-                    await f.write(json.dumps(data, indent=4, ensure_ascii=False))
-            else:
-                with open(path, 'w', encoding='utf-8') as f:
-                    json.dump(data, f, indent=4, ensure_ascii=False)
-        except IOError as e:
-            logger.error(f"Failed to save JSON file '{path}': {e}")
-            raise
-
     async def _save_channel_models(self) -> None:
-        await self._save_json_data(self.channel_models, self.channel_settings_path)
+        """チャンネル別モデル設定を SettingsDB へ保存する。"""
+        try:
+            # メモリ上の全設定を書く
+            await self.settings_db.save_async(NS_CHANNEL_LLM_MODELS, self.channel_models)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to save settings namespace '{NS_CHANNEL_LLM_MODELS}': {e}")
+            raise
 
     def _openai_client_kwargs(
         self,

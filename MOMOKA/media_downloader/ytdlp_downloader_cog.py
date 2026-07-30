@@ -23,6 +23,7 @@ from googleapiclient.http import MediaFileUpload
 
 from MOMOKA.media_downloader.error.errors import YTDLPExceptionHandler
 from MOMOKA.music.plugins.ytdlp_wrapper import apply_youtube_ejs_opts
+from MOMOKA.storage import NS_GDRIVE_DELETION_SCHEDULE, resolve_settings_db
 from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 # --- 設定項目 ---
@@ -31,10 +32,6 @@ TOKEN_FILE = "token.json"
 GDRIVE_FOLDER_ID = "1g5KmfB7xVrL-Y59RTf6f2IDbbJsTSFZs"  # ← ここを必ず書き換えてください
 DELETE_DELAY_SECONDS = 600
 DOWNLOAD_DIR = "temp_media_gdrive"
-GDRIVE_DELETION_SCHEDULE_FILE = os.path.join(
-    "data",
-    "gdrive_deletion_schedule.json",
-)
 # --- 設定項目ここまで ---
 
 logger = logging.getLogger(__name__)
@@ -620,6 +617,8 @@ class YtdlpGdriveCog(commands.Cog):
         self.bot = bot
         self.gdrive_uploader = GDriveUploader(CLIENT_SECRETS_FILE, TOKEN_FILE)
         self.exception_handler = YTDLPExceptionHandler()
+        # SettingsDB
+        self.settings_db = resolve_settings_db(bot)
         # 削除予定の UNIX 時刻をファイル ID ごとに保持する
         self._gdrive_deletion_schedule: Dict[str, float] = {}
         # 稼働中の削除タスクをファイル ID ごとに保持する
@@ -643,21 +642,20 @@ class YtdlpGdriveCog(commands.Cog):
             task.cancel()
 
     def _load_gdrive_deletion_schedule(self) -> Dict[str, float]:
-        """削除予定 JSON を読み込み、有効な値だけを返す。"""
+        """削除予定を SettingsDB から読み込み、有効な値だけを返す。"""
         try:
-            # JSON ファイルを UTF-8 で開く
-            with open(GDRIVE_DELETION_SCHEDULE_FILE, "r", encoding="utf-8") as file:
-                schedule_data = json.load(file)
-        except FileNotFoundError:
-            # 初回起動時は予定なしとして扱う
+            # namespace から取る
+            schedule_data = self.settings_db.load(NS_GDRIVE_DELETION_SCHEDULE)
+        except Exception:
+            # 読み込み不能な予定は安全に無視する
+            logger.exception("Google Drive 削除予定の読み込みに失敗しました。")
             return {}
-        except (OSError, json.JSONDecodeError):
-            # 読み込み不能な予定ファイルは安全に無視する
-            logger.exception("Google Drive 削除予定ファイルの読み込みに失敗しました。")
+        # 無ければ空
+        if schedule_data is None:
             return {}
-        # 辞書以外の JSON は予定として扱わない
+        # 辞書以外は予定として扱わない
         if not isinstance(schedule_data, dict):
-            logger.error("Google Drive 削除予定ファイルの形式が不正です。")
+            logger.error("Google Drive 削除予定の形式が不正です。")
             return {}
         # 検証済みの削除予定を格納する
         schedule: Dict[str, float] = {}
@@ -678,34 +676,15 @@ class YtdlpGdriveCog(commands.Cog):
         return schedule
 
     def _save_gdrive_deletion_schedule(self) -> None:
-        """削除予定を JSON ファイルへ原子的に保存する。"""
-        # 中断時の破損を避けるため一時ファイルのパスを作る
-        temporary_file = f"{GDRIVE_DELETION_SCHEDULE_FILE}.tmp"
+        """削除予定を SettingsDB へ保存する。"""
         try:
-            # 保存先ディレクトリを取得する
-            directory = os.path.dirname(GDRIVE_DELETION_SCHEDULE_FILE)
-            # ディレクトリが指定されている場合だけ作成する
-            if directory:
-                os.makedirs(directory, exist_ok=True)
-            # 一時ファイルへ最新予定を書き込む
-            with open(temporary_file, "w", encoding="utf-8") as file:
-                json.dump(
-                    self._gdrive_deletion_schedule,
-                    file,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            # 一時ファイルを正式ファイルへ置換する
-            os.replace(temporary_file, GDRIVE_DELETION_SCHEDULE_FILE)
-        except OSError:
-            # 保存失敗は削除処理を止めずに記録する
-            logger.exception("Google Drive 削除予定ファイルの保存に失敗しました。")
-            try:
-                # 残った一時ファイルを掃除する
-                os.remove(temporary_file)
-            except OSError:
-                # 一時ファイルの掃除失敗は追加の例外にしない
-                pass
+            # 最新予定を namespace に書く
+            self.settings_db.save(
+                NS_GDRIVE_DELETION_SCHEDULE,
+                self._gdrive_deletion_schedule,
+            )
+        except Exception:
+            logger.exception("Google Drive 削除予定の保存に失敗しました。")
 
     def _start_gdrive_deletion_task(self, file_id: str, delete_at: float) -> None:
         """同じファイルの重複実行を避けて削除タスクを開始する。"""

@@ -13,6 +13,7 @@ from MOMOKA.GUI.theme import (
     get_theme_colors,
 )
 from MOMOKA.GUI.version import COPYRIGHT, LOG_VIEWER_NAME, VERSION
+from MOMOKA.storage import NS_LOG_VIEWER_CONFIG, get_default_settings_db
 
 
 class LogViewerApp:
@@ -35,8 +36,8 @@ class LogViewerApp:
         self.theme = get_theme_colors()
         # メインウィンドウの背景色を設定する
         self.root.configure(bg=self.theme["bg"])
-        # 設定ファイルパス
-        self.config_file = "data/log_viewer_config.json"
+        # SettingsDB
+        self.settings_db = get_default_settings_db()
         # 設定を読み込む
         self.load_config()
         # ttk スタイルを保持する
@@ -286,7 +287,7 @@ class LogViewerApp:
         self.style.configure("TMenubutton", borderwidth=2)
 
     def load_config(self) -> None:
-        """設定ファイルの読み込み。"""
+        """設定の読み込み。"""
         # デフォルト設定
         self.config = {
             "font": ("Meiryo UI", 9),
@@ -300,28 +301,23 @@ class LogViewerApp:
             },
         }
         try:
-            # ファイルが存在すればマージする
-            if os.path.exists(self.config_file):
-                with open(self.config_file, "r", encoding="utf-8") as f:
-                    # JSON を読む
-                    saved_config = json.load(f)
-                    # デフォルトへ上書きマージする
-                    self.config.update(saved_config)
+            # SettingsDB からマージする
+            saved_config = self.settings_db.load(NS_LOG_VIEWER_CONFIG)
+            # dict なら上書きマージする
+            if isinstance(saved_config, dict):
+                self.config.update(saved_config)
         except Exception as e:
             # 破損時はデフォルトのまま続ける
-            print(f"設定ファイルの読み込み中にエラーが発生しました: {e}")
+            print(f"設定の読み込み中にエラーが発生しました: {e}")
 
     def save_config(self) -> None:
-        """設定ファイルの保存。"""
+        """設定の保存。"""
         try:
-            # 親ディレクトリを作る
-            os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
-            # UTF-8 JSON で書き出す
-            with open(self.config_file, "w", encoding="utf-8") as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            # SettingsDB へ書き出す
+            self.settings_db.save(NS_LOG_VIEWER_CONFIG, self.config)
         except Exception as e:
             # 保存失敗はステータス以外に出す
-            print(f"設定ファイルの保存中にエラーが発生しました: {e}")
+            print(f"設定の保存中にエラーが発生しました: {e}")
 
     def setup_gui(self) -> None:
         """GUI ウィジェットの作成。"""
@@ -740,18 +736,23 @@ class LogViewerApp:
         text_widget.tag_config("user_input_tag", foreground="#A9E34B")
         # LLM_RESPONSE 行はシアンで日時付き行全体を塗る
         text_widget.tag_config("llm_output_tag", foreground="#3BC9DB")
+        # ギルド加入・脱退行は純青（primary/companion 共通）
+        text_widget.tag_config("guild_event_tag", foreground="#0000ff")
         # レベル色タグを用意する（専用マーカーが無い行用）
         text_widget.tag_config("error", foreground=self.theme["error"])
         text_widget.tag_config("warning", foreground=self.theme["warning"])
         text_widget.tag_config("info", foreground=self.theme["info"])
         text_widget.tag_config("debug", foreground=self.theme["debug"])
-        # USER_INPUT / LLM_RESPONSE を level 色より優先する
+        # USER_INPUT / LLM_RESPONSE / GUILD_EVENT を level 色より優先する
         if "[USER_INPUT]" in message:
             # ユーザー入力行は黄緑
             tag = "user_input_tag"
         elif "[LLM_RESPONSE]" in message:
             # LLM 出力行はシアン
             tag = "llm_output_tag"
+        elif "[GUILD_EVENT]" in message:
+            # サーバー加入・脱退は #0000ff（役割で色分けしない）
+            tag = "guild_event_tag"
         elif level == "ERROR" or level == "CRITICAL":
             # エラーレベル
             tag = "error"

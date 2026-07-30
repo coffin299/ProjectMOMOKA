@@ -16,7 +16,7 @@ link_fix:
   footnote_en: "Manage via `/linkfix`"
   # 互換用（未設定の footnote_ja/en がある環境向け）
   footnote: "Manage via `/linkfix`"
-  # ギルド設定の保存先（リポジトリルート相対）
+  # ギルド設定の保存先（後方互換・未使用。実体は data/momoka.db の link_fix_settings）
   settings_path: data/link_fix_settings.json
   # Twitter 翻訳ボタンのタイムアウト（秒）
   translation_view_timeout: 3600

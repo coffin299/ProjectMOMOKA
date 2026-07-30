@@ -28,6 +28,7 @@ from MOMOKA.generator.image import (
     ImageModelRegistry,
     LocalTxt2ImgPipeline,
 )
+from MOMOKA.storage import NS_CHANNEL_IMAGE_MODELS, resolve_settings_db
 from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ class ImageGenerator:
 
     def __init__(self, bot):
         self.bot = bot
+        # SettingsDB（チャンネル別モデル用）
+        self.settings_db = resolve_settings_db(bot)
         # 独立 config（image_generator_config）を優先し、旧 llm.image_generator もフォールバック
         top_level = bot.config.get("image_generator") or {}
         # 旧パス（移行期間用）
@@ -81,7 +84,6 @@ class ImageGenerator:
             self.max_height = 2048
             self.min_width = 256
             self.min_height = 256
-            self.channel_models_path = "data/channel_image_models.json"
             self.channel_models = {}
             self.generation_queue = deque()
             self.queue_lock = asyncio.Lock()
@@ -122,7 +124,7 @@ class ImageGenerator:
         self.min_width = self.image_gen_config.get("min_width", 256)
         self.min_height = self.image_gen_config.get("min_height", 256)
 
-        self.channel_models_path = "data/channel_image_models.json"
+        # チャンネル別画像モデルは SettingsDB
         self.channel_models: Dict[str, str] = self._load_channel_models()
 
         self.generation_queue: Deque[GenerationTask] = deque()
@@ -140,28 +142,27 @@ class ImageGenerator:
     # Channel model helpers
     # ------------------------------------------------------------------
     def _load_channel_models(self) -> Dict[str, str]:
-        if os.path.exists(self.channel_models_path):
-            try:
-                with open(self.channel_models_path, "r", encoding="utf-8") as fp:
-                    data = fp.read()
-                loaded = {str(k): v for k, v in json.loads(data).items()}
-                logger.info("Loaded %d channel-specific image model settings", len(loaded))
-                return loaded
-            except Exception as exc:  # noqa: BLE001
-                logger.error("Failed to load channel image models: %s", exc)
+        try:
+            # SettingsDB から読む
+            data = self.settings_db.load(NS_CHANNEL_IMAGE_MODELS)
+            # 無ければ空
+            if data is None:
+                return {}
+            # dict 以外は拒否
+            if not isinstance(data, dict):
+                return {}
+            # キーを文字列に揃える
+            loaded = {str(k): v for k, v in data.items()}
+            logger.info("Loaded %d channel-specific image model settings", len(loaded))
+            return loaded
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to load channel image models: %s", exc)
         return {}
 
     async def _save_channel_models(self) -> None:
-        os.makedirs(os.path.dirname(self.channel_models_path), exist_ok=True)
         try:
-            try:
-                import aiofiles
-
-                async with aiofiles.open(self.channel_models_path, "w", encoding="utf-8") as fp:
-                    await fp.write(json.dumps(self.channel_models, indent=4, ensure_ascii=False))
-            except ImportError:
-                with open(self.channel_models_path, "w", encoding="utf-8") as fp:
-                    json.dump(self.channel_models, fp, indent=4, ensure_ascii=False)
+            # SettingsDB へ非同期保存する
+            await self.settings_db.save_async(NS_CHANNEL_IMAGE_MODELS, self.channel_models)
         except Exception as exc:  # noqa: BLE001
             logger.error("Failed to save channel image models: %s", exc)
             raise

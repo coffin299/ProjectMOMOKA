@@ -29,6 +29,13 @@ except ImportError as e:
     )
     TTSCogExceptionHandler = None
 
+from MOMOKA.storage import (
+    NS_SPEECH_DICTIONARY,
+    NS_SPEECH_SETTINGS,
+    NS_TTS_SETTINGS,
+    resolve_settings_db,
+)
+
 
 class TTSCog(commands.Cog, name="tts_cog"):
     """
@@ -82,15 +89,14 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self.available_models: List[Dict] = []
         self.models_loaded: bool = False
 
-        self.settings_file = Path("data/tts_settings.json")
+        # SettingsDB（TTS / 読み上げ設定）
+        self.settings_db = resolve_settings_db(bot)
         self.channel_settings: Dict[int, Dict] = {}
         self._load_settings()
 
-        self.speech_settings_file = Path("data/speech_settings.json")
         self.speech_settings: Dict[str, Dict[str, Any]] = {}
         self._load_speech_settings()
 
-        self.dictionary_file = Path("data/speech_dictionary.json")
         self.speech_dictionary: Dict[str, Dict[str, str]] = {}
         self._load_dictionary()
 
@@ -130,47 +136,45 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
     def _load_settings(self):
         try:
-            if self.settings_file.exists():
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    self.channel_settings = {int(k): v for k, v in data.items()}
+            # SettingsDB からチャンネル別 TTS 設定を読む
+            data = self.settings_db.load(NS_TTS_SETTINGS)
+            if isinstance(data, dict):
+                self.channel_settings = {int(k): v for k, v in data.items()}
                 logging.getLogger(__name__).info(
                     "[TTSCog] モデル設定を読み込みました: %dチャンネル", len(self.channel_settings)
                 )
             else:
-                self.settings_file.parent.mkdir(parents=True, exist_ok=True)
+                self.channel_settings = {}
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] モデル設定読み込みエラー: %s", e)
             self.channel_settings = {}
 
     def _save_settings(self):
         try:
-            self.settings_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
-                data = {str(k): v for k, v in self.channel_settings.items()}
-                json.dump(data, f, ensure_ascii=False, indent=2)
+            # キーを文字列にして保存する
+            data = {str(k): v for k, v in self.channel_settings.items()}
+            self.settings_db.save(NS_TTS_SETTINGS, data)
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] モデル設定保存エラー: %s", e)
 
     def _load_speech_settings(self):
         try:
-            if self.speech_settings_file.exists():
-                with open(self.speech_settings_file, 'r', encoding='utf-8') as f:
-                    self.speech_settings = json.load(f)
+            # SettingsDB からギルド別読み上げ設定を読む
+            data = self.settings_db.load(NS_SPEECH_SETTINGS)
+            if isinstance(data, dict):
+                self.speech_settings = data
                 logging.getLogger(__name__).info(
                     "[TTSCog] 読み上げ設定を読み込みました: %dギルド", len(self.speech_settings)
                 )
             else:
-                self.speech_settings_file.parent.mkdir(parents=True, exist_ok=True)
+                self.speech_settings = {}
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 読み上げ設定読み込みエラー: %s", e)
             self.speech_settings = {}
 
     def _save_speech_settings(self):
         try:
-            self.speech_settings_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.speech_settings_file, 'w', encoding='utf-8') as f:
-                json.dump(self.speech_settings, f, ensure_ascii=False, indent=2)
+            self.settings_db.save(NS_SPEECH_SETTINGS, self.speech_settings)
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 読み上げ設定保存エラー: %s", e)
 
@@ -433,34 +437,30 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
     def _load_dictionary(self):
         try:
-            if self.dictionary_file.exists():
-                with open(self.dictionary_file, 'r', encoding='utf-8') as f:
-                    dictionary_data = json.load(f)
-                # ギルド ID ごとの辞書だけを受け入れ、旧来のフラット形式は破棄する
-                if self._is_guild_scoped_dictionary(dictionary_data):
-                    self.speech_dictionary = dictionary_data
-                    logging.getLogger(__name__).info(
-                        "[TTSCog] 読み上げ辞書を読み込みました: %dギルド",
-                        len(self.speech_dictionary),
-                    )
-                else:
-                    self.speech_dictionary = {}
-                    logging.getLogger(__name__).warning(
-                        "[TTSCog] 旧形式または不正形式の読み上げ辞書を破棄しました。"
-                    )
+            # SettingsDB から読み上げ辞書を取る
+            dictionary_data = self.settings_db.load(NS_SPEECH_DICTIONARY)
+            if dictionary_data is None:
+                self.speech_dictionary = {}
+                return
+            # ギルド ID ごとの辞書だけを受け入れ、旧来のフラット形式は破棄する
+            if self._is_guild_scoped_dictionary(dictionary_data):
+                self.speech_dictionary = dictionary_data
+                logging.getLogger(__name__).info(
+                    "[TTSCog] 読み上げ辞書を読み込みました: %dギルド",
+                    len(self.speech_dictionary),
+                )
             else:
-                self.dictionary_file.parent.mkdir(parents=True, exist_ok=True)
-                self._save_dictionary()
+                self.speech_dictionary = {}
+                logging.getLogger(__name__).warning(
+                    "[TTSCog] 旧形式または不正形式の読み上げ辞書を破棄しました。"
+                )
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 辞書読み込みエラー: %s", e)
             self.speech_dictionary = {}
 
     def _save_dictionary(self):
         try:
-            # 初回保存でも保存先ディレクトリが存在するようにする
-            self.dictionary_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.dictionary_file, 'w', encoding='utf-8') as f:
-                json.dump(self.speech_dictionary, f, ensure_ascii=False, indent=2)
+            self.settings_db.save(NS_SPEECH_DICTIONARY, self.speech_dictionary)
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 辞書保存エラー: %s", e)
 

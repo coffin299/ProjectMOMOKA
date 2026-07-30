@@ -1,20 +1,17 @@
 # MOMOKA/llm/utils/tips.py
-import json
 import logging
-import os
 import random
 from collections import defaultdict, deque
 from typing import List, Dict, Any, Optional
 
 import discord
 
+from MOMOKA.storage import NS_RESPONSE_TIMES, get_default_settings_db
 from MOMOKA.utilities.locale import pick_str
 
 # ロガー設定
 logger = logging.getLogger(__name__)
 
-# 応答時間記録の保存先パス
-RESPONSE_TIMES_PATH = "data/response_times.json"
 # ローリング平均に使用する直近のサンプル数
 MAX_SAMPLES = 20
 
@@ -22,30 +19,33 @@ MAX_SAMPLES = 20
 class ResponseTimeTracker:
     """モデルごとの応答時間をローリング平均で追跡するクラス"""
 
-    def __init__(self, save_path: str = RESPONSE_TIMES_PATH,
-                 max_samples: int = MAX_SAMPLES):
-        # 保存先ファイルパス
-        self.save_path = save_path
+    def __init__(self, max_samples: int = MAX_SAMPLES, settings_db=None):
+        # SettingsDB（未指定ならプロセス共通）
+        self.settings_db = settings_db or get_default_settings_db()
         # ローリング平均に使うサンプル数上限
         self.max_samples = max_samples
         # モデル名 → 応答時間(秒)のdeque
         self._times: Dict[str, deque] = defaultdict(
             lambda: deque(maxlen=self.max_samples)
         )
-        # 永続化ファイルからデータを復元
+        # 永続化ストアからデータを復元
         self._load()
 
     # ------------------------------------------------------------------
     # 永続化: ロード / セーブ
     # ------------------------------------------------------------------
     def _load(self) -> None:
-        """data/response_times.json から過去の記録を復元する"""
-        if not os.path.exists(self.save_path):
-            logger.info("応答時間データファイルが未作成: %s", self.save_path)
-            return
+        """SettingsDB から過去の記録を復元する"""
         try:
-            with open(self.save_path, "r", encoding="utf-8") as f:
-                raw: Dict[str, List[float]] = json.load(f)
+            # namespace から取る
+            raw = self.settings_db.load(NS_RESPONSE_TIMES)
+            # 無ければ何もしない
+            if raw is None:
+                logger.info("応答時間データが DB に未作成")
+                return
+            # dict でなければ無視
+            if not isinstance(raw, dict):
+                return
             # JSON → deque へ変換
             for model, times in raw.items():
                 self._times[model] = deque(
@@ -58,17 +58,14 @@ class ResponseTimeTracker:
             logger.warning("応答時間データの読込に失敗: %s", e)
 
     def _save(self) -> None:
-        """現在の記録を data/response_times.json に保存する"""
+        """現在の記録を SettingsDB に保存する"""
         try:
-            # data/ ディレクトリが無ければ作成
-            os.makedirs(os.path.dirname(self.save_path), exist_ok=True)
-            # deque → list へ変換して JSON 化
+            # deque → list へ変換して保存
             payload = {
                 model: list(times)
                 for model, times in self._times.items()
             }
-            with open(self.save_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
+            self.settings_db.save(NS_RESPONSE_TIMES, payload)
         except Exception as e:
             logger.warning("応答時間データの保存に失敗: %s", e)
 
@@ -81,7 +78,7 @@ class ResponseTimeTracker:
         if elapsed_seconds < 0.5 or elapsed_seconds > 600:
             return
         self._times[model_name].append(elapsed_seconds)
-        # 記録のたびにファイルへ永続化
+        # 記録のたびに永続化
         self._save()
         logger.debug(
             "応答時間を記録: %s = %.1f秒 (サンプル数: %d)",

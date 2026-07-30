@@ -18,12 +18,12 @@ from discord.ext import commands, tasks
 from MOMOKA.notifications.error.twitch_errors import (ConfigError, DataParsingError,
                                   NotificationError, TwitchAPIError,
                                   TwitchExceptionHandler)
+from MOMOKA.storage import NS_TWITCH_SETTINGS, resolve_settings_db
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
 
 # --- 定数 ---
-SETTINGS_FILE = Path("data/twitch_settings.json")
 TWITCH_API_BASE_URL = "https://api.twitch.tv/helix"
 TWITCH_AUTH_URL = "https://id.twitch.tv/oauth2/token"
 
@@ -46,6 +46,8 @@ class TwitchNotification(commands.Cog):
         self.session: aiohttp.ClientSession = aiohttp.ClientSession()
         # 設定ファイルの同時保存を直列化する
         self._settings_lock = asyncio.Lock()
+        # SettingsDB
+        self.settings_db = resolve_settings_db(bot)
 
         # Twitch API認証情報をconfigから取得
         twitch_config = bot.config.get('twitch', {})
@@ -84,55 +86,32 @@ class TwitchNotification(commands.Cog):
 
     # --- 設定管理 ---
     def _load_settings(self) -> Dict[int, Dict[str, Dict[str, Any]]]:
-        """設定ファイルを読み込む"""
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        """設定を SettingsDB から読み込む"""
         try:
-            if SETTINGS_FILE.exists():
-                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    # JSONのキーは文字列なので、guild_id(トップレベルのキー)をintに変換
-                    return {int(k): v for k, v in json.load(f).items()}
-            return {}
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"設定ファイル({SETTINGS_FILE})の読み込みに失敗しました: {e}")
+            # namespace から取る
+            raw = self.settings_db.load(NS_TWITCH_SETTINGS)
+            # 無ければ空
+            if raw is None:
+                return {}
+            # dict でなければ空
+            if not isinstance(raw, dict):
+                return {}
+            # JSONのキーは文字列なので、guild_id(トップレベルのキー)をintに変換
+            return {int(k): v for k, v in raw.items()}
+        except Exception as e:  # noqa: BLE001
+            logger.error("Twitch設定の読み込みに失敗しました: %s", e)
             return {}
 
     async def _save_settings(self) -> None:
-        """設定ファイルへ排他的かつ原子的に保存する。"""
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        """設定を SettingsDB へ排他的に保存する。"""
         # 同時実行されるコマンドと定期チェックの保存競合を防ぐ
         async with self._settings_lock:
-            temp_path: Optional[str] = None
             try:
-                # 同一ディレクトリに一時ファイルを作り置換可能にする
-                with tempfile.NamedTemporaryFile(
-                    mode="w",
-                    encoding="utf-8",
-                    dir=SETTINGS_FILE.parent,
-                    prefix=f"{SETTINGS_FILE.name}.",
-                    suffix=".tmp",
-                    delete=False,
-                ) as temp_file:
-                    # 完全な JSON を一時ファイルへ書き込む
-                    json.dump(self.settings, temp_file, indent=4, ensure_ascii=False)
-                    # OS バッファの内容をディスクへ反映する
-                    temp_file.flush()
-                    os.fsync(temp_file.fileno())
-                    # 後片付けと置換に使う一時ファイルのパスを保持する
-                    temp_path = temp_file.name
-                # 完成した一時ファイルだけを既存設定と原子的に置き換える
-                os.replace(temp_path, SETTINGS_FILE)
-            except OSError as exc:
-                logger.error("設定ファイル(%s)の保存に失敗しました: %s", SETTINGS_FILE, exc)
-            finally:
-                # 置換前に失敗した一時ファイルを残さない
-                if temp_path and os.path.exists(temp_path):
-                    try:
-                        os.unlink(temp_path)
-                    except OSError as exc:
-                        logger.warning(
-                            "設定ファイルの一時ファイルを削除できませんでした: %s",
-                            exc,
-                        )
+                # ギルド ID キーを文字列にして保存する（JSON 互換）
+                payload = {str(k): v for k, v in self.settings.items()}
+                await self.settings_db.save_async(NS_TWITCH_SETTINGS, payload)
+            except Exception as e:  # noqa: BLE001
+                logger.error("Twitch設定の保存に失敗しました: %s", e)
 
     # --- Twitch API 関連 ---
     # (このセクションのコードは変更ありません)

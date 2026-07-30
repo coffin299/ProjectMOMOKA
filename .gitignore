@@ -31,3 +31,9 @@ third_party/bgutil-ytdlp-pot-provider/server/node_modules/
 third_party/bgutil-ytdlp-pot-provider/server/build/
 *.exe
 *.bin
+
+# ランタイム SQLite（設定・状態）
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm

@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from MOMOKA.GUI import attach_gui_logging, run_log_viewer_thread, set_bot_ref, set_dark_mode
+from MOMOKA.storage import NS_LOGGING_CHANNELS, get_default_settings_db
 from MOMOKA.utilities.command_i18n import CommandDescriptionTranslator
 from MOMOKA.utilities.restart_notice import SHUTDOWN_USER_ID
 from MOMOKA.version import status_version_string
@@ -121,6 +122,8 @@ class Momoka(commands.Bot):
         self.status_index = 0
         # ロードする Cog のリスト（primary / companion で異なる）
         self.cogs_to_load = cogs_to_load
+        # ランタイム設定用 SQLite（プロセス共通インスタンス）
+        self.settings_db = get_default_settings_db()
 
     def is_admin(self, user_id: int) -> bool:
         """ユーザーが管理者かどうかをチェック"""
@@ -218,8 +221,6 @@ class Momoka(commands.Bot):
 
         # Discord ログ出力は primary のみ有効化する
         if self.enable_discord_logging:
-            # ロギング設定用の JSON ファイルパス
-            logging_json_path = "data/logging_channels.json"
             # 設定辞書からログチャンネル ID リストを取得する
             log_channel_ids_from_config = self.config.get('log_channel_ids', [])
             # リスト形式でなければ空リストに戻す
@@ -230,29 +231,29 @@ class Momoka(commands.Bot):
                     self.display_name
                 )
 
-            # JSON ファイルから追加のチャンネル ID を読み込む
-            log_channel_ids_from_file = []
+            # SQLite から追加のチャンネル ID を読み込む
+            log_channel_ids_from_db = []
             try:
-                # JSON ファイルのディレクトリを作成する
-                dir_path = os.path.dirname(logging_json_path)
-                os.makedirs(dir_path, exist_ok=True)
-                # JSON ファイルが無ければ空リストで生成する
-                if not os.path.exists(logging_json_path):
-                    with open(logging_json_path, 'w') as f:
-                        json.dump([], f)
-                    logging.info("%s %s が見つからなかったため、新規作成しました。", self.display_name, logging_json_path)
+                # settings DB から logging_channels namespace を取る
+                data = self.settings_db.load(NS_LOGGING_CHANNELS)
+                # リスト形式かつ全要素が int であれば採用する
+                if isinstance(data, list) and all(isinstance(i, int) for i in data):
+                    log_channel_ids_from_db = data
+                elif data is None:
+                    # 未移行時は空で起動する（移行スクリプト実行を前提）
+                    logging.info(
+                        "%s logging_channels が DB に無いため空リストで起動します。",
+                        self.display_name,
+                    )
+            except Exception as e:
+                logging.error(
+                    "%s logging_channels の読込中にエラーが発生しました: %s",
+                    self.display_name,
+                    e,
+                )
 
-                # JSON ファイルからチャンネル ID を読み込む
-                with open(logging_json_path, 'r') as f:
-                    data = json.load(f)
-                    # リスト形式かつ全要素が int であれば採用する
-                    if isinstance(data, list) and all(isinstance(i, int) for i in data):
-                        log_channel_ids_from_file = data
-            except (json.JSONDecodeError, IOError) as e:
-                logging.error("%s %s の処理中にエラーが発生しました: %s", self.display_name, logging_json_path, e)
-
-            # 設定ファイルと JSON ファイルのチャンネル ID を統合する
-            all_log_channel_ids = list(set(log_channel_ids_from_config + log_channel_ids_from_file))
+            # 設定ファイルと DB のチャンネル ID を統合する
+            all_log_channel_ids = list(set(log_channel_ids_from_config + log_channel_ids_from_db))
 
             # チャンネル ID が設定されていれば Discord ログハンドラを追加する
             if all_log_channel_ids:
@@ -262,7 +263,6 @@ class Momoka(commands.Bot):
                         bot=self,
                         channel_ids=all_log_channel_ids,
                         interval=6.0,
-                        config_path=logging_json_path,
                     )
                     # ログレベルを INFO に設定する
                     discord_handler.setLevel(logging.INFO)
@@ -498,6 +498,7 @@ PRIMARY_COGS = [
     'MOMOKA.tracker.r6s_tracker_cog',
     'MOMOKA.tracker.valorant_tracker_cog',
     'MOMOKA.tts.tts_cog',
+    'MOMOKA.utilities.guild_events_cog',
     'MOMOKA.utilities.slash_command_cog',
 ]
 
@@ -505,6 +506,7 @@ PRIMARY_COGS = [
 COMPANION_COGS = [
     'MOMOKA.llm.llm_cog',
     'MOMOKA.music.music_cog',
+    'MOMOKA.utilities.guild_events_cog',
     'MOMOKA.utilities.slash_command_cog',
 ]
 
