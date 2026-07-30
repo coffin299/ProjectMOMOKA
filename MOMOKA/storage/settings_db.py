@@ -1,5 +1,5 @@
 # MOMOKA/storage/settings_db.py
-# data/*.json 相当のランタイム設定を SQLite に保存する共通ストア。
+# ランタイム設定を SQLite（data/momoka.db）に保存する共通ストア。
 from __future__ import annotations
 
 import asyncio
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # デフォルト DB パス（リポジトリルート相対）
 DEFAULT_DB_PATH = "data/momoka.db"
 
-# --- namespace 定数（移行スクリプトと共有） ---
+# --- namespace 定数 ---
 NS_CHANNEL_LLM_MODELS = "channel_llm_models"
 NS_CHANNEL_IMAGE_MODELS = "channel_image_models"
 NS_LINK_FIX_SETTINGS = "link_fix_settings"
@@ -124,15 +124,6 @@ class SettingsDB:
                 conn.close()
         # 行が無ければ未設定
         if row is None:
-            # 旧 JSON が残っているときだけ移行漏れを警告する
-            legacy = Path("data") / f"{namespace}.json"
-            if legacy.exists():
-                logger.warning(
-                    "SettingsDB: namespace '%s' が DB にありませんが %s が存在します。"
-                    " scripts/migrate_json_to_sqlite.py を実行してください。",
-                    namespace,
-                    legacy,
-                )
             return None
         try:
             # JSON 文字列を Python オブジェクトへ戻す
@@ -171,21 +162,3 @@ class SettingsDB:
         """save をスレッドプールで実行する（イベントループを塞がない）。"""
         # 同期 save を別スレッドへ逃がす
         await asyncio.to_thread(self.save, namespace, data)
-
-    def has_namespace(self, namespace: str) -> bool:
-        """namespace が DB に存在するかを返す。"""
-        # 読込を排他する
-        with self._lock:
-            # 接続を開く
-            conn = self._connect()
-            try:
-                # 存在確認のみ
-                row = conn.execute(
-                    "SELECT 1 FROM settings WHERE namespace = ? LIMIT 1",
-                    (namespace,),
-                ).fetchone()
-            finally:
-                # 接続を閉じる
-                conn.close()
-        # 行があれば True
-        return row is not None

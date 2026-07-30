@@ -212,16 +212,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 ### ランタイムデータ（SQLite）
 
-ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に保存します（旧 `data/*.json`）。
-
-既存 JSON から移行する場合（ボット停止後）:
-
-```powershell
-python scripts/migrate_json_to_sqlite.py
-```
-
-- JSON は削除されません（バックアップとして残る）
-- 移行後に不要なら JSON と `scripts/migrate_json_to_sqlite.py` は削除してよい
+ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に保存します。
 
 #### ボット設定例（`bots_config.yaml`）
 

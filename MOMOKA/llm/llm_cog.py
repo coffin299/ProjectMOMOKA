@@ -811,11 +811,7 @@ class LLMCog(commands.Cog, name="LLM"):
         # 空なら自 Bot 用空 dict
         if not raw:
             return {self.bot_id: {}}
-        # 値がすべて str なら旧フラット形式 → plana 配下へ移行
-        if all(isinstance(v, str) for v in raw.values()):
-            # 旧データは plana に紐づける
-            return {"plana": dict(raw), "arona": {}}
-        # 既にネストされていればそのまま（値は str または dict）
+        # ネスト形式をそのまま返す
         return raw
 
     def _initialize_plugins(self) -> Tuple[

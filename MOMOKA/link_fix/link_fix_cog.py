@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import discord
@@ -41,10 +40,8 @@ class LinkFixCog(commands.Cog):
         self.bot_config: Dict[str, Any] = getattr(bot, "config", None) or {}
         # link_fix セクション
         self.section = get_link_fix_config(self.bot_config)
-        # プロジェクトルート（MOMOKA/link_fix → 親の親の親）
-        root = Path(__file__).resolve().parents[2]
         # ギルド設定ストア
-        self.store = LinkFixSettingsStore(self.bot_config, project_root=root, bot=bot)
+        self.store = LinkFixSettingsStore(self.bot_config, bot=bot)
 
     def _cfg(self, key: str, default: Any = None) -> Any:
         """link_fix セクションから値を取る。"""

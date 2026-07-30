@@ -212,16 +212,7 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 
 ### Runtime data (SQLite)
 
-Per-guild / per-channel overrides are stored in `data/momoka.db` (formerly `data/*.json`).
-
-To migrate existing JSON (stop the bot first):
-
-```powershell
-python scripts/migrate_json_to_sqlite.py
-```
-
-- JSON files are not deleted (kept as backup)
-- After a successful migration you may delete the JSON files and `scripts/migrate_json_to_sqlite.py`
+Per-guild / per-channel overrides are stored in `data/momoka.db`.
 
 #### Bot tokens (`bots_config.yaml`)
 

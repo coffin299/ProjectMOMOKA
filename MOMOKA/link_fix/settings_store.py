@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from MOMOKA.link_fix.presets import (
     get_link_fix_config,
@@ -21,11 +20,9 @@ logger = logging.getLogger(__name__)
 class LinkFixSettingsStore:
     """data/momoka.db の link_fix_settings を扱うストア。"""
 
-    def __init__(self, bot_config: Dict[str, Any], project_root: Optional[Path] = None, bot: Any = None) -> None:
+    def __init__(self, bot_config: Dict[str, Any], bot: Any = None) -> None:
         # bot 全体 config を保持する
         self.bot_config = bot_config
-        # プロジェクトルート（未指定なら cwd）— YAML settings_path 互換のため残す
-        self.project_root = project_root or Path.cwd()
         # SettingsDB（bot 注入 or デフォルト）
         self.settings_db = resolve_settings_db(bot)
         # メモリ上の設定

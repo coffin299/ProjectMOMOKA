@@ -4,7 +4,6 @@ import asyncio
 import io
 import json
 import logging
-import os
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -88,8 +87,6 @@ from MOMOKA.notifications.error.earthquake_errors import (
 )
 from MOMOKA.storage import NS_EARTHQUAKE_CONFIG, resolve_settings_db
 
-DATA_DIR = 'data'
-
 # 通知対象になり得る震度コード（P2P API v2。-1 は不明、99 は震度7程度以上）
 ALL_NOTIFY_SCALES = [-1, 0, 10, 20, 30, 40, 45, 50, 55, 60, 70, 99]
 
@@ -142,7 +139,6 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
 
         # SettingsDB
         self.settings_db = resolve_settings_db(bot)
-        self.ensure_data_dir()
         self.config = self.load_config()
 
         self.last_ids: Dict[str, Optional[str]] = {
@@ -549,13 +545,6 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
         except Exception as e:
             logger.warning(f"情報分類エラー: {e}", exc_info=True)
             return InfoType.UNKNOWN
-
-    def ensure_data_dir(self):
-        try:
-            if not os.path.exists(DATA_DIR):
-                os.makedirs(DATA_DIR)
-        except OSError as e:
-            raise ConfigError(f"データディレクトリの作成に失敗: {e}")
 
     def load_config(self) -> Dict[str, Any]:
         try:
