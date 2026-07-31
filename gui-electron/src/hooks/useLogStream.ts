@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getHostConfig } from "../api";
+import { apiGet, getHostConfig } from "../api";
 
 export type LogEntry = {
   name: string;
@@ -19,9 +19,10 @@ const LEVEL_RANK: Record<string, number> = {
 
 let seq = 0;
 
-export function useLogStream(maxLines = 1000) {
+export function useLogStream(maxLines = 2000) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
+  const [restored, setRestored] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -29,6 +30,23 @@ export function useLogStream(maxLines = 1000) {
     if (!cfg.token) return;
     let closed = false;
     let retry: number | undefined;
+
+    const loadHistory = async () => {
+      try {
+        const data = await apiGet<{ items: Omit<LogEntry, "id">[] }>(
+          `/logs/history?max_lines=${maxLines}`
+        );
+        if (closed) return;
+        const items = (data.items || []).map((row) => ({
+          ...row,
+          id: ++seq,
+        }));
+        setEntries(items.slice(-maxLines));
+        setRestored(true);
+      } catch {
+        if (!closed) setRestored(true);
+      }
+    };
 
     const connect = () => {
       if (closed) return;
@@ -52,10 +70,7 @@ export function useLogStream(maxLines = 1000) {
         try {
           const data = JSON.parse(ev.data) as Omit<LogEntry, "id">;
           setEntries((prev) => {
-            const next = [
-              ...prev,
-              { ...data, id: ++seq },
-            ];
+            const next = [...prev, { ...data, id: ++seq }];
             if (next.length > maxLines) {
               return next.slice(next.length - maxLines);
             }
@@ -67,7 +82,11 @@ export function useLogStream(maxLines = 1000) {
       };
     };
 
-    connect();
+    // 先に .log 末尾を復元してからライブ接続
+    loadHistory().finally(() => {
+      if (!closed) connect();
+    });
+
     return () => {
       closed = true;
       if (retry) window.clearTimeout(retry);
@@ -75,12 +94,10 @@ export function useLogStream(maxLines = 1000) {
     };
   }, [maxLines]);
 
+  // Clear は画面上のみ（ファイルは消さない）
   const clear = () => setEntries([]);
 
-  const filterBy = (
-    category: string,
-    minLevel: string
-  ): LogEntry[] => {
+  const filterBy = (category: string, minLevel: string): LogEntry[] => {
     const min = LEVEL_RANK[minLevel] ?? 20;
     return entries.filter((e) => {
       if (category === "error") {
@@ -95,5 +112,5 @@ export function useLogStream(maxLines = 1000) {
     });
   };
 
-  return { entries, connected, clear, filterBy };
+  return { entries, connected, restored, clear, filterBy };
 }

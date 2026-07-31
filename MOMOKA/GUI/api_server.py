@@ -31,6 +31,11 @@ from MOMOKA.GUI.bot_bridge import (
     get_llm_average_seconds,
     request_shutdown,
 )
+from MOMOKA.GUI.persistent_log import (
+    DEFAULT_HISTORY_LINES,
+    categorize_logger_name,
+    load_log_history,
+)
 from MOMOKA.services.log_sanitize import sanitize_log_message
 from MOMOKA.storage import NS_LOG_VIEWER_CONFIG, get_default_settings_db
 
@@ -234,20 +239,19 @@ def create_host_gui_app(
 
     def _categorize(name: str, level: str) -> str:
         """ログカテゴリを決める。"""
-        # エラー優先
-        if level in ("ERROR", "CRITICAL"):
-            return "error"
-        # stdout は一般
-        if name == "stdout":
-            return "general"
-        # LLM
-        if "MOMOKA.llm" in name:
-            return "llm"
-        # TTS / Music
-        if "MOMOKA.tts" in name or "MOMOKA.music" in name:
-            return "tts"
-        # それ以外一般
-        return "general"
+        # persistent_log と同一ロジック
+        return categorize_logger_name(name, level)
+
+    @router.get("/logs/history")
+    def get_logs_history(
+        max_lines: int = Query(default=DEFAULT_HISTORY_LINES, ge=1, le=50_000),
+        _: None = Depends(require_token),
+    ) -> Dict[str, Any]:
+        """起動復元用: data/momoka_gui.log 末尾を返す。"""
+        # 末尾パース
+        items = load_log_history(max_lines=max_lines)
+        # クライアントへ
+        return {"items": items, "source": "momoka_gui.log"}
 
     @router.websocket("/logs")
     async def ws_logs(

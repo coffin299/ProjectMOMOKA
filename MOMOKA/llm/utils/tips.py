@@ -85,9 +85,44 @@ class ResponseTimeTracker:
             model_name, elapsed_seconds, len(self._times[model_name])
         )
 
+    def _find_times(self, model_name: str) -> Optional[deque]:
+        """記録キーと表示キーの表記ゆれを吸収してサンプル列を返す。
+
+        記録は provider/model（例: nvidia_nim/z-ai/glm-5.2）、
+        待機 UI は API 短名（例: z-ai/glm-5.2）になりがちなので両方を辿る。
+        """
+        # 空文字は照合しない
+        if not model_name:
+            return None
+        # 完全一致を最優先する
+        exact = self._times.get(model_name)
+        # 完全一致かつサンプルありならそれを使う
+        if exact:
+            return exact
+        # 別名候補（接尾辞一致）を集める
+        matches: List[deque] = []
+        # 保存済みキーを走査する
+        for key, times in self._times.items():
+            # 空の deque はスキップする
+            if not times:
+                continue
+            # 記録キーが lookup の親パス付き（provider/short）か
+            if key.endswith("/" + model_name):
+                matches.append(times)
+                continue
+            # lookup が記録キーの親パス付き（逆方向）か
+            if model_name.endswith("/" + key):
+                matches.append(times)
+        # 別名が無ければ見つからず
+        if not matches:
+            return None
+        # サンプルが多い方を採用する（より信頼できる平均）
+        return max(matches, key=len)
+
     def get_estimate(self, model_name: str) -> Optional[float]:
         """モデルの予想応答時間(秒)を返す。データ不足時は None"""
-        times = self._times.get(model_name)
+        # 表記ゆれを吸収してサンプルを取る
+        times = self._find_times(model_name)
         # 最低3サンプル無いと予想を出さない
         if not times or len(times) < 3:
             return None
@@ -299,12 +334,14 @@ class TipsManager:
         fallback_from: Optional[str] = None,
         lang: str = "en",
         include_model: bool = True,
+        estimate_model: Optional[str] = None,
     ) -> tuple[str, discord.Color, Dict[str, Any]]:
         """待機 LayoutView 用の本文・アクセント色・使用 tip を返す。
 
         tip_data を渡すと同一 tip を維持したままモデル名だけ差し替えできる。
         fallback_from があるときのみクォータ起因のモデル切替案内を付ける。
         include_model=False のときは tip のみ（router 振り分け中向け）。
+        estimate_model は記録キー（provider/model）。省略時は model_name で照合する。
         """
         # tip 未指定ならランダムに1つ選ぶ（再利用時は呼び出し側で渡す）
         if tip_data is None:
@@ -333,10 +370,12 @@ class TipsManager:
             )
             accent = tip_data.get("color") or discord.Color.orange()
             return body, accent, tip_data
+        # 予想時間の照合キー（記録時の provider/model を優先）
+        tracker_key = estimate_model or model_name
         # 予想時間文字列（試行中モデル基準）
-        time_estimate = self.response_tracker.format_estimate(model_name, lang=lang)
+        time_estimate = self.response_tracker.format_estimate(tracker_key, lang=lang)
         # 遅いモデルなら切替提案
-        estimate = self.response_tracker.get_estimate(model_name)
+        estimate = self.response_tracker.get_estimate(tracker_key)
         switch_hint = ""
         if estimate is not None and estimate >= self.SLOW_MODEL_THRESHOLD:
             switch_hint = pick_str(

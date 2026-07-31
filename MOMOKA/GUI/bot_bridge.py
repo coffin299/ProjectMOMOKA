@@ -86,7 +86,10 @@ def plana_server_count() -> Optional[int]:
 
 
 def get_guild_list() -> List[Dict[str, Any]]:
-    """PLANA 参加ギルドの id / name のみ返す（メンバー取得なし）。"""
+    """PLANA 参加ギルドの id / name のみ返す（メンバー取得なし）。
+
+    並びは Bot 参加日時の新しい順（上が最新）。joined_at 不明は末尾。
+    """
     # 循環 import 回避
     from MOMOKA.bots.registry import registry
 
@@ -95,8 +98,37 @@ def get_guild_list() -> List[Dict[str, Any]]:
     # 未準備
     if bot is None or bot.is_closed():
         return []
-    # name と id だけ列挙する
-    return [{"id": str(g.id), "name": g.name} for g in bot.guilds]
+    # ソート用に (joined_at, id, name) を集める
+    rows: List[Dict[str, Any]] = []
+    # ギルドを走査（メンバー一覧は取らない）
+    for g in bot.guilds:
+        # Bot 自身の参加時刻（GUILD_CREATE 由来・members intent 不要）
+        joined = None
+        try:
+            # me が取れれば joined_at を使う
+            me = g.me
+            if me is not None and me.joined_at is not None:
+                joined = me.joined_at
+        except Exception:
+            # 取れなければ不明のまま
+            joined = None
+        # 1 行分
+        rows.append(
+            {
+                "id": str(g.id),
+                "name": g.name,
+                "_joined_at": joined,
+            }
+        )
+    # 新しい参加が上（None は最後）
+    rows.sort(
+        key=lambda r: (
+            r["_joined_at"] is None,
+            -(r["_joined_at"].timestamp()) if r["_joined_at"] is not None else 0,
+        )
+    )
+    # 内部キーを落として返す
+    return [{"id": r["id"], "name": r["name"]} for r in rows]
 
 
 def get_active_vc_snapshots() -> List[Dict[str, Any]]:

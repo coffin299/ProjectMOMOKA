@@ -37,7 +37,12 @@ export default function App() {
     [entries]
   );
   const guildEvents = useMemo(
-    () => entries.filter((e) => e.message.includes("[GUILD_EVENT]")),
+    () =>
+      entries.filter(
+        (e) =>
+          e.message.includes("[GUILD_EVENT]") ||
+          /Joined guild|Left guild/i.test(e.message)
+      ),
     [entries]
   );
 

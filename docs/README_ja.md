@@ -190,7 +190,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    起動時のホスト GUI は **Electron**（Discord ダーク）。左サイドバーで Overview（運用）/ 一般 / LLM / TTS+Music / エラーを切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。  
    ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
-   全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記出力専用（GUI はファイル非読込・容量上限なし）。  
+   全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
    初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。未ビルドでも Bot は起動継続。  
    本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
@@ -393,7 +393,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### APIキーローテーション
 
-`llm_config.yaml` の各プロバイダに `api_key1`, `api_key2`, … を並べると、レートリミット／サーバーエラー／一時的な通信切断時に次のキーへ自動切替します（本チャットおよび Agent ルーター共通）。キーを使い切っても失敗する場合や、応答本文が空の場合は `fallback_models` の次候補へ進みます。
+`llm_config.yaml` の各プロバイダに `api_key1`, `api_key2`, … を並べると、レートリミット／サーバーエラー／一時的な通信切断時に次のキーへ自動切替します（本チャットおよび Agent ルーター共通）。キーを使い切っても失敗する場合や、応答本文が空の場合は `fallback_models` の次候補へ進みます。待機 UI の予想応答時間は、記録キー（`provider/model`）と API 短名の表記ゆれを吸収して照合するため、フォールバック先モデルでも過去サンプルがあれば表示されます（サンプル不足時は「計測中...」）。
 
 ### 音楽
 

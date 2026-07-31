@@ -180,7 +180,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    On start, the **Electron** host GUI (Discord dark) opens. Sidebar: Overview / General / LLM / TTS+Music / Error. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently.  
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged.  
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
-   All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log` (write-only for the GUI; no size cap).  
+   All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores the tail of `.log` (history across restarts, including join/leave). Clear affects the UI only.  
    On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). Bot still runs if the GUI build fails.  
    Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
@@ -371,7 +371,7 @@ Before mention, reply-to-bot, and /chat, a lightweight router classifies convers
 
 ### API key rotation
 
-Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error / transient network disconnect, the next key is tried automatically (main chat and Agent router). After all keys fail, or when the response body is empty, the next entry in `fallback_models` is tried.
+Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error / transient network disconnect, the next key is tried automatically (main chat and Agent router). After all keys fail, or when the response body is empty, the next entry in `fallback_models` is tried. Waiting-UI estimated response times resolve both the stored `provider/model` key and the shorter API model id, so fallback models still show an estimate when enough samples exist (otherwise “Measuring...”).
 
 ### Music
 

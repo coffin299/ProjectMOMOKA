@@ -200,6 +200,7 @@ class LLMCog(commands.Cog, name="llm"):
         *,
         lang: str = "en",
         phase: str = "conversation",
+        estimate_model: Optional[str] = None,
     ) -> WaitingLayoutView:
         """応答待機中の Components V2（Tips + 控えめ Ko-fi）。"""
         # UI 言語を正規化する（zh-CN 等も非 ja として en 側へ）
@@ -210,12 +211,15 @@ class LLMCog(commands.Cog, name="llm"):
         phase_line = waiting_phase_title(phase, lang)
         # router 中はモデル名を出さない
         show_model = phase != "router"
+        # 応答時間トラッカー用キー（provider/model を優先）
+        tracker_key = estimate_model or model_name
         # Tips が無ければ簡易本文
         if self.tips_manager:
             tip_body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
                 model_name,
                 lang=ui_lang,
                 include_model=show_model,
+                estimate_model=tracker_key,
             )
             body = f"{phase_line}\n\n{tip_body}"
         else:
@@ -264,12 +268,15 @@ class LLMCog(commands.Cog, name="llm"):
         *,
         fallback_from: Optional[str] = None,
         phase: Optional[str] = None,
+        estimate_model: Optional[str] = None,
     ) -> None:
         """待機 UI の試行中モデル名を差し替え、必要ならフォールバック案内を付ける。"""
         # 再利用する tip（無ければ新規抽選）
         tip_data = getattr(waiting_view, "tip_data", None)
         # View に保存した UI 言語を使う
         ui_lang = getattr(waiting_view, "lang", "en") or "en"
+        # 応答時間トラッカー用キー（記録時の provider/model を優先）
+        tracker_key = estimate_model or model_name
         # TipsManager があれば本文を再構築する
         if self.tips_manager:
             body, accent, tip_data = self.tips_manager.get_waiting_layout_parts(
@@ -278,6 +285,7 @@ class LLMCog(commands.Cog, name="llm"):
                 fallback_from=fallback_from,
                 lang=ui_lang,
                 include_model=True,
+                estimate_model=tracker_key,
             )
         else:
             # Tips 無し時の簡易本文
@@ -1695,11 +1703,14 @@ class LLMCog(commands.Cog, name="llm"):
             model_name = client.model_name_for_api_calls
             # メッセージ起点: guild locale → en（ルーター後に lang で上書き）
             ui_lang = resolve_guild_lang(message.guild)
+            # 応答時間照合用の provider/model キー
+            estimate_key = getattr(client, "config_model_string", None) or model_name
             # まず router 待機フェーズで出す
             waiting_view = self._create_waiting_view(
                 model_name,
                 lang=ui_lang,
                 phase="router",
+                estimate_model=estimate_key,
             )
             # 権限不足でも例外を外へ出さない送信ヘルパーで待機メッセージを出す
             sent_message = await self._safe_reply(
@@ -1779,11 +1790,14 @@ class LLMCog(commands.Cog, name="llm"):
             # 待機 UI をモード別（モデル名表示）へ更新
             phase = "coding" if route.mode == "coding" else "conversation"
             routed_model = getattr(client, "model_name_for_api_calls", model_name)
+            # フォールバック後も記録キーと揃えるため config 文字列を渡す
+            routed_estimate = getattr(client, "config_model_string", None) or routed_model
             await self._refresh_waiting_view_for_model(
                 sent_message,
                 waiting_view,
                 routed_model,
                 phase=phase,
+                estimate_model=routed_estimate,
             )
             # coding 向け出力形式指示を API メッセージへ追加
             api_messages = initial_messages
@@ -1949,7 +1963,11 @@ class LLMCog(commands.Cog, name="llm"):
             waiting_v2_cleared = False
             logger.debug(f"Starting LLM stream for message {sent_message.id}")
 
-            async def _on_model_fallback(new_model: str, failed_model: str) -> None:
+            async def _on_model_fallback(
+                new_model: str,
+                failed_model: str,
+                estimate_model: Optional[str] = None,
+            ) -> None:
                 """別モデルへフォールバックしたとき待機 UI のモデル名を更新する。"""
                 # 待機 UI が無い／既に本文へ切替済みなら何もしない
                 if waiting_view is None or waiting_v2_cleared:
@@ -1965,6 +1983,8 @@ class LLMCog(commands.Cog, name="llm"):
                     new_model,
                     fallback_from=failed_model,
                     phase=fallback_phase,
+                    # 記録キー（provider/model）で予想時間を照合する
+                    estimate_model=estimate_model or new_model,
                 )
 
             stream_generator = self._llm_stream_and_tool_handler(
@@ -2525,7 +2545,7 @@ class LLMCog(commands.Cog, name="llm"):
         client: openai.AsyncOpenAI,
         channel_id: int,
         user_id: int,
-        on_model_fallback: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        on_model_fallback: Optional[Callable[..., Awaitable[None]]] = None,
         route_mode: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         # 呼び出し元クライアント参照を保持（フォールバック後のメタ書き戻し用）
@@ -2705,6 +2725,8 @@ class LLMCog(commands.Cog, name="llm"):
                             await on_model_fallback(
                                 client.model_name_for_api_calls,
                                 str(failed_label),
+                                # 予想時間は記録時と同じ provider/model で照合する
+                                attempt_model_string,
                             )
                         except Exception as callback_error:
                             # UI 更新失敗でストリーム自体は止めない
@@ -3359,8 +3381,15 @@ class LLMCog(commands.Cog, name="llm"):
                 model_name = llm_client.model_name_for_api_calls
                 # /chat: app → guild → en（ルーター後に上書き）
                 ui_lang = resolve_interaction_lang(interaction)
+                # 応答時間照合用の provider/model キー
+                estimate_key = getattr(llm_client, "config_model_string", None) or model_name
                 # まず router 待機
-                waiting_view = self._create_waiting_view(model_name, lang=ui_lang, phase="router")
+                waiting_view = self._create_waiting_view(
+                    model_name,
+                    lang=ui_lang,
+                    phase="router",
+                    estimate_model=estimate_key,
+                )
                 temp_message = await interaction.followup.send(
                     view=waiting_view, ephemeral=False, wait=True
                 )
@@ -3411,11 +3440,16 @@ class LLMCog(commands.Cog, name="llm"):
                         llm_client = mode_client
                 phase = "coding" if route.mode == "coding" else "conversation"
                 routed_model = getattr(llm_client, "model_name_for_api_calls", model_name)
+                # モード切替後クライアントの記録キーで予想時間を照合する
+                routed_estimate = (
+                    getattr(llm_client, "config_model_string", None) or routed_model
+                )
                 await self._refresh_waiting_view_for_model(
                     temp_message,
                     waiting_view,
                     routed_model,
                     phase=phase,
+                    estimate_model=routed_estimate,
                 )
                 api_messages = messages_for_api
                 if route.mode == "coding":
