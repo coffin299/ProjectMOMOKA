@@ -9,8 +9,8 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from MOMOKA.GUI.bot_bridge import (
     aggregate_cog_metric,
-    aggregate_server_count,
     get_bot_ref,
+    plana_server_count,
 )
 from MOMOKA.GUI.theme import (
     apply_windows_dark_mode_to_foreground,
@@ -864,7 +864,7 @@ class LogViewerApp:
         about_window.wait_window()
 
     def poll_status(self) -> None:
-        """Servers / VC / LLM を約 1 秒ごとに更新する（PLANA + ARONA）。"""
+        """Servers（PLANA）/ VC / LLM を約 1 秒ごとに更新する。"""
         try:
             # Bot 未起動ならプレースホルダを維持する
             if get_bot_ref() is None:
@@ -876,8 +876,8 @@ class LogViewerApp:
                 from MOMOKA.llm.llm_cog import LLMCog
                 from MOMOKA.music.music_cog import MusicCog
 
-                # 全 Bot のユニーク参加ギルド数を集計する
-                server_count = aggregate_server_count()
+                # PLANA 単体の参加ギルド数を取得する
+                server_count = plana_server_count()
                 if server_count is None:
                     self.servers_status_var.set("Servers: -")
                 else:

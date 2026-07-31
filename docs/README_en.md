@@ -179,7 +179,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    ```
    On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). Guild join/leave `[GUILD_EVENT]` is blue `#0000ff` (includes `[primary]` / `[companion]` in the message; same color for both roles). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
-   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **Servers** is the unique guild count across PLANA + ARONA; **VC / LLM** combine active guilds.
+   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **Servers** is PLANA's guild count only; **VC / LLM** combine PLANA + ARONA active guilds.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
    Provider v1.3.1. MOMOKA starts it before the bots, checks `/ping`, and

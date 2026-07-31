@@ -187,7 +187,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    ```
    起動時 GUI のログ区画は「一般 / LLM / TTS+Music / エラー」。音楽ログは TTS+Music に出ます。  
    ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン（日時付き行全体）。サーバー加入・脱退の `[GUILD_EVENT]` は青 `#0000ff`（文言に `[primary]` / `[companion]` を付与、役割で色は分けない）。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
-   ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。ステータスバーの **Servers** は PLANA + ARONA のユニーク参加ギルド数、**VC / LLM** は稼働ギルド数合算。
+   ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。ステータスバーの **Servers** は PLANA 単体の参加ギルド数、**VC / LLM** は PLANA + ARONA の稼働ギルド数合算。
 
 ---
 
