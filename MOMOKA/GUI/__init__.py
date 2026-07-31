@@ -7,7 +7,7 @@ from MOMOKA.GUI.logging_bridge import (
     attach_gui_logging,
     create_log_queue,
 )
-from MOMOKA.GUI.runner import run_log_viewer_thread
+from MOMOKA.GUI.runner import run_log_viewer_thread, stop_host_gui
 from MOMOKA.GUI.version import APP_NAME, COPYRIGHT, LOG_VIEWER_NAME, VERSION
 
 
@@ -47,4 +47,5 @@ __all__ = [
     "run_log_viewer_thread",
     "set_bot_ref",
     "set_dark_mode",
+    "stop_host_gui",
 ]

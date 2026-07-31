@@ -9,6 +9,9 @@ from typing import Any, Dict, List, Optional
 _bot_ref: Optional[Any] = None
 # ホスト GUI 用の ready 時刻（epoch 秒）
 _ready_at: Optional[float] = None
+# Cog 名は文字列定数（llm_cog / music_cog の import 循環を避ける）
+_MUSIC_COG_NAME = "music_cog"
+_LLM_COG_NAME = "llm"
 
 
 def set_bot_ref(bot: Any) -> None:
@@ -98,9 +101,8 @@ def get_guild_list() -> List[Dict[str, Any]]:
 
 def get_active_vc_snapshots() -> List[Dict[str, Any]]:
     """全 Bot の Active VC スナップショットを合算する。"""
-    # 循環 import 回避
+    # 循環 import 回避（Cog クラスは import しない）
     from MOMOKA.bots.registry import registry
-    from MOMOKA.music.music_cog import MusicCog
 
     # 結果リスト
     rows: List[Dict[str, Any]] = []
@@ -110,7 +112,7 @@ def get_active_vc_snapshots() -> List[Dict[str, Any]]:
         if bot.is_closed():
             continue
         # Music Cog を取る
-        cog = bot.get_cog(MusicCog.COG_NAME)
+        cog = bot.get_cog(_MUSIC_COG_NAME)
         # スナップショット API が無ければ次へ
         if cog is None or not hasattr(cog, "get_active_vc_snapshots"):
             continue
@@ -127,9 +129,8 @@ def get_active_vc_snapshots() -> List[Dict[str, Any]]:
 
 def get_llm_average_seconds() -> Optional[float]:
     """全 Bot の LLM 平均応答秒を合算平均する。"""
-    # 循環 import 回避
+    # 循環 import 回避（Cog クラスは import しない）
     from MOMOKA.bots.registry import registry
-    from MOMOKA.llm.llm_cog import LLMCog
 
     # 各 Bot の平均値
     samples: List[float] = []
@@ -139,7 +140,7 @@ def get_llm_average_seconds() -> Optional[float]:
         if bot.is_closed():
             continue
         # LLM Cog
-        cog = bot.get_cog(LLMCog.COG_NAME)
+        cog = bot.get_cog(_LLM_COG_NAME)
         # getter が無ければ次
         if cog is None or not hasattr(cog, "get_average_response_seconds"):
             continue
@@ -200,16 +201,14 @@ def get_uptime_seconds() -> Optional[float]:
 
 def build_status_payload() -> Dict[str, Any]:
     """ホスト GUI 用 status JSON。"""
-    # 遅延 import（循環回避）
+    # バージョンのみ軽量 import（Cog クラスは import しない）
     from MOMOKA.GUI.version import VERSION
-    from MOMOKA.llm.llm_cog import LLMCog
-    from MOMOKA.music.music_cog import MusicCog
 
     # ペイロードを組み立てる
     return {
         "servers": plana_server_count(),
-        "vc": aggregate_cog_metric(MusicCog.COG_NAME, "get_active_vc_guild_count"),
-        "llm": aggregate_cog_metric(LLMCog.COG_NAME, "get_active_llm_guild_count"),
+        "vc": aggregate_cog_metric(_MUSIC_COG_NAME, "get_active_vc_guild_count"),
+        "llm": aggregate_cog_metric(_LLM_COG_NAME, "get_active_llm_guild_count"),
         "ping_ms": get_gateway_ping_ms(),
         "uptime_seconds": get_uptime_seconds(),
         "alive": get_bot_alive(),
@@ -221,6 +220,7 @@ def request_shutdown() -> bool:
     """全 Bot を閉じるコルーチンをスケジュールする。成功で True。"""
     # 循環 import 回避
     import asyncio
+    import threading
 
     from MOMOKA.bots.registry import registry
 
@@ -238,5 +238,20 @@ def request_shutdown() -> bool:
         return False
     # close_all をスレッドセーフに投げる
     asyncio.run_coroutine_threadsafe(registry.close_all(), loop)
+
+    # Electron を遅延終了（HTTP 応答後・コンソール占有解除）
+    def _stop_gui_later() -> None:
+        # runner の stop を呼ぶ
+        try:
+            from MOMOKA.GUI.runner import stop_host_gui
+
+            # GUI プロセスツリーを落とす
+            stop_host_gui()
+        except Exception:
+            # 失敗してもシャットダウンは継続
+            pass
+
+    # 0.8 秒後に GUI 終了（Shutdown API の応答を先に返す）
+    threading.Timer(0.8, _stop_gui_later).start()
     # 受け付けた
     return True

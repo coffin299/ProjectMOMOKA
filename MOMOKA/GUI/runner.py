@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
 import subprocess
@@ -15,6 +16,88 @@ from typing import Optional
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 # Electron フロントディレクトリ
 _GUI_ELECTRON_DIR = _REPO_ROOT / "gui-electron"
+# 起動中の Electron（または npm）プロセス
+_electron_proc: Optional[subprocess.Popen] = None
+# stop の多重呼び出し防止
+_stop_lock = threading.Lock()
+# atexit 登録済みか
+_atexit_registered = False
+
+# Windows: コンソールから切り離し（pause のキー入力を奪わない）
+_CREATE_NEW_PROCESS_GROUP = 0x00000200
+_DETACHED_PROCESS = 0x00000008
+
+
+def stop_host_gui() -> None:
+    """Electron ホスト GUI プロセスツリーを終了する。"""
+    # グローバル参照
+    global _electron_proc
+    # 多重実行を直列化
+    with _stop_lock:
+        # 現在のプロセスを取る
+        proc = _electron_proc
+        # 参照を先に外す
+        _electron_proc = None
+    # 無ければ何もしない
+    if proc is None:
+        return
+    # 既に終了済み
+    if proc.poll() is not None:
+        return
+    try:
+        # Windows はツリーごと強制終了（npm 経由の子も含む）
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        else:
+            # POSIX: まず terminate
+            proc.terminate()
+            try:
+                # 短い猶予
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # だめなら kill
+                proc.kill()
+    except Exception as e:
+        # 終了失敗は警告のみ
+        print(f"WARNING: Failed to stop host Electron GUI: {e}")
+
+
+def _register_atexit() -> None:
+    """プロセス終了時に Electron を落とす。"""
+    # グローバル
+    global _atexit_registered
+    # 一度だけ
+    if _atexit_registered:
+        return
+    # 登録
+    atexit.register(stop_host_gui)
+    _atexit_registered = True
+
+
+def _popen_detached(args: list, *, cwd: str, env: dict) -> subprocess.Popen:
+    """コンソール非継承で子プロセスを起動する。"""
+    # 共通 kwargs
+    kwargs: dict = {
+        "cwd": cwd,
+        "env": env,
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "close_fds": True,
+    }
+    # Windows はデタッチ
+    if os.name == "nt":
+        kwargs["creationflags"] = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+    else:
+        # 新しいセッション
+        kwargs["start_new_session"] = True
+    # 起動
+    return subprocess.Popen(args, **kwargs)
 
 
 def _start_api_server(log_queue) -> tuple[int, str]:
@@ -68,6 +151,8 @@ def _start_api_server(log_queue) -> tuple[int, str]:
 
 def _launch_electron(port: int, token: str) -> Optional[subprocess.Popen]:
     """gui-electron を subprocess 起動。失敗時は None。"""
+    # グローバルに保持
+    global _electron_proc
     # ディレクトリ無ければ諦める
     if not _GUI_ELECTRON_DIR.is_dir():
         print(
@@ -80,17 +165,25 @@ def _launch_electron(port: int, token: str) -> Optional[subprocess.Popen]:
     env["MOMOKA_HOST_GUI_PORT"] = str(port)
     env["MOMOKA_HOST_GUI_TOKEN"] = token
     env["MOMOKA_HOST_GUI_HOST"] = "127.0.0.1"
-    # node / npm
-    npm = shutil.which("npm")
-    # electron ローカルバイナリ
+    # electron ローカルバイナリ（npm ラッパより直接起動を優先）
     electron_bin = (
         _GUI_ELECTRON_DIR
         / "node_modules"
         / ".bin"
         / ("electron.cmd" if os.name == "nt" else "electron")
     )
+    # Windows では .cmd より electron.exe を優先（DETACHED と相性）
+    electron_exe = (
+        _GUI_ELECTRON_DIR
+        / "node_modules"
+        / "electron"
+        / "dist"
+        / "electron.exe"
+    )
     # dist の有無
     dist_index = _GUI_ELECTRON_DIR / "dist" / "index.html"
+    # npm
+    npm = shutil.which("npm")
     try:
         # node_modules が無ければ警告のみ
         if not (_GUI_ELECTRON_DIR / "node_modules").is_dir():
@@ -107,25 +200,33 @@ def _launch_electron(port: int, token: str) -> Optional[subprocess.Popen]:
                 "`cd gui-electron && npm run build` を実行してください。（Bot は継続します）"
             )
             return None
-        # npm run electron:prod（Windows でも安定）
-        if npm and (_GUI_ELECTRON_DIR / "package.json").is_file():
-            return subprocess.Popen(
-                [npm, "run", "electron:prod"],
+        # 1) electron.exe 直接
+        if os.name == "nt" and electron_exe.is_file():
+            proc = _popen_detached(
+                [str(electron_exe), "."],
                 cwd=str(_GUI_ELECTRON_DIR),
                 env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
             )
-        # ローカル electron フォールバック
+            _electron_proc = proc
+            return proc
+        # 2) node_modules/.bin/electron
         if electron_bin.exists():
-            return subprocess.Popen(
+            proc = _popen_detached(
                 [str(electron_bin), "."],
                 cwd=str(_GUI_ELECTRON_DIR),
                 env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                shell=(os.name == "nt"),
             )
+            _electron_proc = proc
+            return proc
+        # 3) npm run electron:prod フォールバック
+        if npm and (_GUI_ELECTRON_DIR / "package.json").is_file():
+            proc = _popen_detached(
+                [npm, "run", "electron:prod"],
+                cwd=str(_GUI_ELECTRON_DIR),
+                env=env,
+            )
+            _electron_proc = proc
+            return proc
     except Exception as e:
         # 起動失敗
         print(f"WARNING: Electron の起動に失敗しました: {e}")
@@ -144,6 +245,8 @@ def run_log_viewer_thread(log_queue) -> threading.Thread:
 
     互換のため関数名は従来どおり。内部は Tk ではなく FastAPI + Electron。
     """
+    # 終了時クリーンアップを登録
+    _register_atexit()
 
     def run_gui() -> None:
         """API と Electron を起動する。"""

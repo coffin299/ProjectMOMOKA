@@ -53,7 +53,7 @@ app.whenReady().then(() => {
   });
 });
 
-// 全ウィンドウ閉じても app は quit しない（Bot 継続）
 app.on("window-all-closed", () => {
-  // no-op on purpose
+  // Bot 継続のためウィンドウだけ閉じる場合は quit しない。
+  // プロセス全体の終了は Python 側 stop_host_gui / taskkill に任せる。
 });

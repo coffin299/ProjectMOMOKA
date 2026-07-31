@@ -832,6 +832,13 @@ if __name__ == "__main__":
             await registry.close_all()
             # Bot停止後に自分が所有するProviderだけを停止する。
             await bgutil_manager.stop()
+            # ホスト Electron GUI も落とす（コンソール pause 阻害防止）
+            try:
+                from MOMOKA.GUI.runner import stop_host_gui
+
+                stop_host_gui()
+            except Exception:
+                pass
 
     # asyncio イベントループで両ボットを起動する
     try:
