@@ -181,7 +181,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged.  
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
    All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log` (write-only for the GUI; no size cap).  
-   First-time setup: `cd gui-electron && npm install && npm run build` (Node.js required). Bot still runs if the GUI is missing.  
+   On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). Bot still runs if the GUI build fails.  
    Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled

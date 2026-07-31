@@ -1,25 +1,25 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul
-title MOMOKA 起動ツール
+title MOMOKA Launcher
 
 set "VENV_DIR=.venv"
 set "PYTHON_CMD=py -3.11"
 set "START_DIR=%~dp0"
 cd /d "%START_DIR%"
 
-:: 管理者権限で実行されているか確認
+:: Check whether the script is running elevated
 net session >nul 2>&1
 if %errorLevel% == 0 (
     set "ADMIN_MODE=1"
-    title [管理者] MOMOKA 起動ツール
+    title [Admin] MOMOKA Launcher
 ) else (
     set "ADMIN_MODE=0"
-    title MOMOKA 起動ツール
+    title MOMOKA Launcher
 )
 
 echo ================================
-echo        MOMOKA 起動ツール
+echo        MOMOKA Launcher
 echo ================================
 echo [INFO] Python 3.11 + CUDA torch 2.1 stack
 echo.
@@ -38,7 +38,7 @@ set "PY311_VERSION=Unknown"
 for /f "tokens=2 delims= " %%A in ('%PYTHON_CMD% --version 2^>nul') do set "PY311_VERSION=%%A"
 echo [INFO] Detected Python !PY311_VERSION!
 
-REM 既存 venv が 3.11 以外なら自動で作り直す
+REM Recreate venv automatically if it is not Python 3.11
 if exist "%VENV_DIR%\Scripts\python.exe" (
     set "EXISTING_PY_VERSION="
     for /f "tokens=2 delims= " %%A in ('"%VENV_DIR%\Scripts\python.exe" --version 2^>nul') do set "EXISTING_PY_VERSION=%%A"
@@ -58,7 +58,7 @@ if exist "%VENV_DIR%\Scripts\python.exe" (
     )
 )
 
-REM 仮想環境の存在チェック
+REM Create virtual environment if missing
 if not exist "%VENV_DIR%" (
     echo [INFO] Creating virtual environment in '%VENV_DIR%' folder...
     %PYTHON_CMD% -m venv %VENV_DIR%
@@ -75,7 +75,7 @@ if not exist "%VENV_DIR%" (
     echo.
 )
 
-REM 仮想環境のアクティベート
+REM Activate virtual environment
 echo [INFO] Activating virtual environment...
 call "%VENV_DIR%\Scripts\activate.bat"
 if errorlevel 1 (
@@ -103,27 +103,27 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM pip を先に更新して解決器の不具合を減らす
+REM Upgrade pip first to reduce resolver issues
 echo [INFO] Upgrading pip...
 python -m pip install --upgrade pip
 if errorlevel 1 (
     echo [WARN] pip upgrade failed — continuing with existing pip.
 )
 
-REM 依存関係のインストール
+REM Install dependencies
 echo [INFO] Installing dependencies from requirements.txt ...
 echo [INFO] First run may take several minutes ^(PyTorch CUDA wheels^).
 pip install -r requirements.txt
 if errorlevel 1 (
-    echo [ERROR] パッケージのインストールに失敗しました。
-    echo [ERROR] GPU/CUDA 環境と requirements.txt の torch==2.1.0+cu118 を確認してください。
+    echo [ERROR] Failed to install packages.
+    echo [ERROR] Check GPU/CUDA and torch==2.1.0+cu118 in requirements.txt.
     pause
     exit /b 1
 )
-echo [SUCCESS] すべての依存関係が正常にインストールされました。
+echo [SUCCESS] All dependencies installed successfully.
 echo.
 
-REM 任意: YouTube クッキーの存在チェック（無くても起動は続行）
+REM Optional YouTube cookie check ^(startup continues either way^)
 if exist "youtube_cookie.txt" (
     echo [INFO] Found youtube_cookie.txt — music playback will use it.
 ) else if exist "youtube_cookies.txt" (
@@ -132,7 +132,7 @@ if exist "youtube_cookie.txt" (
     echo [INFO] No YouTube cookie file found ^(optional: place youtube_cookie.txt in project root^).
 )
 
-REM YouTube EJS: Deno / Node が無いと signature solving に失敗して無音・format エラーになる
+REM YouTube EJS: without Deno/Node, signature solving fails ^(silent / format errors^)
 where deno >nul 2>&1
 if errorlevel 1 (
     where node >nul 2>&1
@@ -149,7 +149,7 @@ if errorlevel 1 (
 )
 echo.
 
-REM 同梱BgUtils PO Token ProviderはNode.js 20以上でビルド・実行する
+REM Bundled BgUtils PO Token Provider requires Node.js 20+ to build and run
 echo [INFO] Checking vendored BgUtils PO Token Provider...
 where node >nul 2>&1
 if errorlevel 1 (
@@ -198,7 +198,42 @@ if not exist "third_party\bgutil-ytdlp-pot-provider\server\build\main.js" (
 echo [SUCCESS] BgUtils PO Token Provider is ready.
 echo.
 
-REM MOMOKAの起動
+REM Host Electron GUI ^(skip when already built^)
+echo [INFO] Checking host Electron GUI ^(gui-electron^)...
+if not exist "gui-electron\package.json" (
+    echo [WARN] gui-electron\package.json not found — host GUI will be skipped.
+) else if exist "gui-electron\dist\index.html" (
+    echo [INFO] gui-electron dist already exists — skipping build.
+) else (
+    echo [INFO] Building host Electron GUI ^(first run^)...
+    pushd "gui-electron"
+    if exist "package-lock.json" (
+        call npm ci
+    ) else (
+        call npm install
+    )
+    if errorlevel 1 (
+        popd
+        echo [WARN] gui-electron npm install failed — Bot will start without Electron GUI.
+        goto gui_electron_done
+    )
+    call npm run build
+    if errorlevel 1 (
+        popd
+        echo [WARN] gui-electron build failed — Bot will start without Electron GUI.
+        goto gui_electron_done
+    )
+    popd
+    if exist "gui-electron\dist\index.html" (
+        echo [SUCCESS] Host Electron GUI is ready.
+    ) else (
+        echo [WARN] gui-electron build finished but dist\index.html is missing.
+    )
+)
+:gui_electron_done
+echo.
+
+REM Start MOMOKA
 echo ================================
 echo Starting MOMOKA...
 echo ================================
@@ -206,7 +241,7 @@ echo.
 python main.py
 set "MOMOKA_EXIT=!errorlevel!"
 
-REM 終了時の処理
+REM Shutdown footer
 echo.
 echo ================================
 echo MOMOKA has stopped.

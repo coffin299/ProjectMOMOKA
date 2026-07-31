@@ -166,7 +166,9 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 5. **起動**
 
    `startMOMOKA.bat` は初回のみ同梱 Provider v1.3.1へ `npm ci` と
-   TypeScriptビルドを行います。Bot起動前にProviderを開始して `/ping` を確認し、
+   TypeScriptビルドを行います。同様に `gui-electron` も `dist\index.html` が無ければ
+   `npm ci` / `npm run build` し、あればスキップします。
+   Bot起動前にProviderを開始して `/ping` を確認し、
    GUI・`/shutdown`・Ctrl+Cによる終了時にはMOMOKAが起動したProviderも停止します。
    Providerとyt-dlpの出力は秘密値を除去してGUIの「TTS+Musicログ」へ表示されます。
 
@@ -189,7 +191,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
    全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記出力専用（GUI はファイル非読込・容量上限なし）。  
-   初回のみ: `cd gui-electron && npm install && npm run build`（Node.js 必要）。未ビルドでも Bot は起動継続。  
+   初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。未ビルドでも Bot は起動継続。  
    本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
 ---
