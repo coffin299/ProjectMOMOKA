@@ -212,7 +212,9 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 ### ランタイムデータ（SQLite）
 
-ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に保存します。
+ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に**正規化テーブル**で保存します（起動時に旧 blob 形式があれば自動移行）。
+
+主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels` など。版は `schema_meta.version`（現行 2）。
 
 #### ボット設定例（`bots_config.yaml`）
 
