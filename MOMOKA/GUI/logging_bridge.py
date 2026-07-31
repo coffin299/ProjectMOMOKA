@@ -93,6 +93,16 @@ def attach_gui_logging(
     queue_handler = QueueHandler(log_queue)
     # ルートへハンドラを追加する
     root_logger.addHandler(queue_handler)
+    # data/momoka_gui.txt と .log へ追記（GUI 非読込）
+    try:
+        # 遅延 import（循環回避）
+        from MOMOKA.GUI.persistent_log import attach_persistent_file_handlers
+
+        # 永続ファイル Handler を付ける
+        attach_persistent_file_handlers(root_logger)
+    except Exception as e:
+        # ファイル失敗でも GUI キューは維持する
+        print(f"永続ログファイルの初期化に失敗しました: {e}")
     # 元の stdout を退避する
     original_stdout = sys.stdout
     # キャプチャで差し替える

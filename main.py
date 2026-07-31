@@ -561,7 +561,7 @@ if __name__ == "__main__":
     
     # ログビューアをスレッドで起動する
     log_viewer_thread = run_log_viewer_thread(log_queue)
-    print("ログビューアを起動しました。")
+    print("ホスト GUI（Electron）を起動しました。")
 
     # --- 設定の読み込みとバリデーション ---
     from MOMOKA.config.loader import load_merged_config, validate_bot_tokens

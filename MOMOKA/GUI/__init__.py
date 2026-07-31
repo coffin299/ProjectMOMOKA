@@ -1,4 +1,4 @@
-# MOMOKA GUI パッケージ（ログビューア / テーマ / バージョン）
+# MOMOKA GUI パッケージ（ホスト Electron GUI / API / ログ橋渡し）
 
 from MOMOKA.GUI.bot_bridge import get_bot_ref, set_bot_ref
 from MOMOKA.GUI.logging_bridge import (
@@ -8,8 +8,29 @@ from MOMOKA.GUI.logging_bridge import (
     create_log_queue,
 )
 from MOMOKA.GUI.runner import run_log_viewer_thread
-from MOMOKA.GUI.theme import get_theme_colors, is_dark_mode, set_dark_mode
 from MOMOKA.GUI.version import APP_NAME, COPYRIGHT, LOG_VIEWER_NAME, VERSION
+
+
+def set_dark_mode() -> None:
+    """互換スタブ（Tk テーマ廃止後は no-op）。"""
+    # Electron 側で Discord ダーク固定のため何もしない
+    return
+
+
+def is_dark_mode() -> bool:
+    """互換スタブ。常にダーク。"""
+    # ホスト GUI はダーク固定
+    return True
+
+
+def get_theme_colors() -> dict:
+    """互換スタブ（旧 Tk パレット相当の最小辞書）。"""
+    # Discord ダークに寄せた色
+    return {
+        "bg": "#1E1F22",
+        "fg": "#DBDEE1",
+    }
+
 
 __all__ = [
     "APP_NAME",

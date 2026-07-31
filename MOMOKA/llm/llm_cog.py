@@ -741,6 +741,14 @@ class LLMCog(commands.Cog, name="llm"):
             # 複数同時応答中なら 1 だけ減らす
             self._active_llm_guild_counts[guild_id] = count - 1
 
+    def get_average_response_seconds(self) -> Optional[float]:
+        """GUI 用: 記録済み応答時間の全体平均秒。無ければ None。"""
+        # tips が無効なら不明
+        if not self.tips_manager:
+            return None
+        # トラッカーの全体平均
+        return self.tips_manager.response_tracker.get_overall_average()
+
     def get_active_llm_guild_count(self) -> int:
         """応答生成中のユニークギルド数を返す（GUI 稼働モニタ用）。"""
         # 稼働中（count > 0）のギルド数を返す

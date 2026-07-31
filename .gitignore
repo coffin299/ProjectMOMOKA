@@ -23,7 +23,14 @@ token.json
 # ローカル設定・秘密情報
 .env
 *.log
+data/momoka_gui.txt
+data/momoka_gui.log
 .cursor/
+
+# ホスト Electron GUI
+gui-electron/node_modules/
+gui-electron/dist/
+
 
 # ビルド成果物
 /dist/

@@ -185,9 +185,12 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    pip install -r requirements.txt
    python main.py
    ```
-   起動時 GUI のログ区画は「一般 / LLM / TTS+Music / エラー」。音楽ログは TTS+Music に出ます。  
-   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン（日時付き行全体）。サーバー加入・脱退の `[GUILD_EVENT]` は青 `#0000ff`（文言に `[primary]` / `[companion]` を付与、役割で色は分けない）。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
-   ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。ステータスバーの **Servers** は PLANA 単体の参加ギルド数、**VC / LLM** は PLANA + ARONA の稼働ギルド数合算。
+   起動時のホスト GUI は **Electron**（Discord ダーク）。左サイドバーで Overview（運用）/ 一般 / LLM / TTS+Music / エラーを切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。  
+   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
+   API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
+   全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記出力専用（GUI はファイル非読込・容量上限なし）。  
+   初回のみ: `cd gui-electron && npm install && npm run build`（Node.js 必要）。未ビルドでも Bot は起動継続。  
+   本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
 ---
 
@@ -231,6 +234,11 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 | 読み上げ dictionary / speech | 現状はメンバー可の操作あり | **公開前に Manage Guild へ揃える方針** |
 | Bot token / LLM API key / Twitch secret | ホスト YAML のみ | **ブラウザに出さない** |
 | logging_channels / shutdown / admin | ボット管理者のみ | ダッシュボード対象外 |
+
+#### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
+
+- ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
+- 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない
 
 #### 将来 Web ダッシュボード設計メモ（未実装）
 

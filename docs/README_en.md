@@ -177,9 +177,12 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    pip install -r requirements.txt
    python main.py
    ```
-   On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
-   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). Guild join/leave `[GUILD_EVENT]` is blue `#0000ff` (includes `[primary]` / `[companion]` in the message; same color for both roles). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
-   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **Servers** is PLANA's guild count only; **VC / LLM** combine PLANA + ARONA active guilds.
+   On start, the **Electron** host GUI (Discord dark) opens. Sidebar: Overview / General / LLM / TTS+Music / Error. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently.  
+   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged.  
+   API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
+   All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log` (write-only for the GUI; no size cap).  
+   First-time setup: `cd gui-electron && npm install && npm run build` (Node.js required). Bot still runs if the GUI is missing.  
+   Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
    Provider v1.3.1. MOMOKA starts it before the bots, checks `/ping`, and
@@ -231,6 +234,11 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 | Speech dictionary / speech controls | Some member-usable today | **Align to Manage Guild before public dashboard** |
 | Bot token / LLM API keys / Twitch secret | Host YAML only | **Never expose to the browser** |
 | logging_channels / shutdown / admin | Bot owner only | Out of dashboard scope |
+
+#### Host ops GUI (Electron) vs future guild dashboard
+
+- Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
+- The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 
 #### Future web dashboard notes (not implemented yet)
 

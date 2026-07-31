@@ -326,6 +326,35 @@ class MusicCog(commands.Cog, name="music_cog"):
             if s.voice_client and s.voice_client.is_connected()
         )
 
+    def get_active_vc_snapshots(self) -> list:
+        """接続中 VC のギルド名・曲名・一時停止・キュー件数を返す。"""
+        # 結果行
+        rows = []
+        # ギルド状態を走査する
+        for guild_id, state in list(self.guild_states.items()):
+            # 未接続は除外する
+            if not (state.voice_client and state.voice_client.is_connected()):
+                continue
+            # Discord ギルドオブジェクト（名前用・メンバー一覧は触らない）
+            guild = self.bot.get_guild(guild_id)
+            # 曲名
+            title = None
+            # 再生中トラックがあればタイトルを取る
+            if state.current_track is not None:
+                title = getattr(state.current_track, "title", None)
+            # 1 行分を積む
+            rows.append(
+                {
+                    "guild_id": guild_id,
+                    "guild_name": guild.name if guild else str(guild_id),
+                    "title": title,
+                    "paused": bool(state.is_paused),
+                    "queue_size": state.queue.qsize(),
+                }
+            )
+        # スナップショット一覧
+        return rows
+
     @staticmethod
     def _is_http_url(value: Optional[str]) -> bool:
         """文字列が http(s) URL かどうかを判定する。"""

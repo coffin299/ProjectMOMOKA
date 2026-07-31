@@ -94,6 +94,20 @@ class ResponseTimeTracker:
         # ローリング平均を算出
         return sum(times) / len(times)
 
+    def get_overall_average(self) -> Optional[float]:
+        """全モデル・全サンプルの単純平均秒。無ければ None。"""
+        # 全サンプルを集める
+        all_times: List[float] = []
+        # モデルごとに伸ばす
+        for times in self._times.values():
+            # deque を list 化して追加
+            all_times.extend(times)
+        # サンプル無し
+        if not all_times:
+            return None
+        # 単純平均
+        return sum(all_times) / len(all_times)
+
     def format_estimate(self, model_name: str, *, lang: str = "en") -> str:
         """予想時間を人間向け文字列にフォーマットする"""
         # 予想秒数を取る
