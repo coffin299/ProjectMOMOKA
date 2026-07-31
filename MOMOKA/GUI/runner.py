@@ -49,6 +49,7 @@ def _start_api_server(log_queue) -> tuple[int, str]:
                 port=port,
                 log_level="warning",
                 access_log=False,
+                use_colors=False,
             )
         except Exception as e:
             # API 失敗でも Bot は継続

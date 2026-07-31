@@ -47,15 +47,15 @@ class StdoutCapture:
         # 互換用バッファ（flush で利用）
         self.buffer = StringIO()
 
-    def write(self, text: str) -> None:
+    def write(self, text: str) -> int:
         """標準出力への書き込みをキャプチャする。"""
         # 元の標準出力にも書き込む（コンソールにも表示）
-        self.original_stdout.write(text)
+        written = self.original_stdout.write(text)
         # 即時反映する
         self.original_stdout.flush()
         # 空行や改行のみの場合はスキップする
         if not text.strip():
-            return
+            return written if isinstance(written, int) else 0
         try:
             # 各行を個別に処理する
             for line in text.rstrip().split("\n"):
@@ -66,6 +66,8 @@ class StdoutCapture:
         except Exception:
             # エラーが発生しても元の標準出力は動作させる
             pass
+        # write の戻り値（バイト/文字数）を返す
+        return written if isinstance(written, int) else len(text)
 
     def flush(self) -> None:
         """フラッシュ処理。"""
@@ -74,6 +76,41 @@ class StdoutCapture:
         # 内部バッファがあれば flush する
         if hasattr(self.buffer, "flush"):
             self.buffer.flush()
+
+    def isatty(self) -> bool:
+        """TTY 判定を元 stdout に委譲（uvicorn 等が参照する）。"""
+        # 元ストリームに isatty があればそれを使う
+        orig = self.original_stdout
+        if hasattr(orig, "isatty"):
+            try:
+                return bool(orig.isatty())
+            except Exception:
+                return False
+        # 無ければ非 TTY
+        return False
+
+    def fileno(self) -> int:
+        """ファイル番号を元 stdout に委譲する。"""
+        # fileno が無ければ OSError（標準的な挙動）
+        orig = self.original_stdout
+        if hasattr(orig, "fileno"):
+            return int(orig.fileno())
+        raise OSError("underlying stdout has no fileno")
+
+    @property
+    def encoding(self):
+        """文字エンコーディングを元 stdout から取る。"""
+        return getattr(self.original_stdout, "encoding", "utf-8")
+
+    @property
+    def errors(self):
+        """エラー処理モードを元 stdout から取る。"""
+        return getattr(self.original_stdout, "errors", "strict")
+
+    def __getattr__(self, name: str):
+        """未定義属性は元 stdout へフォールバックする。"""
+        # 元ストリームの属性を返す
+        return getattr(self.original_stdout, name)
 
 
 def attach_gui_logging(
