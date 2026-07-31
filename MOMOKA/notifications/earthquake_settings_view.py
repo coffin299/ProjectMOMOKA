@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, List, Optional
 import discord
 from discord.ext import commands
 
-from MOMOKA.notifications.earthquake_notification_cog import (
+from MOMOKA.notifications.earthquake_constants import (
     ALL_NOTIFY_SCALES,
     InfoType,
     NOTIFY_SCALE_LABELS,

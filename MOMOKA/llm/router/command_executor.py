@@ -13,6 +13,7 @@ from MOMOKA.llm.router.commands_catalog import (
     load_commands_catalog,
 )
 from MOMOKA.llm.router.json_extract import extract_completion_text, parse_llm_json_object
+from MOMOKA.music.music_cog import MusicCog
 
 if TYPE_CHECKING:
     from MOMOKA.llm.llm_cog import LLMCog
@@ -89,7 +90,7 @@ async def _invoke_music(
 ) -> str:
     """MusicCog の公開コマンドを呼ぶ。"""
     # MusicCog 取得
-    music_cog = bot.get_cog("MusicCog") or bot.get_cog("music_cog")
+    music_cog = bot.get_cog(MusicCog.COG_NAME)
     if not music_cog:
         return (
             "音楽機能が利用できません。"

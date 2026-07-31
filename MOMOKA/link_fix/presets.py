@@ -11,9 +11,49 @@ _DOMAIN_RE = re.compile(
     re.IGNORECASE,
 )
 
+# ダッシュボード / 設定 UI から指定されても拒否する危険ホスト（SSRF・内部誘導）
+_BLOCKED_HOST_SUFFIXES = (
+    ".localhost",
+    ".local",
+    ".internal",
+    ".lan",
+)
+_BLOCKED_HOSTS = frozenset(
+    {
+        "localhost",
+        "metadata.google.internal",
+        "metadata",
+    }
+)
+_PRIVATE_IP_RE = re.compile(
+    r"^(?:"
+    r"127\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3}|"
+    r"169\.254\.\d{1,3}\.\d{1,3}|"
+    r"172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}"
+    r")(?::\d{1,5})?$"
+)
+
+
+def _is_blocked_host(host: str) -> bool:
+    """内部向け・メタデータ・プライベート IP ホストなら True。"""
+    # ポートを除いたホスト名
+    name = host.split(":")[0].lower()
+    # 明示拒否リスト
+    if name in _BLOCKED_HOSTS:
+        return True
+    # 危険なサフィックス
+    if any(name.endswith(suffix) for suffix in _BLOCKED_HOST_SUFFIXES):
+        return True
+    # プライベート IP リテラル
+    if _PRIVATE_IP_RE.match(host):
+        return True
+    return False
+
 
 def normalize_domain(raw: str) -> Optional[str]:
-    """入力文字列をホスト名に正規化する。不正なら None。"""
+    """入力文字列をホスト名に正規化する。不正・危険なら None。"""
     # 前後空白を除去する
     text = (raw or "").strip()
     # 空は拒否する
@@ -27,6 +67,9 @@ def normalize_domain(raw: str) -> Optional[str]:
     text = text.lower().rstrip(".")
     # パターン不一致なら拒否する
     if not _DOMAIN_RE.match(text):
+        return None
+    # 内部ホストは拒否する（将来の Web 設定 UI 向け）
+    if _is_blocked_host(text):
         return None
     # 正規化済みドメインを返す
     return text

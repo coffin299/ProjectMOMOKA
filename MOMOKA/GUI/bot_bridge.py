@@ -44,3 +44,26 @@ def aggregate_cog_metric(cog_name: str, method_name: str) -> Optional[int]:
         found = True
     # 1 件も取れなければ None（GUI は "-" 表示）
     return total if found else None
+
+
+def aggregate_server_count() -> Optional[int]:
+    """全 Bot が参加しているユニークなギルド数を返す。"""
+    # 循環 import を避けるため関数内 import
+    from MOMOKA.bots.registry import registry
+
+    # 同一サーバーに両 Bot がいても 1 と数える
+    guild_ids: set[int] = set()
+    # 接続済み Bot を 1 件でも見たか
+    found = False
+    # 登録済み Bot を走査する
+    for _, bot, _ in registry.iter_entries():
+        # 未接続 Bot はスキップする
+        if bot.is_closed():
+            continue
+        # この Bot は集計対象になる
+        found = True
+        # 参加ギルド ID を集める
+        for guild in bot.guilds:
+            guild_ids.add(int(guild.id))
+    # Bot 未準備なら None（GUI は "-" 表示）
+    return len(guild_ids) if found else None

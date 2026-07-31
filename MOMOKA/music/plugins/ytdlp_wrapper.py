@@ -900,7 +900,11 @@ def _inject_local_path_nico(entry: dict, ytdl: Optional[yt_dlp.YoutubeDL] = None
                 entry['local_path'] = str(CACHE_DIR / f"{entry['id']}.{entry['ext']}")
 
         except Exception as e:
-            print(f"[ytdlp_wrapper Warning] ニコニコ動画のローカルパス注入に失敗: {e} (Entry: {entry.get('id')})")
+            logger.warning(
+                "ニコニコ動画のローカルパス注入に失敗: %s (Entry: %s)",
+                e,
+                entry.get("id"),
+            )
             pass  # 失敗しても処理は続ける
 
 
@@ -1066,8 +1070,12 @@ async def ensure_stream(track: Track, ytdl_opts_override: Optional[dict] = None)
             # クッキー使用有無をヒントとして記録する
             track.pipe_use_cookies = new_pipe_use_cookies
         else:
-            # 取得失敗時は警告メッセージをコンソールに出力する
-            print(f"[ytdlp_wrapper Warning] ストリームURLの再取得に失敗: {track.title} (URL: {track.url})")
+            # 取得失敗時は警告ログに再生対象を記録する
+            logger.warning(
+                "ストリームURLの再取得に失敗: %s (URL: %s)",
+                track.title,
+                track.url,
+            )
             # 実行時エラーを送出して呼び出し元に通知する
             raise RuntimeError(f"ストリームURLの再取得に失敗: {track.title}")
 
@@ -1181,7 +1189,7 @@ async def extract(
                     try:
                         cookiejar.save(str(NICO_COOKIE_PATH), ignore_discard=True, ignore_expires=True)
                     except Exception as e_cookie:
-                        print(f"[ytdlp_wrapper Warning] ニコニコ動画のクッキー保存に失敗: {e_cookie}")
+                        logger.warning("ニコニコ動画のクッキー保存に失敗: %s", e_cookie)
 
             extracted_info = info_result  # 抽出結果を保存
         except UnsupportedMediaError:

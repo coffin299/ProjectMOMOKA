@@ -42,6 +42,8 @@ from MOMOKA.llm.plugins import (
 )
 from MOMOKA.llm.plugins.feedback_tool import FeedbackTool
 from MOMOKA.llm.concurrency import chat_limiter
+from MOMOKA.llm.llm_views import ThreadCreationView
+from MOMOKA.llm.message_utils import split_message_smartly
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
 from MOMOKA.llm.router.mode_runner import (
     coding_attach_settings,
@@ -70,13 +72,6 @@ try:
 except ImportError:
     logging.error("Could not import TipsManager. Tips functionality will be disabled.")
     TipsManager = None
-
-try:
-    import aiofiles
-except ImportError:
-    aiofiles = None
-    logging.warning("aiofiles library not found. Channel model settings will be saved synchronously. "
-                    "Install with: pip install aiofiles")
 
 logger = logging.getLogger(__name__)
 
@@ -113,177 +108,11 @@ CHAT_HISTORY_HINT = (
 )
 
 
-def _split_message_smartly(text: str, max_length: int) -> List[str]:
-    if len(text) <= max_length: return [text]
-    chunks, remaining = [], text
-    while remaining:
-        if len(remaining) <= max_length:
-            chunks.append(remaining)
-            break
-        chunk = remaining[:max_length]
-        split_point = _find_best_split_point(chunk)
-        if split_point == -1: split_point = max_length - 20
-        chunk_text = remaining[:split_point].rstrip()
-        if chunk_text: chunks.append(chunk_text)
-        remaining = remaining[split_point:].lstrip()
-    return chunks
-
-
-def _find_best_split_point(chunk: str) -> int:
-    code_block_end = chunk.rfind('```\n')
-    if code_block_end > len(chunk) * 0.5: return code_block_end + 4
-    paragraph_break = chunk.rfind('\n\n')
-    if paragraph_break > len(chunk) * 0.5: return paragraph_break + 2
-    newline = chunk.rfind('\n')
-    if newline > len(chunk) * 0.6: return newline + 1
-    japanese_period = max(chunk.rfind('。'), chunk.rfind('！'), chunk.rfind('？'))
-    if japanese_period > len(chunk) * 0.7: return japanese_period + 1
-    english_period = max(chunk.rfind('. '), chunk.rfind('! '), chunk.rfind('? '))
-    if english_period > len(chunk) * 0.7: return english_period + 2
-    comma = max(chunk.rfind('、'), chunk.rfind(', '))
-    if comma > len(chunk) * 0.7: return comma + 1
-    space = chunk.rfind(' ')
-    if space > len(chunk) * 0.7: return space + 1
-    return -1
-
-
-class ThreadCreationView(discord.ui.View):
-    """スレッド作成ボタンのViewクラス"""
-    
-    def __init__(self, llm_cog, original_message: discord.Message):
-        super().__init__(timeout=300)  # 5分でタイムアウト
-        self.llm_cog = llm_cog
-        self.original_message = original_message
-    
-    @discord.ui.button(label="スレッドを作成する / Create Thread", style=discord.ButtonStyle.primary, emoji="🧵")
-    async def create_thread(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        
-        try:
-            # スレッドを作成
-            thread = await self.original_message.create_thread(
-                name=f"AI Chat - {interaction.user.display_name}",
-                auto_archive_duration=60,  # 1時間でアーカイブ
-                reason="AI conversation thread created by user"
-            )
-            
-            # 元のチャンネルの会話履歴を取得（スレッド作成前の履歴）
-            messages = []
-            try:
-                # 元のメッセージから遡って会話履歴を収集
-                current_msg = self.original_message
-                visited_ids = set()
-                message_count = 0
-                
-                while current_msg and message_count < 40:
-                    if current_msg.id in visited_ids:
-                        break
-                    visited_ids.add(current_msg.id)
-                    
-                    if current_msg.author != self.llm_cog.bot.user:
-                        # ユーザーメッセージを処理
-                        # 履歴用なので当該メッセージ単体の画像のみ（チェーン遡及で重複させない）
-                        image_contents, text_content = await self.llm_cog._prepare_multimodal_content(
-                            current_msg, include_reply_chain=False
-                        )
-                        text_content = text_content.replace(f'<@!{self.llm_cog.bot.user.id}>', '').replace(f'<@{self.llm_cog.bot.user.id}>', '').strip()
-                        
-                        if text_content or image_contents:
-                            user_content_parts = []
-                            if text_content:
-                                # 履歴ターンには言語リマインダを付けない
-                                user_content_parts.append({
-                                    "type": "text",
-                                    "text": self.llm_cog._format_user_text_for_api(
-                                        current_msg.created_at.astimezone(self.llm_cog.jst).strftime('[%H:%M]'),
-                                        text_content,
-                                        mirror_language=False,
-                                    )
-                                })
-                            user_content_parts.extend(image_contents)
-                            messages.append({"role": "user", "content": user_content_parts})
-                            message_count += 1
-                    
-                    # 前のメッセージを取得
-                    if current_msg.reference and current_msg.reference.message_id:
-                        try:
-                            current_msg = current_msg.reference.resolved or await current_msg.channel.fetch_message(current_msg.reference.message_id)
-                        except (discord.NotFound, discord.HTTPException):
-                            break
-                    else:
-                        break
-                
-                # メッセージを逆順にして正しい順序にする
-                messages.reverse()
-                
-            except Exception as e:
-                logger.error(f"Failed to collect conversation history for thread: {e}", exc_info=True)
-                messages = []
-            
-            if messages:
-                # LLMクライアントを取得
-                llm_client = await self.llm_cog._get_llm_client_for_channel(thread.id)
-                if not llm_client:
-                    await thread.send("❌ LLM client is not available for this thread.\nこのスレッドではLLMクライアントが利用できません。")
-                    return
-                
-                # システムプロンプトを準備
-                system_prompt = await self.llm_cog._prepare_system_prompt(
-                    thread.id, interaction.user.id, interaction.user.display_name
-                )
-                
-                # language_prompt は _prepare_system_prompt 内で既に結合済み
-                messages_for_api = [{"role": "system", "content": system_prompt}]
-                # 会話履歴を system の後に続ける
-                messages_for_api.extend(messages)
-                
-                # スレッド内でLLM応答を生成
-                model_name = llm_client.model_name_for_api_calls
-                waiting_message = f"⏳ Processing conversation history... / 会話履歴を処理中..."
-                temp_message = await thread.send(waiting_message)
-                
-                # スレッド内での会話方法を説明
-                await thread.send("💡 **スレッド内での会話方法 / How to chat in this thread:**\n"
-                                "• Botのメッセージにリプライして会話を続けられます / Reply to bot messages to continue chatting\n"
-                                "• 画像も送信可能です / Images are also supported\n"
-                                "• 会話履歴は自動的に保持されます / Conversation history is automatically maintained")
-                
-                sent_messages, full_response_text, used_key_index = await self.llm_cog._process_streaming_and_send_response(
-                    sent_message=temp_message,
-                    channel=thread,
-                    user=interaction.user,
-                    messages_for_api=messages_for_api,
-                    llm_client=llm_client
-                )
-                
-                if sent_messages and full_response_text:
-                    # フォールバック後の実使用モデルで完了ログを出す
-                    used_model = self.llm_cog._effective_model_label(llm_client, thread.id)
-                    logger.info(
-                        f"✅ Thread conversation completed | model='{used_model}' | "
-                        f"response_length={len(full_response_text)} chars"
-                    )
-                
-                # ボタンを無効化
-                button.disabled = True
-                button.label = "✅ Thread Created / スレッド作成済み"
-                await interaction.edit_original_response(view=self)
-                
-            else:
-                await thread.send("ℹ️ No conversation history found, but you can start chatting!\n"
-                                "会話履歴は見つかりませんでしたが、ここから会話を始めることができます！\n\n"
-                                "💡 **スレッド内での会話方法 / How to chat in this thread:**\n"
-                                "• Botのメッセージにリプライして会話を続けられます / Reply to bot messages to continue chatting\n"
-                                "• 画像も送信可能です / Images are also supported\n"
-                                "• 会話履歴は自動的に保持されます / Conversation history is automatically maintained")
-                
-        except Exception as e:
-            logger.error(f"Failed to create thread: {e}", exc_info=True)
-            await interaction.followup.send("❌ Failed to create thread.\nスレッドの作成に失敗しました。", ephemeral=True)
-
-
-class LLMCog(commands.Cog, name="LLM"):
+class LLMCog(commands.Cog, name="llm"):
     """A cog for interacting with Large Language Models, with tool support."""
+
+    # get_cog / GUI 合算用の正式名
+    COG_NAME = "llm"
 
     def _add_support_footer(self, embed: discord.Embed) -> None:
         current_footer = embed.footer.text if embed.footer and embed.footer.text else ""
@@ -2258,7 +2087,10 @@ class LLMCog(commands.Cog, name="LLM"):
                 else:
                     logger.debug(f"Response is {len(full_response_text)} chars, splitting into multiple messages")
                     # 修正: タプル作成のバグを修正
-                    chunks = _split_message_smartly(full_response_text, SAFE_MESSAGE_LENGTH)
+                    chunks = split_message_smartly(
+                        full_response_text,
+                        SAFE_MESSAGE_LENGTH,
+                    )
                     all_messages = []
                     # 先頭チャンクを取り出す
                     first_chunk = chunks[0]
@@ -2795,9 +2627,19 @@ class LLMCog(commands.Cog, name="LLM"):
             stream = None
             # モデル横断での最後の例外を保持する
             last_model_error: Optional[Exception] = None
+            # 次モデル切替理由（keys / empty）を保持する
+            fallback_reason = "keys_exhausted"
+            # ストリーム読取結果（モデルループ外のツール処理でも参照する）
+            tool_calls_buffer: List[Dict[str, Any]] = []
+            # アシスタント本文の蓄積用
+            assistant_response_content = ""
+            # 終了理由の初期値
+            finish_reason = None
 
             # メインモデルの全キー失敗後、fallback_models を順に試す
             for model_idx, attempt_model_string in enumerate(model_chain):
+                # ストリーム参照をモデル試行ごとにリセットする
+                stream = None
                 # 2件目以降はフォールバック先クライアントへ切り替える
                 if model_idx > 0:
                     # 直前に失敗したモデル名を特定する
@@ -2807,11 +2649,23 @@ class LLMCog(commands.Cog, name="LLM"):
                     # 短名が取れなければ provider/model のモデル部分を使う
                     if not failed_label:
                         failed_label = failed_model.split("/", 1)[-1]
-                    logger.warning(
-                        f"🔄 [MODEL FALLBACK] All keys failed for '{failed_model}'. "
-                        f"Trying fallback model '{attempt_model_string}' "
-                        f"({model_idx + 1}/{len(model_chain)})."
-                    )
+                    # 切替理由に応じてログ文言を変える
+                    if fallback_reason == "empty_response":
+                        # 空応答からの切替であることを明示する
+                        logger.warning(
+                            f"🔄 [MODEL FALLBACK] Empty response from '{failed_model}'. "
+                            f"Trying fallback model '{attempt_model_string}' "
+                            f"({model_idx + 1}/{len(model_chain)})."
+                        )
+                    else:
+                        # キー枯渇など接続失敗からの切替を明示する
+                        logger.warning(
+                            f"🔄 [MODEL FALLBACK] All keys failed for '{failed_model}'. "
+                            f"Trying fallback model '{attempt_model_string}' "
+                            f"({model_idx + 1}/{len(model_chain)})."
+                        )
+                    # 次試行の既定理由へ戻す（空応答フラグの持ち越し防止）
+                    fallback_reason = "keys_exhausted"
                     # フォールバック先クライアントを取得する
                     fallback_client = self._get_or_create_llm_client(attempt_model_string)
                     # 初期化失敗なら次候補へ進む
@@ -2965,145 +2819,201 @@ class LLMCog(commands.Cog, name="LLM"):
                         logger.error(f"❌ Unhandled error calling LLM API: {e}", exc_info=True)
                         raise
 
-                # ストリーム確立済みならモデルループも終了する
-                if stream is not None:
-                    # 実使用モデルを呼び出し元クライアントへ書き戻す
-                    request_client.last_used_model_string = attempt_model_string
-                    # 実使用キー index も書き戻す（ログ用）
-                    request_client.last_used_key_index = getattr(client, "last_used_key_index", None)
-                    if model_idx > 0:
-                        logger.info(
-                            f"✅ [MODEL FALLBACK] Connected with fallback model '{attempt_model_string}' "
-                            f"(primary was '{primary_model_string}')."
-                        )
-                        # 以降の tool 反復でも成功モデルを先頭にする
-                        model_chain = [attempt_model_string] + [
-                            m for m in model_chain if m != attempt_model_string
-                        ]
-                    else:
-                        logger.debug(
-                            f"Stream connected with primary model '{attempt_model_string}'."
-                        )
-                    break
-
-                # キー枯渇で次モデルがあるなら続行する
-                if keys_exhausted and model_idx + 1 < len(model_chain):
+                # ストリーム未確立なら次モデル／例外へ進む
+                if stream is None:
+                    # キー枯渇で次モデルがあるなら続行する
+                    if keys_exhausted and model_idx + 1 < len(model_chain):
+                        # 既定の切替理由（キー枯渇）を維持する
+                        fallback_reason = "keys_exhausted"
+                        continue
+                    # これ以上候補が無い場合は最後の例外を投げる
+                    if last_model_error is not None and model_idx + 1 >= len(model_chain):
+                        raise last_model_error
+                    # 例外も次モデルも無い場合はループ継続（最終検査は後段）
                     continue
 
-                # これ以上候補が無い場合は最後の例外を投げる
-                if last_model_error is not None and model_idx + 1 >= len(model_chain):
-                    raise last_model_error
+                # 実使用モデルを呼び出し元クライアントへ書き戻す
+                request_client.last_used_model_string = attempt_model_string
+                # 実使用キー index も書き戻す（ログ用）
+                request_client.last_used_key_index = getattr(client, "last_used_key_index", None)
+                if model_idx > 0:
+                    # 接続成功時点ではチェーンを組み替えない（空応答 continue でインデックスがずれないようにする）
+                    logger.info(
+                        f"✅ [MODEL FALLBACK] Connected with fallback model '{attempt_model_string}' "
+                        f"(primary was '{primary_model_string}')."
+                    )
+                else:
+                    logger.debug(
+                        f"Stream connected with primary model '{attempt_model_string}'."
+                    )
 
-            if stream is None:
+                # このモデルのストリーム読取結果を初期化する
+                tool_calls_buffer = []
+                # 本文蓄積をリセットする
+                assistant_response_content = ""
+                # 終了理由をリセットする
+                finish_reason = None
+
+                # ストリームからチャンクを非同期で順番に受け取るループ処理
+                try:
+                    async for chunk in stream:
+                        # チャンク内に選択肢（choices）が含まれていない場合は処理をスキップする
+                        if not chunk.choices:
+                            # 次のチャンクの処理へ進む
+                            continue
+                        # ストリームの最初の選択肢オブジェクトを取得する
+                        choice = chunk.choices[0]
+                        # 選択肢に終了理由（finish_reason）が設定されているか確認する
+                        if choice.finish_reason:
+                            # 終了理由を後続処理のために記録しておく
+                            finish_reason = choice.finish_reason
+                        # 差分（delta）オブジェクトを取得する
+                        delta = choice.delta
+                        # 差分オブジェクトが存在し、かつ内容（content）が含まれているか判定する
+                        if delta and delta.content:
+                            # 抽出した文字列を格納するための変数を初期化する
+                            content_str = ""
+                            # 内容が通常の文字列型であるか判定する
+                            if isinstance(delta.content, str):
+                                # 文字列型であればそのまま内容を代入する
+                                content_str = delta.content
+                            # 内容がリスト型（Gemini APIなどで稀に返る形式）であるか判定する
+                            elif isinstance(delta.content, list):
+                                # リスト内の各要素を順番に処理してテキストを抽出する
+                                for part in delta.content:
+                                    # 要素が文字列型である場合
+                                    if isinstance(part, str):
+                                        # 文字列をそのまま結合用変数に追加する
+                                        content_str += part
+                                    # 要素が辞書型である場合
+                                    elif isinstance(part, dict):
+                                        # "text"キーの値を取り出し、なければ要素全体を文字列化して追加する
+                                        content_str += part.get("text", str(part))
+                                    # それ以外の型（オブジェクトなど）である場合
+                                    else:
+                                        # オブジェクトに"text"属性があるか確認し、取得する
+                                        text_attr = getattr(part, "text", None)
+                                        # "text"属性が存在する場合
+                                        if text_attr is not None:
+                                            # 属性の値を文字列として追加する
+                                            content_str += text_attr
+                                        # 属性が存在しない場合
+                                        else:
+                                            # 要素自体を文字列に変換して追加する
+                                            content_str += str(part)
+                            # 内容が辞書型であるか判定する
+                            elif isinstance(delta.content, dict):
+                                # "text"キーの値を取得し、なければ辞書全体を文字列化して格納する
+                                content_str = delta.content.get("text", str(delta.content))
+                            # 文字列、リスト、辞書のいずれでもない未知の型の場合
+                            else:
+                                # 安全性のためにオブジェクト全体を文字列に変換して格納する
+                                content_str = str(delta.content)
+
+                            # 抽出された文字列が空でないか確認する
+                            if content_str:
+                                # アシスタントの応答全体を記録する変数に文字列を追加する
+                                assistant_response_content += content_str
+                                # 呼び出し元へストリーミングのチャンク文字列を返却する
+                                yield content_str
+                        if delta and delta.tool_calls:
+                            for tool_call_chunk in delta.tool_calls:
+                                chunk_index = tool_call_chunk.index if tool_call_chunk.index is not None else 0
+                                if len(tool_calls_buffer) <= chunk_index:
+                                    tool_calls_buffer.append(
+                                        {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
+                                buffer = tool_calls_buffer[chunk_index]
+                                if tool_call_chunk.id:
+                                    buffer["id"] = tool_call_chunk.id
+                                if tool_call_chunk.function:
+                                    if tool_call_chunk.function.name:
+                                        buffer["function"]["name"] = tool_call_chunk.function.name
+                                    if tool_call_chunk.function.arguments:
+                                        buffer["function"]["arguments"] += tool_call_chunk.function.arguments
+                except _TRANSIENT_LLM_NETWORK_ERRORS as e:
+                    if assistant_response_content or tool_calls_buffer:
+                        logger.warning(
+                            "⚠️ Stream interrupted after partial data "
+                            "(content=%d chars, tool_calls=%d); continuing. Details: %s",
+                            len(assistant_response_content),
+                            len(tool_calls_buffer),
+                            e,
+                        )
+                    else:
+                        logger.error(
+                            "❌ Stream interrupted before any data received: %s", e
+                        )
+                        raise
+
+                # 終了理由を実クライアントへ記録する
+                client.last_finish_reason = finish_reason
+                # 呼び出し元クライアントへも書き戻す（空応答エラー表示用）
+                request_client.last_finish_reason = finish_reason
+
+                # ツール要求があれば履歴へ載せてモデルループを抜ける
+                if tool_calls_buffer:
+                    # 成功モデルを後続ツール反復の先頭に固定する
+                    model_chain = [attempt_model_string] + [
+                        m for m in model_chain if m != attempt_model_string
+                    ]
+                    # アシスタントメッセージを組み立てる
+                    assistant_message = {
+                        "role": "assistant",
+                        "content": assistant_response_content or None,
+                        "tool_calls": tool_calls_buffer,
+                    }
+                    # 会話履歴へ追加する
+                    current_messages.append(assistant_message)
+                    # ツール処理へ進む
+                    break
+
+                # 本文があれば最終応答として完了する
+                if (assistant_response_content or "").strip():
+                    # 成功モデルを後続反復用に固定する（念のため）
+                    model_chain = [attempt_model_string] + [
+                        m for m in model_chain if m != attempt_model_string
+                    ]
+                    # ツール無しの最終アシスタント応答を履歴へ残す
+                    current_messages.append({
+                        "role": "assistant",
+                        "content": assistant_response_content,
+                    })
+                    logger.debug(
+                        f"No tool calls, returning final response (Finish reason: {finish_reason})"
+                    )
+                    # 生成完了
+                    return
+
+                # 空応答かつ次候補があればフォールバックへ回す
+                if model_idx + 1 < len(model_chain):
+                    logger.warning(
+                        f"⚠️ Empty response from LLM (Finish reason: {finish_reason}) "
+                        f"on '{attempt_model_string}'. Falling back to next model."
+                    )
+                    # 次ループの切替理由を空応答にする
+                    fallback_reason = "empty_response"
+                    # 次モデルの接続試行へ進む
+                    continue
+
+                # 候補が尽きたので空のまま呼び出し元へ返す
+                logger.warning(
+                    f"⚠️ Empty response from LLM (Finish reason: {finish_reason}); "
+                    "no more fallback models."
+                )
+                # 空アシスタントを履歴へ残す（既存挙動に合わせる）
+                current_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                })
+                # 呼び出し元が empty_response_error を表示する
+                return
+
+            # ストリームを一度も確立できなかった場合の最終例外
+            if stream is None and not tool_calls_buffer:
                 # フォールバック含めて全滅した場合の最終例外
                 if last_model_error is not None:
                     raise last_model_error
                 raise Exception("Failed to establish stream with any API key or fallback model.")
-
-            tool_calls_buffer = []
-            assistant_response_content = ""
-            finish_reason = None
-
-            # ストリームからチャンクを非同期で順番に受け取るループ処理
-            try:
-                async for chunk in stream:
-                    # チャンク内に選択肢（choices）が含まれていない場合は処理をスキップする
-                    if not chunk.choices:
-                        # 次のチャンクの処理へ進む
-                        continue
-                    # ストリームの最初の選択肢オブジェクトを取得する
-                    choice = chunk.choices[0]
-                    # 選択肢に終了理由（finish_reason）が設定されているか確認する
-                    if choice.finish_reason:
-                        # 終了理由を後続処理のために記録しておく
-                        finish_reason = choice.finish_reason
-                    # 差分（delta）オブジェクトを取得する
-                    delta = choice.delta
-                    # 差分オブジェクトが存在し、かつ内容（content）が含まれているか判定する
-                    if delta and delta.content:
-                        # 抽出した文字列を格納するための変数を初期化する
-                        content_str = ""
-                        # 内容が通常の文字列型であるか判定する
-                        if isinstance(delta.content, str):
-                            # 文字列型であればそのまま内容を代入する
-                            content_str = delta.content
-                        # 内容がリスト型（Gemini APIなどで稀に返る形式）であるか判定する
-                        elif isinstance(delta.content, list):
-                            # リスト内の各要素を順番に処理してテキストを抽出する
-                            for part in delta.content:
-                                # 要素が文字列型である場合
-                                if isinstance(part, str):
-                                    # 文字列をそのまま結合用変数に追加する
-                                    content_str += part
-                                # 要素が辞書型である場合
-                                elif isinstance(part, dict):
-                                    # "text"キーの値を取り出し、なければ要素全体を文字列化して追加する
-                                    content_str += part.get("text", str(part))
-                                # それ以外の型（オブジェクトなど）である場合
-                                else:
-                                    # オブジェクトに"text"属性があるか確認し、取得する
-                                    text_attr = getattr(part, "text", None)
-                                    # "text"属性が存在する場合
-                                    if text_attr is not None:
-                                        # 属性の値を文字列として追加する
-                                        content_str += text_attr
-                                    # 属性が存在しない場合
-                                    else:
-                                        # 要素自体を文字列に変換して追加する
-                                        content_str += str(part)
-                        # 内容が辞書型であるか判定する
-                        elif isinstance(delta.content, dict):
-                            # "text"キーの値を取得し、なければ辞書全体を文字列化して格納する
-                            content_str = delta.content.get("text", str(delta.content))
-                        # 文字列、リスト、辞書のいずれでもない未知の型の場合
-                        else:
-                            # 安全性のためにオブジェクト全体を文字列に変換して格納する
-                            content_str = str(delta.content)
-
-                        # 抽出された文字列が空でないか確認する
-                        if content_str:
-                            # アシスタントの応答全体を記録する変数に文字列を追加する
-                            assistant_response_content += content_str
-                            # 呼び出し元へストリーミングのチャンク文字列を返却する
-                            yield content_str
-                    if delta and delta.tool_calls:
-                        for tool_call_chunk in delta.tool_calls:
-                            chunk_index = tool_call_chunk.index if tool_call_chunk.index is not None else 0
-                            if len(tool_calls_buffer) <= chunk_index:
-                                tool_calls_buffer.append(
-                                    {"id": "", "type": "function", "function": {"name": "", "arguments": ""}})
-                            buffer = tool_calls_buffer[chunk_index]
-                            if tool_call_chunk.id:
-                                buffer["id"] = tool_call_chunk.id
-                            if tool_call_chunk.function:
-                                if tool_call_chunk.function.name:
-                                    buffer["function"]["name"] = tool_call_chunk.function.name
-                                if tool_call_chunk.function.arguments:
-                                    buffer["function"]["arguments"] += tool_call_chunk.function.arguments
-            except _TRANSIENT_LLM_NETWORK_ERRORS as e:
-                if assistant_response_content or tool_calls_buffer:
-                    logger.warning(
-                        "⚠️ Stream interrupted after partial data "
-                        "(content=%d chars, tool_calls=%d); continuing. Details: %s",
-                        len(assistant_response_content),
-                        len(tool_calls_buffer),
-                        e,
-                    )
-                else:
-                    logger.error(
-                        "❌ Stream interrupted before any data received: %s", e
-                    )
-                    raise
-
-            client.last_finish_reason = finish_reason
-            assistant_message = {"role": "assistant", "content": assistant_response_content or None}
-            if tool_calls_buffer:
-                assistant_message["tool_calls"] = tool_calls_buffer
-            current_messages.append(assistant_message)
-
-            if not tool_calls_buffer:
-                logger.debug(f"No tool calls, returning final response (Finish reason: {finish_reason})")
-                return
 
             # 強制最終回答中にツール要求が来ても実行せず打ち切る
             if force_final:
@@ -3528,7 +3438,7 @@ class LLMCog(commands.Cog, name="LLM"):
                         hint_base = full_response_text
                     else:
                         # 分割送信時は最終チャンクを案内の付け先にする
-                        hint_base = last_msg.content or _split_message_smartly(
+                        hint_base = last_msg.content or split_message_smartly(
                             full_response_text, SAFE_MESSAGE_LENGTH
                         )[-1]
                     await self._append_chat_history_hint(last_msg, interaction.channel, hint_base)

@@ -1,0 +1,1 @@
+# MOMOKA/generator package

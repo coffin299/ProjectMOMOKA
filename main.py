@@ -169,16 +169,20 @@ class Momoka(commands.Bot):
 
     async def notify_active_users_of_restart(self) -> None:
         """利用中ユーザー（音楽・LLM）へ再起動通知を送る。"""
+        # 重い Cog モジュールはメソッド内で参照する（起動時の循環を避ける）
+        from MOMOKA.llm.llm_cog import LLMCog
+        from MOMOKA.music.music_cog import MusicCog
+
         # 並列通知用のコルーチン一覧
         tasks = []
         # 音楽 Cog を名前で取得する
-        music_cog = self.get_cog("music_cog")
+        music_cog = self.get_cog(MusicCog.COG_NAME)
         # 通知メソッドがある場合のみキューに入れる
         if music_cog is not None and hasattr(music_cog, "notify_admin_restart"):
             # MusicCog の再起動通知をキューへ追加する
             tasks.append(music_cog.notify_admin_restart())
         # LLM Cog を名前で取得する
-        llm_cog = self.get_cog("LLM")
+        llm_cog = self.get_cog(LLMCog.COG_NAME)
         # 通知メソッドがある場合のみキューに入れる
         if llm_cog is not None and hasattr(llm_cog, "notify_admin_restart"):
             # LLMCog の再起動通知をキューへ追加する

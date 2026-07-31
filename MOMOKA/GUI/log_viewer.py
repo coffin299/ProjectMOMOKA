@@ -7,7 +7,11 @@ import queue
 import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
-from MOMOKA.GUI.bot_bridge import aggregate_cog_metric, get_bot_ref
+from MOMOKA.GUI.bot_bridge import (
+    aggregate_cog_metric,
+    aggregate_server_count,
+    get_bot_ref,
+)
 from MOMOKA.GUI.theme import (
     apply_windows_dark_mode_to_foreground,
     get_theme_colors,
@@ -410,9 +414,16 @@ class LogViewerApp:
         # ボタンフレーム
         button_frame = ttk.Frame(control_frame, style="TFrame")
         button_frame.pack(side=tk.RIGHT, padx=5, pady=5)
-        # VC / LLM 稼働数表示（起動前はプレースホルダ）
+        # VC / LLM / Servers 表示（起動前はプレースホルダ）
+        self.servers_status_var = tk.StringVar(value="Servers: -")
         self.vc_status_var = tk.StringVar(value="VC: -")
         self.llm_status_var = tk.StringVar(value="LLM: -")
+        # 参加サーバー数ラベル（ユニークギルド）
+        ttk.Label(
+            button_frame,
+            textvariable=self.servers_status_var,
+            style="TLabel",
+        ).pack(side=tk.LEFT, padx=6)
         # VC 接続中ギルド数ラベル
         ttk.Label(
             button_frame,
@@ -853,16 +864,27 @@ class LogViewerApp:
         about_window.wait_window()
 
     def poll_status(self) -> None:
-        """VC / LLM 稼働ギルド数を約 1 秒ごとに更新する（PLANA + ARONA 合算）。"""
+        """Servers / VC / LLM を約 1 秒ごとに更新する（PLANA + ARONA）。"""
         try:
             # Bot 未起動ならプレースホルダを維持する
             if get_bot_ref() is None:
+                self.servers_status_var.set("Servers: -")
                 self.vc_status_var.set("VC: -")
                 self.llm_status_var.set("LLM: -")
             else:
+                # GUI 起動時に重い Cog を読まないよう遅延 import する
+                from MOMOKA.llm.llm_cog import LLMCog
+                from MOMOKA.music.music_cog import MusicCog
+
+                # 全 Bot のユニーク参加ギルド数を集計する
+                server_count = aggregate_server_count()
+                if server_count is None:
+                    self.servers_status_var.set("Servers: -")
+                else:
+                    self.servers_status_var.set(f"Servers: {server_count}")
                 # 全 Bot の VC 接続ギルド数を合算する
                 vc_count = aggregate_cog_metric(
-                    "music_cog", "get_active_vc_guild_count"
+                    MusicCog.COG_NAME, "get_active_vc_guild_count"
                 )
                 if vc_count is None:
                     self.vc_status_var.set("VC: -")
@@ -870,7 +892,7 @@ class LogViewerApp:
                     self.vc_status_var.set(f"VC: {vc_count}")
                 # 全 Bot の LLM 生成中ギルド数を合算する
                 llm_count = aggregate_cog_metric(
-                    "LLM", "get_active_llm_guild_count"
+                    LLMCog.COG_NAME, "get_active_llm_guild_count"
                 )
                 if llm_count is None:
                     self.llm_status_var.set("LLM: -")

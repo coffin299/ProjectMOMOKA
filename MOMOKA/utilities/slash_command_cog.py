@@ -30,7 +30,10 @@ from MOMOKA.utilities.feedback import (
 logger = logging.getLogger(__name__)
 
 
-class SlashCommandsCog(commands.Cog, name="スラッシュコマンド"):
+class SlashCommandsCog(commands.Cog, name="slash_commands"):
+    # get_cog 用の正式名
+    COG_NAME = "slash_commands"
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.session = aiohttp.ClientSession()

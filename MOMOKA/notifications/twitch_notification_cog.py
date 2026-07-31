@@ -315,6 +315,7 @@ class TwitchNotification(commands.Cog):
         notification_channel="Discord channel to send notifications to.",
         message="Optional custom message (e.g. mentions) for notifications."
     )
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def set_notification(self, interaction: discord.Interaction, twitch_url: str,
                                notification_channel: discord.TextChannel, message: Optional[str] = None):
@@ -370,6 +371,7 @@ class TwitchNotification(commands.Cog):
     @app_commands.command(name="twitch_remove", description="Remove Twitch stream notification settings.")
     @app_commands.describe(twitch_channel="Twitch channel to remove.")
     @app_commands.autocomplete(twitch_channel=twitch_channel_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def remove_notification(self, interaction: discord.Interaction, twitch_channel: str):
         """配信通知を解除するコマンド"""
@@ -395,6 +397,7 @@ class TwitchNotification(commands.Cog):
     @app_commands.command(name="twitch_test", description="Send a Twitch notification test message.")
     @app_commands.describe(twitch_channel="Twitch channel to test.")
     @app_commands.autocomplete(twitch_channel=twitch_channel_autocomplete)
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def test_notification(self, interaction: discord.Interaction, twitch_channel: str):
         """通知のテストを行うコマンド"""
@@ -431,6 +434,7 @@ class TwitchNotification(commands.Cog):
             await interaction.followup.send(message)
 
     @app_commands.command(name="twitch_list", description="List configured Twitch notifications.")
+    @app_commands.default_permissions(manage_guild=True)
     @app_commands.checks.has_permissions(manage_guild=True)
     async def list_notifications(self, interaction: discord.Interaction):
         """設定されている通知の一覧を表示するコマンド"""
@@ -458,7 +462,10 @@ class TwitchNotification(commands.Cog):
 
 async def setup(bot: commands.Bot):
     if not hasattr(bot, 'config'):
-        logger.critical("Botにconfig属性が見つかりません。config.yamlをロードしてください。")
+        logger.critical(
+            "Botにconfig属性が見つかりません。"
+            "configs/*_config.yaml のマージ結果をロードしてください。"
+        )
         return
 
     twitch_config = bot.config.get('twitch', {})

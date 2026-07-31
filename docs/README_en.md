@@ -121,7 +121,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 - Format labels do **not** show “video only” notes (audio is merged after selection)
 - The format picker shows the extension first and prefers mp4 over webm at the same resolution
 - Unsupported URLs and unavailable formats get cause-specific guidance (tag/listing pages are not allowed)
-- Requires Google Drive API `client_secrets.json` / `token.json` and the folder ID configured in the cog
+- Requires Google Drive API `client_secrets.json` / `token.json` and the folder ID configured in the cog (**never commit** these; already in `.gitignore`)
 - For YouTube, Deno (recommended) or Node.js 22+ plus `yt-dlp[default]` is advised (same EJS guidance as music)
 
 ---
@@ -147,6 +147,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 
 2. **Configuration**
    - On first run, each missing `configs/<category>_config.yaml` is copied from the matching `*_config.default.yaml` (except `commands_i18n`, which is loaded directly from the default file)
+   - **Public repo:** never commit runtime `configs/*_config.yaml` (tokens/API keys), `client_secrets.json` / `token.json`, `.env`, or `data/*.db` (gitignored). Defaults must keep `YOUR_*` placeholders only
    - Manual copy example:
      ```bash
      copy configs\bots_config.default.yaml configs\bots_config.yaml   # Windows
@@ -178,7 +179,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    ```
    On start, the GUI log panes are General / LLM / TTS+Music / Error. Music logs go to TTS+Music.  
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan (full line including timestamp). Guild join/leave `[GUILD_EVENT]` is blue `#0000ff` (includes `[primary]` / `[companion]` in the message; same color for both roles). `[PLANA]` / `[ARONA]` tag colors are unchanged.  
-   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **VC / LLM** counts combine PLANA + ARONA active guilds.
+   The log viewer lives under `MOMOKA/GUI/`. Version constants are in `MOMOKA/version.py` (Discord status date = last git commit). The status bar **Servers** is the unique guild count across PLANA + ARONA; **VC / LLM** combine active guilds.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
    Provider v1.3.1. MOMOKA starts it before the bots, checks `/ping`, and
@@ -215,6 +216,30 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 Per-guild / per-channel overrides are stored in `data/momoka.db` as **normalized tables**.
 
 Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`. Schema version lives in `schema_meta.version` (currently 2).
+
+#### Host vs. guild settings boundary
+
+The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Link Fix, speech settings, and the speech dictionary. Dashboard code must use `SettingsDB.save_guild()` or `save_guild_async()` and must never modify another guild's rows.
+
+`logging_channels`, `log_viewer_config`, `gdrive_deletion_schedule`, and `response_times` are host-only namespaces and must not be read or written through guild administration pages. Channel-scoped LLM, image-model, and TTS settings are also outside the guild-admin dashboard scope.
+
+#### Authorization matrix (Discord / future dashboard)
+
+| Setting | Discord permission (current) | When dashboard ships |
+|---------|------------------------------|----------------------|
+| Link Fix / earthquake / Twitch config | Manage Guild | Manage Guild (re-check server-side) |
+| Speech dictionary / speech controls | Some member-usable today | **Align to Manage Guild before public dashboard** |
+| Bot token / LLM API keys / Twitch secret | Host YAML only | **Never expose to the browser** |
+| logging_channels / shutdown / admin | Bot owner only | Out of dashboard scope |
+
+#### Future web dashboard notes (not implemented yet)
+
+- Authenticate with Discord OAuth2; verify guild membership and Manage Guild on the server
+- Never trust client-supplied `guild_id` (IDOR). Persist only via `save_guild`
+- CSRF protection and a CORS origin allowlist; never put the bot token in the browser
+- Do not proxy local services (bgutil / Forge) to guild admins
+- Reuse `MOMOKA.services.log_sanitize.sanitize_log_message` for access-log redaction
+- Link Fix custom domains reject internal hosts and private IPs (`normalize_domain`)
 
 #### Bot tokens (`bots_config.yaml`)
 
@@ -333,12 +358,12 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 ### Agent router
 
-Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. **NSFW / adult requests are routed to conversation**, not unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension. Leaked `<thought>` / `<think>` blocks are stripped before JSON parsing, and JSON embedded inside thoughts is also scanned. Google Gemma router calls use `thinking_level=minimal` to suppress thought output. On failure, all API keys for the same provider are tried before moving to `fallback_models`.
+Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. **NSFW / adult requests are routed to conversation**, not unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension. Leaked `<thought>` / `<think>` blocks are stripped before JSON parsing, and JSON embedded inside thoughts is also scanned. Google Gemma router calls use `thinking_level=minimal` to suppress thought output. On failure, all API keys for the same provider are tried before moving to `fallback_models`. After a stream connects, an empty body (e.g. Finish reason `None`) also advances to the remaining `fallback_models`.
 
 
 ### API key rotation
 
-Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error / transient network disconnect, the next key is tried automatically (main chat and Agent router).
+Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit / server error / transient network disconnect, the next key is tried automatically (main chat and Agent router). After all keys fail, or when the response body is empty, the next entry in `fallback_models` is tried.
 
 ### Music
 
@@ -358,6 +383,7 @@ Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.
 - Code 554 (detection-only) is not notified. Code map: 556 = EEW (warning), 551 = quake info, 552 = tsunami
 - Per the P2P API, EEW (556) content/delivery quality is unguaranteed and is not recommended for official emergency-alert use ([spec](https://www.p2pquake.net/develop/json_api_v2/#/))
 - Usable on any Discord server; **Japan earthquake/tsunami data only**
+- Implementation responsibilities are separated into `earthquake_constants.py`, `earthquake_map.py`, `earthquake_embeds.py`, `earthquake_protocol.py`, and `earthquake_commands.py`.
 
 ### Link Fix (PLANA)
 

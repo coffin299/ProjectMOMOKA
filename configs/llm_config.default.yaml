@@ -141,10 +141,10 @@ llm:
   providers:
     openai:
       base_url: https://api.openai.com/v1
-      api_key1: key
+      api_key1: YOUR_OPENAI_API_KEY
     nvidia_nim:
       base_url: https://integrate.api.nvidia.com/v1
-      api_key1: key
+      api_key1: YOUR_NVIDIA_NIM_API_KEY
     google:
       # Gemini / Gemma（router 含む）OpenAI 互換エンドポイント
       base_url: https://generativelanguage.googleapis.com/v1beta/openai/
@@ -155,14 +155,14 @@ llm:
       api_key5: null
     mistral:
       base_url: https://api.mistral.ai/v1
-      api_key1: key
+      api_key1: YOUR_MISTRAL_API_KEY
     groq:
       base_url: https://api.groq.com/openai/v1
-      api_key1: key
+      api_key1: YOUR_GROQ_API_KEY
     # OpenRouter（OpenAI 互換）。キーは https://openrouter.ai/keys
     openrouter:
       base_url: https://openrouter.ai/api/v1
-      api_key1: key
+      api_key1: YOUR_OPENROUTER_API_KEY
       # ランキング用（任意）。未設定時は下記デフォルトを送る
       http_referer: https://momoka-project.com
       x_title: Project MOMOKA

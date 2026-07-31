@@ -17,7 +17,10 @@ THECATAPI_API_KEY = "thecatapi_api_key"
 BOT_USER_AGENT = "PlanaDiscordBot/1.0"
 
 
-class ImageCommandsCog(commands.Cog, name="画像検索"):
+class ImageCommandsCog(commands.Cog, name="image_commands"):
+    # get_cog 用の正式名
+    COG_NAME = "image_commands"
+
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 

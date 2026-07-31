@@ -121,7 +121,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 - 動画フォーマット一覧に「映像のみ」などの注記は出しません（選択後に音声を結合するため）
 - フォーマット選択では拡張子を先頭表示し、同一解像度では mp4 を webm より優先します
 - 対応外 URL やフォーマット取得不可などのエラーは原因別に案内します（タグ／一覧ページは不可）
-- Google Drive API 用の `client_secrets.json` / `token.json` と、Cog 内のフォルダ ID 設定が必要です
+- Google Drive API 用の `client_secrets.json` / `token.json` と、Cog 内のフォルダ ID 設定が必要です（**リポジトリにコミットしない**。`.gitignore` 済み）
 - YouTube 向けには Deno（推奨）または Node.js 22+ と `yt-dlp[default]` を推奨（音楽機能と同じ EJS 対策）
 
 ---
@@ -147,6 +147,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 2. **設定ファイル**
    - 初回起動時、`configs/<category>_config.yaml` が無いカテゴリだけ `*_config.default.yaml` から自動コピーされます（`commands_i18n` は除く。default を直接読みます）
+   - **Public リポジトリ注意**: 実行時の `configs/*_config.yaml`（トークン・API キー）、`client_secrets.json` / `token.json`、`.env`、`data/*.db` は **絶対にコミットしない**（`.gitignore` 済み）。default には `YOUR_*` プレースホルダのみを置く
    - 手動でコピーする場合の例:
      ```bash
      copy configs\bots_config.default.yaml configs\bots_config.yaml   # Windows
@@ -186,7 +187,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    ```
    起動時 GUI のログ区画は「一般 / LLM / TTS+Music / エラー」。音楽ログは TTS+Music に出ます。  
    ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン（日時付き行全体）。サーバー加入・脱退の `[GUILD_EVENT]` は青 `#0000ff`（文言に `[primary]` / `[companion]` を付与、役割で色は分けない）。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
-   ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。ステータスバーの **VC / LLM** は PLANA + ARONA の稼働ギルド数合算。
+   ログビューア本体は `MOMOKA/GUI/`。バージョン定数は `MOMOKA/version.py`（Discord ステータスの日付は最終 git コミット日）。ステータスバーの **Servers** は PLANA + ARONA のユニーク参加ギルド数、**VC / LLM** は稼働ギルド数合算。
 
 ---
 
@@ -215,6 +216,30 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に**正規化テーブル**で保存します。
 
 主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels` など。版は `schema_meta.version`（現行 2）。
+
+#### ホスト設定とギルド設定の境界
+
+Web ダッシュボードが変更できるのはギルド管理 namespace（地震、Twitch、Link Fix、読み上げ設定、読み上げ辞書）だけです。ダッシュボード実装は `SettingsDB.save_guild()` / `save_guild_async()` を使用し、対象ギルド以外の行を変更してはいけません。
+
+`logging_channels`、`log_viewer_config`、`gdrive_deletion_schedule`、`response_times` はホスト専用 namespace であり、ギルド管理画面から読み書きしてはいけません。チャンネル単位の LLM・画像モデル・TTS 設定もギルド管理ダッシュボードの対象外です。
+
+#### 認可マトリクス（Discord / 将来ダッシュボード）
+
+| 設定 | Discord 権限（現行） | ダッシュボード公開時 |
+|------|----------------------|----------------------|
+| Link Fix / 地震 / Twitch 設定変更 | Manage Guild | Manage Guild（サーバー側で再検証） |
+| 読み上げ dictionary / speech | 現状はメンバー可の操作あり | **公開前に Manage Guild へ揃える方針** |
+| Bot token / LLM API key / Twitch secret | ホスト YAML のみ | **ブラウザに出さない** |
+| logging_channels / shutdown / admin | ボット管理者のみ | ダッシュボード対象外 |
+
+#### 将来 Web ダッシュボード設計メモ（未実装）
+
+- Discord OAuth2 でログインし、サーバー側でギルドメンバーシップと Manage Guild を検証する
+- クライアント送信の `guild_id` を信じない（IDOR 対策）。永続化は `save_guild` のみ
+- CSRF 対策と CORS の Origin allowlist。Bot token をブラウザへ渡さない
+- bgutil / Forge などローカルサービスはギルド管理者へプロキシしない
+- アクセスログのシークレット伏せ字は `MOMOKA.services.log_sanitize.sanitize_log_message` を再利用する
+- Link Fix のカスタム domain は内部ホスト・プライベート IP を拒否する（`normalize_domain`）
 
 #### ボット設定例（`bots_config.yaml`）
 
@@ -353,12 +378,12 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### Agent ルーター
 
-メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。**NSFW / 成人向けリクエストは conversation に振り分け**（unsupported にはしない）。coding では冒頭の挨拶文のみ Discord 本文に出し、説明は `article.md`、各コードブロックは言語に応じた拡張子のファイルで添付します。ルーター応答に混入した `<thought>` / `<think>` は JSON 抽出前に除去し、thought 内の JSON も探索します。Google Gemma ルーター呼び出しでは `thinking_level=minimal` で思考出力を抑制します。失敗時は同一プロバイダーの API キーをすべて巡回し、その後に `fallback_models` へ進みます。
+メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。**NSFW / 成人向けリクエストは conversation に振り分け**（unsupported にはしない）。coding では冒頭の挨拶文のみ Discord 本文に出し、説明は `article.md`、各コードブロックは言語に応じた拡張子のファイルで添付します。ルーター応答に混入した `<thought>` / `<think>` は JSON 抽出前に除去し、thought 内の JSON も探索します。Google Gemma ルーター呼び出しでは `thinking_level=minimal` で思考出力を抑制します。失敗時は同一プロバイダーの API キーをすべて巡回し、その後に `fallback_models` へ進みます。ストリーム接続後に本文が空（Finish reason が `None` 等）の場合も、残りの `fallback_models` へ自動で切り替えます。
 
 
 ### APIキーローテーション
 
-`llm_config.yaml` の各プロバイダに `api_key1`, `api_key2`, … を並べると、レートリミット／サーバーエラー／一時的な通信切断時に次のキーへ自動切替します（本チャットおよび Agent ルーター共通）。
+`llm_config.yaml` の各プロバイダに `api_key1`, `api_key2`, … を並べると、レートリミット／サーバーエラー／一時的な通信切断時に次のキーへ自動切替します（本チャットおよび Agent ルーター共通）。キーを使い切っても失敗する場合や、応答本文が空の場合は `fallback_models` の次候補へ進みます。
 
 ### 音楽
 
@@ -379,6 +404,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 - 発表検出のみの code 554 は通知しません。code 対応: 556=緊急地震速報（警報）、551=地震情報、552=津波予報
 - P2P API 仕様上、EEW（556）の内容・配信品質は無保証であり、緊急地震速報（警報）としての公的利活用は非推奨です（[仕様](https://www.p2pquake.net/develop/json_api_v2/#/) 参照）
 - 海外サーバーでも設定可能。取得・配信されるのは日本の地震・津波情報のみ
+- 実装は `earthquake_constants.py`（共有定数）、`earthquake_map.py`（地図描画）、`earthquake_embeds.py`（通知表示）、`earthquake_protocol.py`（P2P API 接続）、`earthquake_commands.py`（コマンド）に責務を分離しています
 
 ### Link Fix（PLANA）
 

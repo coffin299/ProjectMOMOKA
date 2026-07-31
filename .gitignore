@@ -1,8 +1,3 @@
-/config.yaml
-configs/*_config.yaml
-!configs/*_config.default.yaml
-/models/image-models/modelA/
-
 # 仮想環境・キャッシュ
 .venv/
 venv/
@@ -18,6 +13,12 @@ __pycache__/
 youtube_cookie.txt
 youtube_cookies.txt
 nico_cookies.txt
+
+# Google OAuth / 資格情報（リポジトリへコミットしない）
+client_secrets.json
+token.json
+**/credentials*.json
+**/client_secret*.json
 
 # ローカル設定・秘密情報
 .env
@@ -37,3 +38,9 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+
+# 旧ルート設定（使用しない・誤コミット防止）
+/config.yaml
+configs/*_config.yaml
+!configs/*_config.default.yaml
+/models/image-models/modelA/

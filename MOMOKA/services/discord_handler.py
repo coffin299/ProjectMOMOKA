@@ -10,6 +10,10 @@ import discord
 import discord.errors
 from discord import Client, TextChannel
 
+from MOMOKA.services.log_sanitize import (
+    DEFAULT_MAX_LOG_LENGTH,
+    sanitize_log_message,
+)
 from MOMOKA.storage import NS_LOGGING_CHANNELS, resolve_settings_db
 
 # channel.send() の最大待機時間（秒）
@@ -173,62 +177,16 @@ class DiscordLogHandler(logging.Handler):
         else:
             return text[:count] if text else ''
 
-    # 1件のログメッセージの最大文字数（Discordの2000文字制限を考慮し余裕を持たせる）
-    MAX_SINGLE_LOG_LENGTH = 1800
+    # 1件のログメッセージの最大文字数（共有ヘルパの既定と揃える）
+    MAX_SINGLE_LOG_LENGTH = DEFAULT_MAX_LOG_LENGTH
 
     def _sanitize_log_message(self, message: str) -> str:
-        # --- バッククォートのエスケープ（```ansi コードブロック破壊を防止） ---
-        # 連続する3つ以上のバッククォートをゼロ幅スペースで分断
-        message = re.sub(r'`{3,}', lambda m: '`\u200b' * (len(m.group()) - 1) + '`', message)
-
-        # Windowsユーザーパス
-        message = re.sub(
-            r'[A-Za-z]:\\Users\\[^\\]+\\[^\\]+',
-            '********',
+        """Discord 転送前にシークレットを伏せる（共有ヘルパへ委譲）。"""
+        # Web ログでも同じ実装を使うため共通関数に寄せる
+        return sanitize_log_message(
             message,
-            flags=re.IGNORECASE
+            max_length=self.MAX_SINGLE_LOG_LENGTH,
         )
-        # Session ID
-        message = re.sub(
-            r'((?:Session ID:?|session)\s+)[a-f09]{32}',
-            r'\1****',
-            message,
-            flags=re.IGNORECASE
-        )
-        # Session ID (上で取り切れなかった場合)
-        message = re.sub(
-            r'((?:Session ID:?|session)\s+)([a-f0-9])([a-f0-9]{31})',
-            r'\1\2****',
-            message,
-            flags=re.IGNORECASE
-        )
-        # Discord Bot トークン形式を常に伏せる
-        message = re.sub(
-            r'\b(?:mfa\.)?[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{20,}\b',
-            '********',
-            message,
-        )
-        # キー名と値が対になった一般的な API キー設定を伏せる
-        message = re.sub(
-            r'(?i)\b(api[_-]?key|access[_-]?token|client[_-]?secret|'
-            r'authorization|bearer)\b(\s*[:=]\s*|\s+)(["\']?)'
-            r'(?:bearer\s+)?[A-Za-z0-9_./+=-]{16,}\3',
-            r'\1\2********',
-            message,
-        )
-        # GitHub・OpenAI・Google などで使われる既知のキー接頭辞を伏せる
-        message = re.sub(
-            r'\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|'
-            r'AIza[A-Za-z0-9_-]{20,})\b',
-            '********',
-            message,
-        )
-
-        # --- 長大なログメッセージを切り詰め（APIエラーレスポンス全文等の対策） ---
-        if len(message) > self.MAX_SINGLE_LOG_LENGTH:
-            message = message[:self.MAX_SINGLE_LOG_LENGTH] + " ...[truncated]"
-
-        return message
 
     async def _process_queue(self):
         """

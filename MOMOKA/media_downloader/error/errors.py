@@ -1,12 +1,9 @@
 # MOMOKA/media_downloader/error/errors.py
 from __future__ import annotations
 
-import json
 import logging
 import re
-from typing import Dict, Any
 
-import openai
 import yt_dlp
 from googleapiclient.errors import HttpError
 
@@ -85,41 +82,6 @@ def _is_expected_ytdlp_error(e: Exception) -> bool:
         return True
     # それ以外は想定外
     return False
-
-
-class LLMExceptionHandler:
-    """LLM関連のAPI例外を処理し、ユーザー向けの整形されたエラーメッセージを生成するクラス。"""
-
-    def __init__(self, llm_config: Dict[str, Any]):
-        self.llm_config = llm_config
-
-    def handle_exception(self, e: Exception) -> str:
-        error_detail = ""
-        error_messages = self.llm_config.get('error_msg', {})
-
-        if isinstance(e, openai.RateLimitError):
-            logger.warning(f"LLM API rate limit exceeded: {e.status_code} - {e.response.text if e.response else 'N/A'}")
-            base_msg_key, default_msg = 'ratelimit_error', "⚠️ 生成AIが現在非常に混雑しています。(Code: {status_code})"
-        elif isinstance(e, (openai.APIConnectionError, openai.APITimeoutError)):
-            logger.error(f"LLM API connection error: {e}")
-            return error_messages.get('general_error', "Failed to connect to the AI service.")
-        elif isinstance(e, openai.APIStatusError):
-            logger.error(f"LLM API status error: {e.status_code} - {e.response.text if e.response else 'N/A'}")
-            base_msg_key, default_msg = 'api_status_error', "AIとの通信でエラーが発生しました。(Code: {status_code})"
-        else:
-            logger.error(f"An unexpected error occurred during LLM interaction: {e}", exc_info=True)
-            return error_messages.get('general_error', "An unexpected error occurred.")
-
-        if hasattr(e, 'response') and e.response:
-            try:
-                error_data = e.response.json()
-                detail = error_data.get('detail') or error_data.get('message') or error_data.get('title')
-                error_detail = f"\n> **Details**: {detail}" if detail else f"\n> **Response**: `{str(error_data)[:500]}`"
-            except json.JSONDecodeError:
-                error_detail = f"\n> **Raw Response**: `{e.response.text[:500]}`"
-
-        base_message = error_messages.get(base_msg_key, default_msg).format(status_code=e.status_code)
-        return f"{base_message}{error_detail}"[:DISCORD_MESSAGE_MAX_LENGTH]
 
 
 class YTDLPExceptionHandler:

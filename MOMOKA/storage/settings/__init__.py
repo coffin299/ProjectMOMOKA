@@ -1,6 +1,6 @@
-# MOMOKA/storage/__init__.py
-# ランタイム設定の永続化（SQLite）を公開する。
-from MOMOKA.storage.settings_db import (
+"""SettingsDB の実装と namespace 定数を公開する。"""
+
+from MOMOKA.storage.settings.constants import (
     DEFAULT_DB_PATH,
     GUILD_ADMIN_NAMESPACES,
     HOST_ONLY_NAMESPACES,
@@ -17,6 +17,8 @@ from MOMOKA.storage.settings_db import (
     NS_TTS_SETTINGS,
     NS_TWITCH_SETTINGS,
     SCHEMA_VERSION,
+)
+from MOMOKA.storage.settings.database import (
     SettingsDB,
     get_default_settings_db,
     resolve_settings_db,

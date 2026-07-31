@@ -21,6 +21,9 @@ except ImportError:
     TTSAudioSource = None
     MusicAudioSource = None
 
+# MusicCog 未 import 時も get_cog 名を解決できるようフォールバックする
+_MUSIC_COG_NAME = MusicCog.COG_NAME if MusicCog is not None else "music_cog"
+
 try:
     from MOMOKA.tts.error.errors import TTSCogExceptionHandler
 except ImportError as e:
@@ -46,6 +49,9 @@ class TTSCog(commands.Cog, name="tts_cog"):
     KoboldCPPを使用している場合でも、LLM Cogが応答を生成すると、
     このCogが自動的にその応答を読み上げます（設定されている場合）。
     """
+    # get_cog 用の正式名
+    COG_NAME = "tts_cog"
+
     def __init__(self, bot: commands.Bot):
         if TTSCogExceptionHandler is None:
             raise commands.ExtensionFailed(self.qualified_name,
@@ -274,7 +280,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
                     # 接続時は自己deafせず、直後にサーバー側スピーカーミュートへ
                     await after.channel.connect(self_deaf=False)
                     # MusicCog があればサーバー側 deafen 処理を再利用する
-                    music_cog = self.bot.get_cog("music_cog")
+                    music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
                     # MusicCog のヘルパーが使える場合は緑アイコン deafen を適用
                     if music_cog and hasattr(music_cog, "_apply_server_deafen"):
                         # サーバー側スピーカーミュートを適用
@@ -309,7 +315,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_playing():
-            music_cog: Optional[MusicCog] = self.bot.get_cog("music_cog")
+            music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
             music_state = music_cog._get_guild_state(interaction.guild.id) if music_cog else None
             if music_state and music_state.mixer:
                 tts_sources = [name for name in music_state.mixer.sources.keys() if name.startswith("tts_")]
@@ -336,7 +342,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
                 # 新規接続（自己deafはせずサーバー側 mute を後で適用）
                 await vc.connect(self_deaf=False)
             # MusicCog のサーバー側スピーカーミュート処理を再利用する
-            music_cog = self.bot.get_cog("music_cog")
+            music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
             # ヘルパーが存在する場合のみ適用する
             if music_cog and hasattr(music_cog, "_apply_server_deafen"):
                 # 緑アイコンのサーバー側スピーカーミュートを適用
@@ -369,7 +375,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return await interaction.response.send_message("❌ BotがVCにいません。", ephemeral=True)
 
         skipped = False
-        music_cog: Optional[MusicCog] = self.bot.get_cog("music_cog")
+        music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
         music_state = music_cog._get_guild_state(interaction.guild.id) if music_cog else None
         if music_state and music_state.mixer:
             tts_sources = [name for name in music_state.mixer.sources.keys() if name.startswith("tts_")]
@@ -599,7 +605,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
             converted_text = converted_text[:200] + " 以下省略"
 
         # MusicCogの状態を確認
-        music_cog: Optional[MusicCog] = self.bot.get_cog("music_cog")
+        music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
         music_state = music_cog._get_guild_state(guild.id) if music_cog else None
 
         # 音楽が再生中（ミキサーあり & is_playing）ならミキサーでオーバーレイ
@@ -661,7 +667,7 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return None
 
     async def _overlay_tts_with_mixer(self, guild: discord.Guild, text: str, model_id: int, style: str, style_weight: float, speed: float, volume: float, interaction: Optional[discord.Interaction] = None) -> bool:
-        music_cog: Optional[MusicCog] = self.bot.get_cog("music_cog")
+        music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
         music_state = music_cog._get_guild_state(guild.id)
         
         wav_data = await self._api_call_to_audio_data(text, model_id, style, style_weight, speed)
@@ -732,17 +738,20 @@ class TTSCog(commands.Cog, name="tts_cog"):
 async def setup(bot: commands.Bot):
     # TTSセクションが存在しない場合はロードをスキップ
     if 'tts' not in bot.config:
-        logging.getLogger("MOMOKA.tts").warning("'tts' section not found in config.yaml. TTSCog will not be loaded.")
+        logging.getLogger("MOMOKA.tts").warning(
+            "'tts' section not found in configs/tts_config.yaml (merged config). "
+            "TTSCog will not be loaded."
+        )
         return
     # enabled フラグが false の場合はCog全体をロードしない（VRAM節約）
     tts_config = bot.config.get('tts', {})
     if not tts_config.get('enabled', True):
         logging.getLogger("MOMOKA.tts").info(
-            "TTSCog is disabled in config.yaml (tts.enabled=false). "
+            "TTSCog is disabled in configs/tts_config.yaml (tts.enabled=false). "
             "Skipping TTS model loading to conserve VRAM."
         )
         return
-    if not bot.get_cog("music_cog"):
+    if not bot.get_cog(_MUSIC_COG_NAME):
         logging.getLogger("MOMOKA.tts").warning("MusicCog is not loaded. TTSCog may not function correctly with music.")
     
     await bot.add_cog(TTSCog(bot))
