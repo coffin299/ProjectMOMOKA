@@ -557,12 +557,10 @@ class EarthquakeTsunamiCog(commands.Cog, name="EarthquakeNotifications"):
             if not isinstance(config, dict):
                 return {}
             for guild_id, value in list(config.items()):
-                if isinstance(value, int):
-                    config[guild_id] = {it.value: value for it in InfoType if it != InfoType.UNKNOWN}
                 # ギルド設定を正規化する
-                if isinstance(config.get(guild_id), dict):
+                if isinstance(value, dict):
                     # フィルタ系キーの欠落を埋める
-                    self._normalize_guild_config(config[guild_id])
+                    self._normalize_guild_config(value)
             return config
         except Exception as e:  # noqa: BLE001
             logger.warning(f"設定読み込みエラー: {e}")

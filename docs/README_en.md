@@ -212,7 +212,7 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 
 ### Runtime data (SQLite)
 
-Per-guild / per-channel overrides are stored in `data/momoka.db` as **normalized tables** (legacy blob rows are migrated automatically on startup).
+Per-guild / per-channel overrides are stored in `data/momoka.db` as **normalized tables**.
 
 Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`. Schema version lives in `schema_meta.version` (currently 2).
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import sqlite3
 import threading
@@ -16,10 +15,10 @@ logger = logging.getLogger(__name__)
 # デフォルト DB パス（リポジトリルート相対）
 DEFAULT_DB_PATH = "data/momoka.db"
 
-# 正規化スキーマ版（blob の settings テーブルは v1）
+# 正規化スキーマ版
 SCHEMA_VERSION = 2
 
-# --- namespace 定数（呼び出し側互換） ---
+# --- namespace 定数 ---
 NS_CHANNEL_LLM_MODELS = "channel_llm_models"
 NS_CHANNEL_IMAGE_MODELS = "channel_image_models"
 NS_LINK_FIX_SETTINGS = "link_fix_settings"
@@ -76,7 +75,7 @@ class SettingsDB:
         self._lock = threading.Lock()
         # 親ディレクトリを用意する
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        # テーブルを保証し、必要なら blob から移行する
+        # 正規化テーブルを保証する
         self._ensure_schema()
 
     def _connect(self) -> sqlite3.Connection:
@@ -89,7 +88,7 @@ class SettingsDB:
         return conn
 
     def _ensure_schema(self) -> None:
-        """正規化テーブルを作り、旧 blob があれば移行する。"""
+        """正規化テーブルと schema_meta を用意する。"""
         # スキーマ作成もロック下で行う
         with self._lock:
             # 接続を開く
@@ -106,41 +105,22 @@ class SettingsDB:
                 )
                 # 正規化テーブル群を作成する
                 self._create_normalized_tables(conn)
-                # 現在版を読む
-                row = conn.execute(
-                    "SELECT version FROM schema_meta WHERE id = 1"
-                ).fetchone()
-                # 旧 blob テーブルの有無
-                blob_exists = self._table_exists(conn, "settings")
-                # 未初期化、または旧 blob が残っている場合は移行する
-                if row is None or (blob_exists and int(row[0]) < SCHEMA_VERSION):
-                    # blob → 正規化
-                    if blob_exists:
-                        self._migrate_from_blob(conn)
-                    # 版を書き込む
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO schema_meta (id, version)
-                        VALUES (1, ?)
-                        """,
-                        (SCHEMA_VERSION,),
-                    )
+                # 旧 blob / バックアップが残っていれば捨てる
+                conn.execute("DROP TABLE IF EXISTS settings")
+                conn.execute("DROP TABLE IF EXISTS settings_blob_legacy")
+                # 版を現行に固定する
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO schema_meta (id, version)
+                    VALUES (1, ?)
+                    """,
+                    (SCHEMA_VERSION,),
+                )
                 # 確定する
                 conn.commit()
             finally:
                 # 接続を閉じる
                 conn.close()
-
-    @staticmethod
-    def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
-        """テーブルが存在するかを返す。"""
-        # sqlite_master を照会する
-        row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (name,),
-        ).fetchone()
-        # 有無を bool で返す
-        return row is not None
 
     @staticmethod
     def _create_normalized_tables(conn: sqlite3.Connection) -> None:
@@ -334,28 +314,6 @@ class SettingsDB:
             """
         )
 
-    def _migrate_from_blob(self, conn: sqlite3.Connection) -> None:
-        """旧 settings(namespace, payload) を正規化テーブルへ移す。"""
-        # blob 行をすべて取る
-        rows = conn.execute("SELECT namespace, payload FROM settings").fetchall()
-        # 各 namespace を写像する
-        for namespace, payload in rows:
-            try:
-                # JSON をデコードする
-                data = json.loads(payload)
-            except json.JSONDecodeError as exc:
-                # 壊れた行は飛ばす
-                logger.error("blob 移行失敗 (%s): %s", namespace, exc)
-                continue
-            # 正規化 save と同じ経路で書く（同一接続）
-            self._save_namespace_conn(conn, namespace, data)
-            logger.info("blob → 正規化 移行完了: %s", namespace)
-        # 再移行時に残っている旧バックアップを落とす
-        if self._table_exists(conn, "settings_blob_legacy"):
-            conn.execute("DROP TABLE settings_blob_legacy")
-        # 旧テーブルをバックアップ名へリネームする（再移行防止）
-        conn.execute("ALTER TABLE settings RENAME TO settings_blob_legacy")
-
     def load(self, namespace: str) -> Any:
         """namespace のデータを組み立てて返す。無ければ None。"""
         # 読込を排他する
@@ -508,18 +466,7 @@ class SettingsDB:
                 continue
             # 各チャンネル
             for channel_id, override in channels.items():
-                # 旧形式: 値がモデル名文字列
-                if isinstance(override, str):
-                    conn.execute(
-                        """
-                        INSERT INTO channel_llm_models
-                            (bot_id, channel_id, model, expires_at)
-                        VALUES (?, ?, ?, NULL)
-                        """,
-                        (str(bot_id), str(channel_id), override),
-                    )
-                    continue
-                # dict 形式
+                # dict 形式のみ受け付ける
                 if not isinstance(override, dict):
                     continue
                 # モデル名
@@ -1090,13 +1037,6 @@ class SettingsDB:
             return
         # ギルドごと
         for guild_id, settings in data.items():
-            # 旧形式: 値がチャンネル ID 単独
-            if isinstance(settings, int):
-                settings = {
-                    "eew": settings,
-                    "quake": settings,
-                    "tsunami": settings,
-                }
             # dict のみ
             if not isinstance(settings, dict):
                 continue
