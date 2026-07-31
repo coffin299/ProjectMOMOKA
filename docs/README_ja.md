@@ -190,7 +190,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    起動時のホスト GUI は **Electron**（Discord ダーク）。左サイドバーで Overview（運用）/ 一般 / LLM / TTS+Music / エラーを切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。  
    ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
-   全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
+   全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾 **最大 10000 行** を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
    初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。未ビルドでも Bot は起動継続。  
    本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
@@ -379,7 +379,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | `/help` | ヘルプ（Components V2・app→guild→en 初期言語・🇯🇵/🇺🇸 切替・ページング） |
 | `/invite` | PLANA / ARONA 招待（Components V2・app→guild→en） |
 | `/download_video` `/download_audio` | メディアダウンロード（Components V2・Google Drive 共有） |
-| `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系 |
+| `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系（`/ping` は Gateway + Voice WebSocket） |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | その他 |
 
 ---

@@ -3,6 +3,7 @@ import datetime
 import logging
 import random
 import re
+import time
 from typing import Optional, List, Dict, Any
 
 import aiohttp
@@ -142,15 +143,82 @@ class SlashCommandsCog(commands.Cog, name="slash_commands"):
         embed.set_footer(text="提供割合: 🟪(☆3): 3.0%, 🟨(☆2): 18.5%, 🟦(☆1): 78.5%")
         self._add_support_footer(embed)
         await interaction.followup.send(embed=embed, view=self._create_support_view())
-    @app_commands.command(name="ping", description="Displays the bot latency.")
+    @app_commands.command(
+        name="ping",
+        description="Shows Gateway (WebSocket) and API round-trip latency.",
+    )
     async def ping(self, interaction: discord.Interaction):
-        latency_ms = round(self.bot.latency * 1000)
-        embed = discord.Embed(title="Pong! 🏓", description=f"現在のレイテンシ / Current Latency: `{latency_ms}ms`",
-                              color=discord.Color.green() if latency_ms < 150 else (
-                                  discord.Color.orange() if latency_ms < 300 else discord.Color.red()))
+        # Discord Gateway WebSocket の HEARTBEAT 往復（秒→ms）
+        gateway_ms = round(self.bot.latency * 1000)
+        # スラッシュ応答の往復計測開始
+        t0 = time.perf_counter()
+        # 先に defer してから計測用に edit（ACK + 本文送信の体感に近い）
+        await interaction.response.defer(ephemeral=False, thinking=False)
+        # Voice WebSocket（接続中があれば平均）
+        voice_samples: List[float] = []
+        for vc in self.bot.voice_clients:
+            try:
+                if not vc.is_connected():
+                    continue
+                lat = float(vc.latency)
+                if lat < 0 or lat == float("inf"):
+                    continue
+                voice_samples.append(lat * 1000.0)
+            except Exception:
+                continue
+        if voice_samples:
+            voice_ms: Optional[int] = round(
+                sum(voice_samples) / len(voice_samples)
+            )
+            voice_text = f"`{voice_ms}ms`"
+            if len(voice_samples) > 1:
+                voice_text += f" _(avg of {len(voice_samples)})_"
+        else:
+            voice_ms = None
+            voice_text = "`N/A`"
+        # 色は Gateway / Voice の大きい方（Voice 無しなら Gateway）
+        color_ms = gateway_ms if voice_ms is None else max(gateway_ms, voice_ms)
+        embed_color = (
+            discord.Color.green()
+            if color_ms < 150
+            else (
+                discord.Color.orange()
+                if color_ms < 300
+                else discord.Color.red()
+            )
+        )
+        embed = discord.Embed(title="Pong! 🏓", color=embed_color)
+        embed.add_field(
+            name="Gateway",
+            value=f"`{gateway_ms}ms`\nDiscord Gateway WebSocket HEARTBEAT",
+            inline=True,
+        )
+        embed.add_field(
+            name="WebSocket (Voice)",
+            value=f"{voice_text}\nVoice server HEARTBEAT",
+            inline=True,
+        )
+        # 実行日時をフッター先頭に記載（JST）
+        executed_at = datetime.datetime.now(
+            datetime.timezone(datetime.timedelta(hours=9))
+        )
+        embed.set_footer(
+            text=f"Executed at {executed_at.strftime('%Y-%m-%d %H:%M:%S')} JST"
+        )
         self._add_support_footer(embed)
-        await interaction.response.send_message(embed=embed, view=self._create_support_view(), ephemeral=False)
-        logger.info(f"/ping が実行されました。レイテンシ: {latency_ms}ms (User: {interaction.user.id})")
+        await interaction.followup.send(
+            embed=embed,
+            view=self._create_support_view(),
+        )
+        # defer〜followup の所要（参考ログ）
+        api_ms = round((time.perf_counter() - t0) * 1000)
+        logger.info(
+            "/ping gateway=%sms voice=%s api=%sms (User: %s)",
+            gateway_ms,
+            f"{voice_ms}ms" if voice_ms is not None else "N/A",
+            api_ms,
+            interaction.user.id,
+        )
 
     @app_commands.command(name="serverinfo",
                           description="Displays information about the current server.")

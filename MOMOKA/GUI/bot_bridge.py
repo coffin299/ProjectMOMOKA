@@ -86,7 +86,7 @@ def plana_server_count() -> Optional[int]:
 
 
 def get_guild_list() -> List[Dict[str, Any]]:
-    """PLANA 参加ギルドの id / name のみ返す（メンバー取得なし）。
+    """PLANA 参加ギルドの id / name / joined_at を返す（メンバー取得なし）。
 
     並びは Bot 参加日時の新しい順（上が最新）。joined_at 不明は末尾。
     """
@@ -98,7 +98,7 @@ def get_guild_list() -> List[Dict[str, Any]]:
     # 未準備
     if bot is None or bot.is_closed():
         return []
-    # ソート用に (joined_at, id, name) を集める
+    # ソート用に行を集める
     rows: List[Dict[str, Any]] = []
     # ギルドを走査（メンバー一覧は取らない）
     for g in bot.guilds:
@@ -112,11 +112,19 @@ def get_guild_list() -> List[Dict[str, Any]]:
         except Exception:
             # 取れなければ不明のまま
             joined = None
+        # ISO 文字列（UTC）または None
+        joined_iso = None
+        if joined is not None:
+            try:
+                joined_iso = joined.isoformat()
+            except Exception:
+                joined_iso = None
         # 1 行分
         rows.append(
             {
                 "id": str(g.id),
                 "name": g.name,
+                "joined_at": joined_iso,
                 "_joined_at": joined,
             }
         )
@@ -128,16 +136,24 @@ def get_guild_list() -> List[Dict[str, Any]]:
         )
     )
     # 内部キーを落として返す
-    return [{"id": r["id"], "name": r["name"]} for r in rows]
+    return [
+        {"id": r["id"], "name": r["name"], "joined_at": r["joined_at"]}
+        for r in rows
+    ]
 
 
 def get_active_vc_snapshots() -> List[Dict[str, Any]]:
-    """全 Bot の Active VC スナップショットを合算する。"""
+    """全 Bot の Active VC スナップショットを合算する。
+
+    (bot_id, guild_id) で重複除去。bot_label に PLANA/ARONA を付与。
+    """
     # 循環 import 回避（Cog クラスは import しない）
     from MOMOKA.bots.registry import registry
 
     # 結果リスト
     rows: List[Dict[str, Any]] = []
+    # 重複キー
+    seen: set = set()
     # 各 Bot を走査する
     for bot_id, bot, display in registry.iter_entries():
         # 切断済みはスキップ
@@ -148,13 +164,36 @@ def get_active_vc_snapshots() -> List[Dict[str, Any]]:
         # スナップショット API が無ければ次へ
         if cog is None or not hasattr(cog, "get_active_vc_snapshots"):
             continue
+        # 表示ラベル（plana→PLANA）
+        label = (display or bot_id or "").upper()
+        if bot_id == "plana":
+            label = "PLANA"
+        elif bot_id == "arona":
+            label = "ARONA"
         # ギルド単位行を取り出す
         for row in cog.get_active_vc_snapshots():
+            # ギルド ID
+            gid = row.get("guild_id")
+            # 重複キー
+            key = (bot_id, gid)
+            # 同一 Bot×ギルドは1件だけ
+            if key in seen:
+                continue
+            # 記録
+            seen.add(key)
             # どの Bot 由来かを付与する
             item = dict(row)
             item["bot_id"] = bot_id
             item["bot_display"] = display
+            item["bot_label"] = label
             rows.append(item)
+    # Bot 名 → ギルド名で見やすく並べる
+    rows.sort(
+        key=lambda r: (
+            str(r.get("bot_label") or ""),
+            str(r.get("guild_name") or ""),
+        )
+    )
     # 合算結果
     return rows
 

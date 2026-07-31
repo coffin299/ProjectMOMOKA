@@ -29,7 +29,12 @@ export function LogPanel({
     if (!autoScroll || !stick) return;
     const el = ref.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const scroll = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    scroll();
+    const id = window.requestAnimationFrame(scroll);
+    return () => window.cancelAnimationFrame(id);
   }, [entries, autoScroll, stick]);
 
   const onScroll = () => {

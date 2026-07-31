@@ -5,7 +5,6 @@ type Props = {
   ping: string;
   uptime: string;
   alive: Record<string, boolean> | undefined;
-  version: string | undefined;
 };
 
 export function StatusBar({
@@ -15,7 +14,6 @@ export function StatusBar({
   ping,
   uptime,
   alive,
-  version,
 }: Props) {
   const plana = alive?.plana;
   const arona = alive?.arona;
@@ -46,11 +44,6 @@ export function StatusBar({
           ARONA
           <strong>{arona === undefined ? "-" : arona ? "up" : "down"}</strong>
         </span>
-        {version ? (
-          <span className="pill">
-            ver<strong>{version}</strong>
-          </span>
-        ) : null}
       </div>
     </>
   );

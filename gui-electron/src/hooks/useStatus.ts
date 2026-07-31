@@ -18,11 +18,14 @@ export type VcItem = {
   paused: boolean;
   queue_size: number;
   bot_id?: string;
+  bot_label?: string;
+  bot_display?: string;
 };
 
 export type GuildItem = {
   id: string;
   name: string;
+  joined_at?: string | null;
 };
 
 function dash(v: number | null | undefined, digits = 0): string {

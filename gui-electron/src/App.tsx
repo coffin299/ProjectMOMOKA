@@ -18,7 +18,7 @@ const LOG_TITLES: Record<Exclude<NavId, "overview">, string> = {
 export default function App() {
   const [nav, setNav] = useState<NavId>("overview");
   const { status, vc, guilds, format } = useStatus(1000);
-  const { entries, clear, filterBy } = useLogStream(2000);
+  const { entries, clear, filterBy } = useLogStream(10000);
   const [levels, setLevels] = useState({
     general: "INFO",
     llm: "INFO",
@@ -62,7 +62,6 @@ export default function App() {
           ping={format.ping}
           uptime={format.uptime}
           alive={status?.alive}
-          version={status?.version}
         />
         <ShutdownButton />
       </header>

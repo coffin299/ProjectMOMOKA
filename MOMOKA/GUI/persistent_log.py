@@ -17,7 +17,7 @@ _LOG_LOG = _DATA_DIR / "momoka_gui.log"
 # フォーマットは QueueHandler と揃える
 _FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 # 起動復元の既定行数
-DEFAULT_HISTORY_LINES = 2000
+DEFAULT_HISTORY_LINES = 10000
 # 末尾読込のチャンクサイズ
 _TAIL_CHUNK = 64 * 1024
 # asctime - name - LEVEL - message

@@ -19,7 +19,7 @@ const LEVEL_RANK: Record<string, number> = {
 
 let seq = 0;
 
-export function useLogStream(maxLines = 2000) {
+export function useLogStream(maxLines = 10000) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const [restored, setRestored] = useState(false);

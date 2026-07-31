@@ -180,7 +180,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    On start, the **Electron** host GUI (Discord dark) opens. Sidebar: Overview / General / LLM / TTS+Music / Error. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently.  
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged.  
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
-   All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores the tail of `.log` (history across restarts, including join/leave). Clear affects the UI only.  
+   All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores up to **10000 lines** from the `.log` tail (history across restarts, including join/leave). Clear affects the UI only.  
    On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). Bot still runs if the GUI build fails.  
    Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
@@ -357,7 +357,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | `/help` | Help (Components V2; app→guild→en initial language; 🇯🇵/🇺🇸 toggle + paging) |
 | `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
 | `/download_video` `/download_audio` | Media download (Components V2, Google Drive share) |
-| `/ping` `/serverinfo` `/userinfo` `/avatar` | Info |
+| `/ping` `/serverinfo` `/userinfo` `/avatar` | Info (`/ping` shows Gateway + Voice WebSocket) |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | Misc |
 
 ---

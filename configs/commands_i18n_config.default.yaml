@@ -38,19 +38,19 @@ commands_i18n:
             id: Pilih jumlah perekrutan.
     ping:
       description:
-        en: Displays the bot latency.
-        ja: Botの応答遅延を表示します。
-        ko: 봇의 응답 지연 시간을 표시합니다.
-        vi: Hiển thị độ trễ của bot.
-        zh-CN: 显示机器人的延迟。
-        zh-TW: 顯示機器人的延遲。
-        es: Muestra la latencia del bot.
-        fr: Affiche la latence du bot.
-        de: Zeigt die Bot-Latenz an.
-        pt-BR: Exibe a latência do bot.
-        ru: Показывает задержку бота.
-        th: แสดงความหน่วงของบอต
-        id: Menampilkan latensi bot.
+        en: Shows Gateway and Voice WebSocket latency.
+        ja: GatewayとVoice WebSocketの遅延を表示します。
+        ko: Gateway 및 Voice WebSocket 지연을 표시합니다.
+        vi: Hiển thị độ trễ Gateway và Voice WebSocket.
+        zh-CN: 显示 Gateway 与 Voice WebSocket 延迟。
+        zh-TW: 顯示 Gateway 與 Voice WebSocket 延遲。
+        es: Muestra la latencia de Gateway y Voice WebSocket.
+        fr: Affiche la latence Gateway et Voice WebSocket.
+        de: Zeigt Gateway- und Voice-WebSocket-Latenz an.
+        pt-BR: Exibe a latência de Gateway e Voice WebSocket.
+        ru: Показывает задержку Gateway и Voice WebSocket.
+        th: แสดงความหน่วงของ Gateway และ Voice WebSocket
+        id: Menampilkan latensi Gateway dan Voice WebSocket.
     serverinfo:
       description:
         en: Displays information about the current server.
