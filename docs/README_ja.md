@@ -220,7 +220,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に**正規化テーブル**で保存します。
 
-主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels` など。版は `schema_meta.version`（現行 2）。
+主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions` など。版は `schema_meta.version`（現行 3）。
 
 #### ホスト設定とギルド設定の境界
 
@@ -399,6 +399,8 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 キュー最大 10,000 曲、ループ（OFF/ONE/ALL）、音量 0–200%、キュー終了時の VC 自動退出、VC 空室時の自動退出に対応。再生中は VC ステータスを `NowPlaying - 曲名` 形式で自動更新（ユーザーが手動編集した場合は以降 Bot は書き換えない。`Set Voice Channel Status` 権限が必要）。
 
+**グレースフル再起動耐性:** `/shutdown`・GUI・Ctrl+C による終了時、接続中 VC の再生位置・キューを `data/momoka.db` の `vc_playback_sessions` に保存し、起動後に再 join してシーク再生を再開します（再生開始成功で行削除）。強制終了／クラッシュは対象外。LLM 応答は自動再開せず、生成中メッセージを再起動案内に差し替えたうえで再メンションを待ちます。サポート誘導 URL は `utilities_config.yaml` の `support.discord_invite_url` / `developer_user_id` 等。
+
 ### 画像生成（PLANA）
 
 `models/image-models/<name>/<name>.safetensors` を配置し、設定で `provider: "local"`（デフォルト）を使用。Forge 利用時は `--api` 付きで Forge を起動し `provider: "forge"` を設定。
@@ -471,7 +473,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### フィードバック設定（セルフホスト）
 
-`configs/utilities_config.yaml` の `feedback.channel_ids` に投稿先チャンネル ID を複数列挙します（Bot がその鯖にいる必要あり）。空のままでは `/feedback` と LLM `feedback` ツールは投稿できません。
+`configs/utilities_config.yaml` の `feedback.channel_ids` に投稿先チャンネル ID を複数列挙します（Bot がその鯖にいる必要あり）。空のままでは `/feedback` と LLM `feedback` ツールは投稿できません。再起動通知などのサポート誘導 URL は同ファイルの `support.discord_invite_url` / `developer_user_id` / `developer_display_name` を編集します。
 
 ### ライセンス
 

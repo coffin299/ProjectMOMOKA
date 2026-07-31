@@ -57,8 +57,22 @@ class SlashCommandsCog(commands.Cog, name="slash_commands"):
             "updates_repository_url",
             "https://github.com/coffin299/ProjectMOMOKA",
         )
-        self.support_x_url = _cfg("support_x_url", "https://x.com/coffin299")
-        self.support_discord_id = _cfg("support_discord_id", "coffin299")
+        # support 節（utilities_config）を読む
+        support_cfg = self.bot.config.get("support") if self.bot.config else None
+        # dict でなければ空扱い
+        if not isinstance(support_cfg, dict):
+            # 空 dict
+            support_cfg = {}
+        # X URL（旧キー優先、なければ support.x_url）
+        self.support_x_url = _cfg(
+            "support_x_url",
+            support_cfg.get("x_url") or "https://x.com/coffin299",
+        )
+        # Discord ID 表示名（旧キー優先、なければ support.discord_id）
+        self.support_discord_id = _cfg(
+            "support_discord_id",
+            support_cfg.get("discord_id") or "coffin299",
+        )
 
         # bots.*.invite_url の有無を起動時に確認する（単一 bot_invite_url は廃止）
         plana_invite, arona_invite = resolve_invite_urls(bot)

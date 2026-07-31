@@ -201,7 +201,25 @@ class Momoka(commands.Bot):
                 logging.warning("Failed to notify active users of restart: %s", result)
 
     async def close(self) -> None:
-        """終了前に利用中ユーザーへ通知してから接続を閉じる。"""
+        """終了前に VC 状態を保存し、利用中ユーザーへ通知してから接続を閉じる。"""
+        try:
+            # 音楽 Cog があれば再起動用に VC セッションを先に保存する
+            from MOMOKA.music.music_cog import MusicCog
+            # Cog を名前で取得する
+            music_cog = self.get_cog(MusicCog.COG_NAME)
+            # persist メソッドがある場合のみ保存する
+            if music_cog is not None and hasattr(
+                music_cog, "persist_vc_sessions_for_restart"
+            ):
+                # notify より前にスナップショットを取る（notify は current_track を消す）
+                await music_cog.persist_vc_sessions_for_restart()
+        except Exception as e:
+            # 保存失敗でもシャットダウン自体は継続する
+            logging.warning(
+                "%s persist_vc_sessions_for_restart failed during close: %s",
+                self.display_name,
+                e,
+            )
         try:
             # Ctrl+C /shutdown 共通で再起動通知を送る
             await self.notify_active_users_of_restart()

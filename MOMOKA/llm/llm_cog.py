@@ -59,7 +59,6 @@ from MOMOKA.llm.router.mode_runner import (
     waiting_phase_title,
 )
 from MOMOKA.llm.router.json_extract import extract_completion_text
-from MOMOKA.utilities.restart_notice import RESTART_NOTICE_TEXT
 from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
 from MOMOKA.storage import NS_CHANNEL_LLM_MODELS, resolve_settings_db
 from MOMOKA.utilities.feedback import (
@@ -764,6 +763,12 @@ class LLMCog(commands.Cog, name="llm"):
 
     async def notify_admin_restart(self) -> None:
         """再起動前に、生成中の LLM 応答メッセージを再起動文言で上書きする。"""
+        # config 由来の再起動文言を遅延インポートする
+        from MOMOKA.utilities.restart_notice import restart_notice_from_config
+        # bot.config から日英併記文言を組み立てる
+        restart_notice = restart_notice_from_config(
+            self.bot.config if hasattr(self.bot, "config") else None
+        )
         # 以降のストリーム編集を抑止する
         self._shutting_down = True
         # 通知時点の対象一覧をスナップショットする
@@ -776,7 +781,7 @@ class LLMCog(commands.Cog, name="llm"):
         for message in active_messages:
             try:
                 # 待機 embed / ストリーム途中本文を再起動案内に差し替える
-                await message.edit(content=RESTART_NOTICE_TEXT, embed=None, view=None)
+                await message.edit(content=restart_notice, embed=None, view=None)
             except Exception as e:
                 # 1件失敗しても他メッセージの通知は続ける
                 logger.warning(

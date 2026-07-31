@@ -162,6 +162,20 @@ class SettingsDB:
             CREATE TABLE IF NOT EXISTS gdrive_deletion_schedule (
                 file_id TEXT PRIMARY KEY, delete_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS vc_playback_sessions (
+                bot_id TEXT NOT NULL,
+                guild_id INTEGER NOT NULL,
+                voice_channel_id INTEGER NOT NULL,
+                text_channel_id INTEGER,
+                volume REAL NOT NULL,
+                loop_mode TEXT NOT NULL,
+                is_paused INTEGER NOT NULL DEFAULT 0,
+                position_sec INTEGER NOT NULL DEFAULT 0,
+                current_track_json TEXT,
+                queue_json TEXT NOT NULL DEFAULT '[]',
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (bot_id, guild_id)
+            );
             """
         )
 

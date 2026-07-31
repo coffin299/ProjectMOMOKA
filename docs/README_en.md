@@ -218,7 +218,7 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 
 Per-guild / per-channel overrides are stored in `data/momoka.db` as **normalized tables**.
 
-Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`. Schema version lives in `schema_meta.version` (currently 2).
+Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions`. Schema version lives in `schema_meta.version` (currently 3).
 
 #### Host vs. guild settings boundary
 
@@ -377,6 +377,8 @@ Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit
 
 Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the queue finishes, auto-leave when the VC is empty. While playing, the voice channel status is synced as `NowPlaying - track title` (if a user edits it manually, the bot stops updating; requires **Set Voice Channel Status** permission).
 
+**Graceful restart resilience:** On `/shutdown`, GUI shutdown, or Ctrl+C, active VC playback (position + queue) is saved to `vc_playback_sessions` in `data/momoka.db`, then restored after startup (re-join + seek). The row is deleted once playback starts successfully. Hard kills/crashes are out of scope. LLM replies are not auto-resumed; in-flight messages are overwritten with a restart notice and users should re-mention. Support links come from `utilities_config.yaml` (`support.discord_invite_url`, `developer_user_id`, etc.).
+
 ### Image generation (PLANA)
 
 Place models under `models/image-models/`, use `provider: "local"` (default). For Forge, start with `--api` and set `provider: "forge"`.
@@ -447,7 +449,7 @@ Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.
 
 ### Feedback setup (self-host)
 
-Set one or more destination channel IDs under `feedback.channel_ids` in `configs/utilities_config.yaml` (the bot must be in that guild). If empty, `/feedback` and the LLM `feedback` tool cannot deliver reports.
+Set one or more destination channel IDs under `feedback.channel_ids` in `configs/utilities_config.yaml` (the bot must be in that guild). If empty, `/feedback` and the LLM `feedback` tool cannot deliver reports. Support invite / developer profile links used in restart notices live under `support.discord_invite_url`, `developer_user_id`, and `developer_display_name` in the same file.
 
 ### License
 

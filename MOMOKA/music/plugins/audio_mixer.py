@@ -365,9 +365,29 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                     guild_id,
                     title,
                 )
-                # シーク等の before_options はパイプ入力では限定的にしか効かないが、
-                # -ss が含まれる場合は出力側オプションへ回すためここでは入力前のみ使用しない
-                ffmpeg_args: list = ["-i", "pipe:0", *out_args]
+                # シーク等の before_options はパイプ入力では入力前に効きにくい。
+                # -ss だけは出力側（-i の後）へ回して途中再開を可能にする。
+                seek_out_args: list = []
+                # 残りの before_options（reconnect 等）はパイプ経路では使わない。
+                if isinstance(before_options, str) and before_options.strip():
+                    # シェル風に分割する。
+                    before_tokens = shlex.split(before_options)
+                    # トークンを走査して -ss とその値だけ抜き出す。
+                    i = 0
+                    # 配列長まで進む。
+                    while i < len(before_tokens):
+                        # -ss なら次の秒数を出力側へ移す。
+                        if before_tokens[i] == "-ss" and i + 1 < len(before_tokens):
+                            # 出力側シーク引数を積む。
+                            seek_out_args.extend(["-ss", before_tokens[i + 1]])
+                            # -ss と値を消費する。
+                            i += 2
+                            # 次トークンへ。
+                            continue
+                        # その他の before オプションはパイプ経路では破棄する。
+                        i += 1
+                # -i pipe:0 のあとに -ss と通常 out_args を並べる。
+                ffmpeg_args: list = ["-i", "pipe:0", *seek_out_args, *out_args]
                 # FFmpegAudio を pipe:0 / stdin=ytdlp.stdout で初期化する
                 discord.FFmpegAudio.__init__(
                     self,

@@ -10,6 +10,14 @@ feedback:
   #   - 123456789012345678
   #   - 987654321098765432
 
+# サポート誘導（再起動通知・/support 等）
+support:
+  discord_invite_url: https://discord.com/invite/H79HKKqx3s
+  developer_user_id: 270446628622696449
+  developer_display_name: coffin299
+  x_url: https://x.com/coffin299
+  discord_id: coffin299
+
 # Ko-fi など寄付リンク（LLM/音楽は控えめ、/help は明示）
 donation:
   enabled: true

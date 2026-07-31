@@ -3,8 +3,8 @@
 # デフォルト DB パスをリポジトリルート相対で定義する。
 DEFAULT_DB_PATH = "data/momoka.db"
 
-# 正規化スキーマの現行版を定義する。
-SCHEMA_VERSION = 2
+# 正規化スキーマの現行版を定義する（v3: vc_playback_sessions）。
+SCHEMA_VERSION = 3
 
 # チャンネル単位の LLM モデル上書き namespace を定義する。
 NS_CHANNEL_LLM_MODELS = "channel_llm_models"
