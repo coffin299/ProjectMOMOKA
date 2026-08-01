@@ -103,7 +103,7 @@ Rainbow Six Siege / VALORANT の統計表示。
 
 ### 8. ユーティリティ
 
-ダイス、サーバー/ユーザー情報、ガチャなど。`/help` は Components V2 で **🇯🇵/🇺🇸 言語切替とページング**（LLM / Music+Download / Link Fix / Twitch を先頭に案内）。`/invite` も Components V2 で両ボットの招待を案内します。
+ダイス、サーバー/ユーザー情報、ガチャ、`/latex`（matplotlib mathtext で数式PNG）など。`/help` は Components V2 で **🇯🇵/🇺🇸 言語切替とページング**（LLM / Music+Download / Link Fix / Twitch を先頭に案内）。`/invite` も Components V2 で両ボットの招待を案内します。
 
 **UI 言語（Components V2 / Modal）:** Discord クライアント言語（app locale）→ サーバーの `preferred_locale`（guild）→ English の順で決定します（音楽 Now Playing 等は対象外）。`/help` `/invite` `/linkfix`、LLM 待機・討論パネル、メディア DL、`/feedback` Modal、画像生成 Modal などが対象です。
 
@@ -380,6 +380,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | `/invite` | PLANA / ARONA 招待（Components V2・app→guild→en） |
 | `/download_video` `/download_audio` | メディアダウンロード（Components V2・Google Drive 共有） |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系（`/ping` は Gateway + Voice WebSocket） |
+| `/latex <expression>` | LaTeX風数式をPNG化（matplotlib mathtext。フルLaTeXではない） |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | その他 |
 
 ---

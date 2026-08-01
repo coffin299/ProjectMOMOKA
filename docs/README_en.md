@@ -103,7 +103,7 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 
 ### 8. Utilities
 
-Dice, server/user info, gacha, etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
+Dice, server/user info, gacha, `/latex` (math PNG via matplotlib mathtext), etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
 
 **UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting panels, media download, `/feedback` Modal, image-generation Modal, and related surfaces.
 
@@ -358,6 +358,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
 | `/download_video` `/download_audio` | Media download (Components V2, Google Drive share) |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | Info (`/ping` shows Gateway + Voice WebSocket) |
+| `/latex <expression>` | Render LaTeX-like math as PNG (matplotlib mathtext; not full LaTeX) |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | Misc |
 
 ---

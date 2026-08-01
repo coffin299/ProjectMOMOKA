@@ -551,6 +551,7 @@ PRIMARY_COGS = [
     'MOMOKA.tts.tts_cog',
     'MOMOKA.utilities.guild_events_cog',
     'MOMOKA.utilities.slash_command_cog',
+    'MOMOKA.utilities.latex_command_cog',
 ]
 
 # コンパニオンボット（ARONA）が読み込む軽量 Cog（LLM / 音楽 / スラッシュコマンド）
@@ -559,6 +560,7 @@ COMPANION_COGS = [
     'MOMOKA.music.music_cog',
     'MOMOKA.utilities.guild_events_cog',
     'MOMOKA.utilities.slash_command_cog',
+    'MOMOKA.utilities.latex_command_cog',
 ]
 
 # ===============================================================

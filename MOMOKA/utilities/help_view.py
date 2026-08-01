@@ -540,6 +540,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "• `/support` — 開発者への連絡方法\n"
                 "• Overview の Ko-fi — サーバー代の支援\n\n"
                 "**情報・その他**\n"
+                "• `/latex` — LaTeX風数式をPNG化（matplotlib mathtext）\n"
                 "• `/gacha` `/serverinfo` `/userinfo` `/avatar`\n"
                 "• `/help` — このパネル（🇯🇵/🇺🇸・ページング）"
             )
@@ -552,6 +553,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "• `/support` — how to contact developers\n"
             "• Ko-fi on Overview — server-cost support\n\n"
             "**Info & other**\n"
+            "• `/latex` — LaTeX-like math to PNG (matplotlib mathtext)\n"
             "• `/gacha` `/serverinfo` `/userinfo` `/avatar`\n"
             "• `/help` — this panel (🇯🇵/🇺🇸 + paging)"
         )
