@@ -11,6 +11,7 @@ import discord
 from discord.ext import commands
 
 from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
+from MOMOKA.utilities.support_config import support_links_from_bot
 
 logger = logging.getLogger(__name__)
 
@@ -665,10 +666,6 @@ def preview_embed_for_confirm(
     return embed
 
 
-# サポート誘導用の既定 URL
-GITHUB_REPO_URL = "https://github.com/coffin299/ProjectMOMOKA"
-GITHUB_ISSUES_URL = "https://github.com/coffin299/ProjectMOMOKA/issues"
-
 # エラー表示フッター（日英）
 SUPPORT_FOOTER_TEXT = (
     "問題がありますか？フォームまたは GitHub で報告できます！ "
@@ -696,15 +693,19 @@ class SupportReportView(discord.ui.View):
         )
         # フォームを開くボタンを追加する
         self.add_item(_OpenFeedbackModalButton())
-        # 既存の GitHub リンクボタンを追加する
-        self.add_item(
-            discord.ui.Button(
-                label="GitHub / 問題報告",
-                style=discord.ButtonStyle.link,
-                url=GITHUB_REPO_URL,
-                emoji="🐙",
+        # リポジトリ URL を config から解決する
+        repo_url = support_links_from_bot(bot).repository_url
+        # http のときだけ GitHub リンクボタンを追加する
+        if repo_url.startswith("http"):
+            # 既存の GitHub リンクボタンを追加する
+            self.add_item(
+                discord.ui.Button(
+                    label="GitHub / 問題報告",
+                    style=discord.ButtonStyle.link,
+                    url=repo_url,
+                    emoji="🐙",
+                )
             )
-        )
 
 
 class _OpenFeedbackModalButton(discord.ui.Button):

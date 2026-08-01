@@ -957,7 +957,7 @@ class EarthquakeTsunamiCog(
                 timestamp=datetime.now(self.jst)
             )
             embed.set_image(url="attachment://earthquake_map.png")
-            embed.set_footer(text="データ提供: P2P地震情報 API | PLANA by coffin299")
+            embed.set_footer(text=notification_embed_footer())
 
             await interaction.followup.send(embed=embed, file=file)
 
@@ -1097,7 +1097,7 @@ class EarthquakeTsunamiCog(
                 if idx % 3 == 0 and idx < len(filtered_quakes):
                     embed.add_field(name="\u200b", value="\u200b", inline=False)
 
-            embed.set_footer(text="データ提供: P2P地震情報 API | PLANA by coffin299")
+            embed.set_footer(text=notification_embed_footer())
             embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
 
             if map_quakes and CARTOPY_AVAILABLE:

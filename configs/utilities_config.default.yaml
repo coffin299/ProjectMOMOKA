@@ -17,6 +17,8 @@ support:
   developer_display_name: coffin299
   x_url: https://x.com/coffin299
   discord_id: coffin299
+  # tips / 障害案内などで使うドキュメント・サイト URL
+  docs_url: https://momoka-project.com
 
 # Ko-fi など寄付リンク（LLM/音楽は控えめ、/help は明示）
 donation:

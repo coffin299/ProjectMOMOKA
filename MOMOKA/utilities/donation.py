@@ -19,10 +19,10 @@ class DonationSettings:
     help_text_en: str
 
 
-# 既定値（config 欠落時）
+# 既定値（config 欠落時・個人 URL は置かない）
 _DEFAULT = DonationSettings(
-    enabled=True,
-    url="https://ko-fi.com/coffin299",
+    enabled=False,
+    url="",
     subtle_label="Buy me a coffee...",
     help_button_label="Ko-fi / Support",
     help_text_ja=(

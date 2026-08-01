@@ -14,6 +14,7 @@ from MOMOKA.utilities.donation import (
     make_help_link_button,
 )
 from MOMOKA.utilities.locale import lang_from_discord_locale, pick_str
+from MOMOKA.utilities.support_config import support_links_from_bot
 
 # 後方互換: 他モジュールが help_view から import しても動くように再公開する
 __all__ = (
@@ -557,6 +558,12 @@ class HelpLayoutView(discord.ui.LayoutView):
 
     def _guidelines_text(self) -> str:
         """Page 7: Guidelines。"""
+        # リポジトリ URL（無ければ行ごと省略）
+        repo_url = support_links_from_bot(self.bot).repository_url
+        # リポジトリ行（設定があるときだけ）
+        repo_line_ja = f"\n\nリポジトリ: {repo_url}" if repo_url else ""
+        # 英語も同様
+        repo_line_en = f"\n\nRepository: {repo_url}" if repo_url else ""
         if self.lang == "ja":
             if self.is_companion:
                 role_note = (
@@ -577,8 +584,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "• 個人情報や秘密情報をむやみに送らないでください\n"
                 "• AI の回答は誤る可能性があります。重要判断は自己責任で\n"
                 "• 生成コンテンツの公開・商用利用は各モデル規約に従ってください"
-                f"{role_note}\n\n"
-                "リポジトリ: https://github.com/coffin299/ProjectMOMOKA"
+                f"{role_note}{repo_line_ja}"
             )
         if self.is_companion:
             role_note_en = (
@@ -600,8 +606,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "• Do not share personal or confidential data casually\n"
             "• AI output can be wrong; verify critical decisions yourself\n"
             "• Follow each model provider's terms for generated content"
-            f"{role_note_en}\n\n"
-            "Repository: https://github.com/coffin299/ProjectMOMOKA"
+            f"{role_note_en}{repo_line_en}"
         )
 
     async def _lang_ja_callback(self, interaction: discord.Interaction) -> None:

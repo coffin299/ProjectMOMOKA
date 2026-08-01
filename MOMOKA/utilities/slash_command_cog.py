@@ -27,6 +27,7 @@ from MOMOKA.utilities.feedback import (
     create_support_report_view,
     support_footer_text,
 )
+from MOMOKA.utilities.support_config import load_support_links
 
 logger = logging.getLogger(__name__)
 
@@ -52,27 +53,21 @@ class SlashCommandsCog(commands.Cog, name="slash_commands"):
                 return self.bot.config.get(key)
             return default
 
-        # /updates 用リポジトリ（MOMOKA本体のコミット履歴）
+        # サポート／リポジトリを utilities_config から読む（個人既定なし）
+        links = load_support_links(self.bot.config if self.bot.config else None)
+        # /updates 用リポジトリ（旧トップレベルキーも _cfg で拾う）
         self.updates_repository = _cfg(
             "updates_repository_url",
-            "https://github.com/coffin299/ProjectMOMOKA",
+            links.repository_url or None,
+        ) or ""
+        # X URL（旧キー support_x_url 優先、なければ support.x_url）
+        self.support_x_url = _cfg("support_x_url", links.x_url or None) or ""
+        # Discord ID 表示名（旧キー優先）
+        self.support_discord_id = (
+            _cfg("support_discord_id", links.discord_id or None) or ""
         )
-        # support 節（utilities_config）を読む
-        support_cfg = self.bot.config.get("support") if self.bot.config else None
-        # dict でなければ空扱い
-        if not isinstance(support_cfg, dict):
-            # 空 dict
-            support_cfg = {}
-        # X URL（旧キー優先、なければ support.x_url）
-        self.support_x_url = _cfg(
-            "support_x_url",
-            support_cfg.get("x_url") or "https://x.com/coffin299",
-        )
-        # Discord ID 表示名（旧キー優先、なければ support.discord_id）
-        self.support_discord_id = _cfg(
-            "support_discord_id",
-            support_cfg.get("discord_id") or "coffin299",
-        )
+        # 表示名（/support の X ラベル用）
+        self.support_display_name = links.developer_display_name
 
         # bots.*.invite_url の有無を起動時に確認する（単一 bot_invite_url は廃止）
         plana_invite, arona_invite = resolve_invite_urls(bot)
@@ -428,9 +423,18 @@ class SlashCommandsCog(commands.Cog, name="slash_commands"):
     @app_commands.command(name="support",
                           description="Shows how to contact the developer.")
     async def support_contact_slash(self, interaction: discord.Interaction) -> None:
-        # GitHubリポジトリURLを問い合わせ先として使用
-        github_url = "https://github.com/coffin299/ProjectMOMOKA"
-        github_issues_url = "https://github.com/coffin299/ProjectMOMOKA/issues"
+        # 最新の support / repo 設定を読む
+        links = load_support_links(self.bot.config if self.bot.config else None)
+        # リポジトリ（インスタンス値を優先しつつ links も見る）
+        github_url = (self.updates_repository or links.repository_url or "").rstrip("/")
+        # Issues は派生
+        github_issues_url = f"{github_url}/issues" if github_url else ""
+        # X / Discord 表示用
+        x_url = self.support_x_url or links.x_url
+        # Discord ハンドル
+        discord_id = self.support_discord_id or links.discord_id
+        # X ラベル（display_name があればそれ、無ければ discord_id）
+        x_label = self.support_display_name or discord_id or "X"
 
         embed = discord.Embed(
             title="💬 サポート / Support",
@@ -456,45 +460,74 @@ class SlashCommandsCog(commands.Cog, name="slash_commands"):
             inline=False,
         )
 
-        embed.add_field(
-            name="🐙 GitHub リポジトリ / GitHub Repository",
-            value=f"不具合報告・機能要望はIssueで受け付けています！\nBug reports & feature requests are welcome via Issues!\n\n**[GitHub Issues]({github_issues_url})**",
-            inline=False
-        )
+        # GitHub があるときだけフィールドを載せる
+        if github_issues_url:
+            embed.add_field(
+                name="🐙 GitHub リポジトリ / GitHub Repository",
+                value=(
+                    "不具合報告・機能要望はIssueで受け付けています！\n"
+                    "Bug reports & feature requests are welcome via Issues!\n\n"
+                    f"**[GitHub Issues]({github_issues_url})**"
+                ),
+                inline=False,
+            )
 
-        embed.add_field(
-            name="🐦 X (Twitter)",
-            value=f"[**@coffin299**]({self.support_x_url})\nDMまたはメンションでお問い合わせください。\nContact via DM or mention.",
-            inline=True
-        )
+        # X があるときだけ載せる
+        if x_url:
+            embed.add_field(
+                name="🐦 X (Twitter)",
+                value=(
+                    f"[**@{x_label}**]({x_url})\n"
+                    "DMまたはメンションでお問い合わせください。\n"
+                    "Contact via DM or mention."
+                ),
+                inline=True,
+            )
 
-        embed.add_field(
-            name="💬 Discord DM",
-            value=f"**`{self.support_discord_id}`**\nDiscordのDMでお問い合わせください。\nContact via Discord DM.",
-            inline=True
-        )
+        # Discord ID があるときだけ載せる
+        if discord_id:
+            embed.add_field(
+                name="💬 Discord DM",
+                value=(
+                    f"**`{discord_id}`**\n"
+                    "DiscordのDMでお問い合わせください。\n"
+                    "Contact via Discord DM."
+                ),
+                inline=True,
+            )
 
         embed.add_field(
             name="📝 ご連絡時のお願い / When Contacting",
-            value="• Botを使用しているサーバー名\n• 具体的な問題や要望の内容\n• スクリーンショット（あれば）\n\n• Server name where you're using the bot\n• Specific issue or request details\n• Screenshots (if available)",
-            inline=False
+            value=(
+                "• Botを使用しているサーバー名\n"
+                "• 具体的な問題や要望の内容\n"
+                "• スクリーンショット（あれば）\n\n"
+                "• Server name where you're using the bot\n"
+                "• Specific issue or request details\n"
+                "• Screenshots (if available)"
+            ),
+            inline=False,
         )
 
         embed.set_footer(text="お気軽にお問い合わせください！ / Feel free to contact us!")
 
         view = discord.ui.View()
-        view.add_item(discord.ui.Button(
-            label="GitHub で報告 / Report on GitHub",
-            style=discord.ButtonStyle.link,
-            url=github_issues_url,
-            emoji="🐙"
-        ))
-        view.add_item(discord.ui.Button(
-            label="X (Twitter)で連絡 / Contact on X",
-            style=discord.ButtonStyle.link,
-            url=self.support_x_url,
-            emoji="🐦"
-        ))
+        # Issues URL があるときだけ GitHub ボタン
+        if github_issues_url.startswith("http"):
+            view.add_item(discord.ui.Button(
+                label="GitHub で報告 / Report on GitHub",
+                style=discord.ButtonStyle.link,
+                url=github_issues_url,
+                emoji="🐙",
+            ))
+        # X URL があるときだけ X ボタン
+        if x_url.startswith("http"):
+            view.add_item(discord.ui.Button(
+                label="X (Twitter)で連絡 / Contact on X",
+                style=discord.ButtonStyle.link,
+                url=x_url,
+                emoji="🐦",
+            ))
 
         await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
         logger.info(f"/support が実行されました。 (User: {interaction.user.id})")

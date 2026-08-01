@@ -106,8 +106,6 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self.speech_dictionary: Dict[str, Dict[str, str]] = {}
         self._load_dictionary()
 
-        self.llm_bot_ids = [1031673203774464160, 1311866016011124736]
-
         logging.getLogger(__name__).info(
             "TTSCog loaded (Internal Style-Bert-VITS2 wrapper, AudioMixer enabled)"
         )

@@ -664,9 +664,11 @@ class LLMCog(commands.Cog, name="llm"):
             "FeedbackTool": None,
         }
 
-        # TipsManagerの初期化
+        # TipsManagerの初期化（support / docs は bot.config から）
         if TipsManager:
-            plugins["TipsManager"] = TipsManager()
+            plugins["TipsManager"] = TipsManager(
+                getattr(self.bot, "config", None)
+            )
 
         # role 別ツール一覧
         active_tools = self._active_tools_list()
@@ -837,15 +839,24 @@ class LLMCog(commands.Cog, name="llm"):
             kwargs["timeout"] = provider_config.get("timeout", 300.0)
         # OpenRouter 推奨ヘッダ（ランキング・識別用）
         if provider_name.lower() == "openrouter":
-            # Referer / アプリ名を設定から読み、無ければプロジェクト既定値
-            referer = provider_config.get("http_referer") or "https://momoka-project.com"
+            # Referer / アプリ名は設定値のみ使う（個人・サイトのコード既定なし）
+            referer = str(provider_config.get("http_referer") or "").strip()
             # アプリ表示名（X-Title）
-            title = provider_config.get("x_title") or "Project MOMOKA"
-            # default_headers として渡す
-            kwargs["default_headers"] = {
-                "HTTP-Referer": referer,
-                "X-Title": title,
-            }
+            title = str(provider_config.get("x_title") or "").strip()
+            # どちらかあれば default_headers を付ける
+            headers: Dict[str, str] = {}
+            # Referer があるときだけ載せる
+            if referer:
+                # HTTP-Referer
+                headers["HTTP-Referer"] = referer
+            # Title があるときだけ載せる
+            if title:
+                # X-Title
+                headers["X-Title"] = title
+            # ヘッダが1つ以上あれば kwargs に入れる
+            if headers:
+                # default_headers として渡す
+                kwargs["default_headers"] = headers
         # 組み立て結果を返す
         return kwargs
 

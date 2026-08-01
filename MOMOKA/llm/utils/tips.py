@@ -8,6 +8,7 @@ import discord
 
 from MOMOKA.storage import NS_RESPONSE_TIMES, get_default_settings_db
 from MOMOKA.utilities.locale import pick_str
+from MOMOKA.utilities.support_config import SupportLinks, load_support_links
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -174,10 +175,63 @@ class ResponseTimeTracker:
 class TipsManager:
     """LLM待機中に表示するランダムなtipsを管理するクラス"""
 
-    def __init__(self):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        # tips リストを構築する
         self.tips = self._create_tips_list()
         # 応答時間トラッカーを内蔵
         self.response_tracker = ResponseTimeTracker()
+        # サポートリンク（docs / developer 連絡先）を config から保持する
+        self._support: SupportLinks = load_support_links(config)
+
+    def _docs_footer_text(self, lang: str) -> str:
+        """障害案内フッター（docs_url があるときだけ URL を付ける）。"""
+        # docs URL
+        docs = self._support.docs_url
+        # URL 付き／無しで文言を変える
+        if docs:
+            # 日本語
+            return pick_str(
+                lang,
+                ja=(
+                    "メインサーバーで技術的な問題が発生しています。\n"
+                    f"ドキュメント: {docs}"
+                ),
+                en=(
+                    "we are experiencing technical difficulties with our main server.\n"
+                    f"full documentation : {docs}"
+                ),
+            )
+        # URL 無し
+        return pick_str(
+            lang,
+            ja="メインサーバーで技術的な問題が発生しています。",
+            en="we are experiencing technical difficulties with our main server.",
+        )
+
+    def _contact_footer_text(self, lang: str) -> str:
+        """GPU 寄付募集フッター（プロフィール URL があるときだけ連絡先を付ける）。"""
+        # プロフィール URL
+        contact = self._support.developer_profile_url
+        # 連絡先がある場合
+        if contact:
+            # 日本語＋英語
+            return pick_str(
+                lang,
+                ja=(
+                    "-# メインサーバーのGPUを寄付してくれる方を募集しています...\n"
+                    f"-# コンタクト: {contact}"
+                ),
+                en=(
+                    "-# Looking for GPU donations for our main server...\n"
+                    f"-# Contact: {contact}"
+                ),
+            )
+        # 連絡先無し
+        return pick_str(
+            lang,
+            ja="-# メインサーバーのGPUを寄付してくれる方を募集しています...",
+            en="-# Looking for GPU donations for our main server...",
+        )
 
     def _create_tips_list(self) -> List[Dict[str, Any]]:
         """tipsのリストを作成する（日英分離）。"""
@@ -290,11 +344,7 @@ class TipsManager:
             color=tip_data["color"],
         )
         embed.set_footer(
-            text=pick_str(
-                lang,
-                ja="メインサーバーで技術的な問題が発生しています。\nドキュメント: https://coffin299.net",
-                en="we are experiencing technical difficulties with our main server.\nfull documentation : https://coffin299.net",
-            )
+            text=self._docs_footer_text(lang)
         )
         return embed
 
@@ -349,18 +399,8 @@ class TipsManager:
         # tip 文言を言語別に取る
         tip_title = self._tip_title(tip_data, lang)
         tip_desc = self._tip_description(tip_data, lang)
-        # フッター文言（GPU 寄付募集）
-        footer = pick_str(
-            lang,
-            ja=(
-                "-# メインサーバーのGPUを寄付してくれる方を募集しています...\n"
-                "-# コンタクト: https://discord.com/users/270446628622696449"
-            ),
-            en=(
-                "-# Looking for GPU donations for our main server...\n"
-                "-# Contact: https://discord.com/users/270446628622696449"
-            ),
-        )
+        # フッター文言（GPU 寄付募集・連絡先は config 由来）
+        footer = self._contact_footer_text(lang)
         # router 振り分け中はモデル名・予想時間を出さない
         if not include_model:
             body = (

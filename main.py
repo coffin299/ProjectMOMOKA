@@ -12,7 +12,7 @@ from discord.ext import commands, tasks
 from MOMOKA.GUI import attach_gui_logging, run_log_viewer_thread, set_bot_ref, set_dark_mode
 from MOMOKA.storage import NS_LOGGING_CHANNELS, get_default_settings_db
 from MOMOKA.utilities.command_i18n import CommandDescriptionTranslator
-from MOMOKA.utilities.restart_notice import SHUTDOWN_USER_ID
+from MOMOKA.utilities.restart_notice import shutdown_allowed_user_id
 from MOMOKA.version import status_version_string
 
 # Python 3.11 未満では依存パッケージ（discord.py 2.7 / torch 等）の動作保証外のため起動を拒否する
@@ -119,9 +119,6 @@ from MOMOKA.services.discord_handler import DiscordLogHandler, DiscordLogFormatt
 
 class Momoka(commands.Bot):
     """MOMOKA Botのメインクラス"""
-
-    # /shutdown を実行できるユーザー ID（ハードコード定数）
-    SHUTDOWN_USER_ID = SHUTDOWN_USER_ID
 
     def __init__(
         self,
@@ -704,8 +701,12 @@ if __name__ == "__main__":
         description="Shut down both bots after notifying users (owner only).",
     )
     async def shutdown_command(interaction: discord.Interaction):
-        # ハードコード UID 以外は拒否する
-        if interaction.user.id != Momoka.SHUTDOWN_USER_ID:
+        # support.developer_user_id のみ許可する（未設定なら誰も不可）
+        allowed_uid = shutdown_allowed_user_id(
+            getattr(plana_bot, "config", None)
+        )
+        # 未設定または不一致なら拒否する
+        if allowed_uid is None or interaction.user.id != allowed_uid:
             # 権限不足を ephemeral で返す
             await interaction.response.send_message(
                 "❌ You are not allowed to use this command.",

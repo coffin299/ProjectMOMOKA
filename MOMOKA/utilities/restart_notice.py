@@ -1,79 +1,107 @@
 # 管理者による再起動・シャットダウン時に、利用中ユーザーへ表示する共有文言
+# 個人識別子の既定値は持たない。utilities_config.support を正とする。
 
 from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
-# /shutdown を実行できる Discord ユーザー ID（ハードコード・config の developer と同値）
-SHUTDOWN_USER_ID = 270446628622696449
-
-# サポート鯖 invite の既定値（utilities_config.support.discord_invite_url）
-DEFAULT_SUPPORT_INVITE_URL = "https://discord.com/invite/H79HKKqx3s"
-
-# 開発者 Discord ユーザー ID の既定値
-DEFAULT_DEVELOPER_USER_ID = 270446628622696449
-
-# 開発者表示名の既定値
-DEFAULT_DEVELOPER_DISPLAY_NAME = "coffin299"
+from MOMOKA.utilities.support_config import SupportLinks, load_support_links
 
 
 def format_restart_notice(
-    invite_url: str = DEFAULT_SUPPORT_INVITE_URL,
-    developer_user_id: int = DEFAULT_DEVELOPER_USER_ID,
-    developer_display_name: str = DEFAULT_DEVELOPER_DISPLAY_NAME,
+    invite_url: str = "",
+    developer_user_id: Optional[int] = None,
+    developer_display_name: str = "",
 ) -> str:
     """日英併記の再起動中メッセージを組み立てる。"""
-    # invite が空なら既定 URL を使う。
-    invite = (invite_url or DEFAULT_SUPPORT_INVITE_URL).strip()
-    # 表示名が空なら既定名を使う。
-    name = (developer_display_name or DEFAULT_DEVELOPER_DISPLAY_NAME).strip()
-    # ユーザープロフィール URL を組み立てる。
-    user_url = f"https://discord.com/users/{int(developer_user_id)}"
-    # LLM / Music 共通の本文を返す。
-    return (
-        "🔄 現在再起動中です…しばらくお待ちください。\n"
-        "Currently restarting… please wait a moment.\n\n"
-        f"5分以上経っても復帰しない場合は、[サポートサーバー]({invite}) か "
-        f"[{name}]({user_url}) へご連絡ください。\n"
-        f"If it does not come back within 5 minutes, contact via the "
-        f"[support server]({invite}) or [{name}]({user_url}).\n\n"
-        f"[SupportServer]({invite}) or [{name}]({user_url})"
+    # invite を正規化する
+    invite = (invite_url or "").strip()
+    # 表示名を正規化する
+    name = (developer_display_name or "").strip()
+    # プロフィール URL（uid があるときだけ）
+    user_url = (
+        f"https://discord.com/users/{int(developer_user_id)}"
+        if developer_user_id is not None
+        else ""
     )
+    # 連絡先リンク断片を組み立てる（欠落分は省略）
+    contact_parts_ja: list[str] = []
+    # 英語側も同様
+    contact_parts_en: list[str] = []
+    # 短縮行用
+    contact_parts_short: list[str] = []
+    # サポート鯖があれば追加する
+    if invite:
+        # 日本語
+        contact_parts_ja.append(f"[サポートサーバー]({invite})")
+        # 英語
+        contact_parts_en.append(f"[support server]({invite})")
+        # 短縮
+        contact_parts_short.append(f"[SupportServer]({invite})")
+    # 開発者リンクがあれば追加する
+    if name and user_url:
+        # 日本語
+        contact_parts_ja.append(f"[{name}]({user_url})")
+        # 英語
+        contact_parts_en.append(f"[{name}]({user_url})")
+        # 短縮
+        contact_parts_short.append(f"[{name}]({user_url})")
+    # 基本本文（再起動中）
+    lines = [
+        "🔄 現在再起動中です…しばらくお待ちください。",
+        "Currently restarting… please wait a moment.",
+        "",
+    ]
+    # 連絡先があるときだけ案内を付ける
+    if contact_parts_ja:
+        # 「A か B」形式（1件ならその1件だけ）
+        ja_joined = " か ".join(contact_parts_ja)
+        # 英語は or
+        en_joined = " or ".join(contact_parts_en)
+        # 短縮も or
+        short_joined = " or ".join(contact_parts_short)
+        # 日英案内を追記する
+        lines.extend(
+            [
+                f"5分以上経っても復帰しない場合は、{ja_joined} へご連絡ください。",
+                f"If it does not come back within 5 minutes, contact via the {en_joined}.",
+                "",
+                short_joined,
+            ]
+        )
+    # 結合して返す
+    return "\n".join(lines)
 
 
 def restart_notice_from_config(config: Optional[Mapping[str, Any]]) -> str:
     """bot.config の support 節から再起動文言を組み立てる。"""
-    # config が無ければ既定文言。
-    if not config:
-        # 既定組み立て。
-        return format_restart_notice()
-    # support 節を取る。
-    support = config.get("support") if isinstance(config, Mapping) else None
-    # support が dict でなければ既定。
-    if not isinstance(support, Mapping):
-        # 既定組み立て。
-        return format_restart_notice()
-    # invite URL。
-    invite_url = support.get("discord_invite_url") or DEFAULT_SUPPORT_INVITE_URL
-    # 表示名。
-    display_name = support.get("developer_display_name") or DEFAULT_DEVELOPER_DISPLAY_NAME
-    # user id（文字列でも受け付ける）。
-    raw_uid = support.get("developer_user_id", DEFAULT_DEVELOPER_USER_ID)
-    try:
-        # 整数化する。
-        user_id = int(raw_uid)
-    except (TypeError, ValueError):
-        # 壊れていれば既定 ID。
-        user_id = DEFAULT_DEVELOPER_USER_ID
-    # 組み立てて返す。
+    # SupportLinks を読む
+    links = load_support_links(config)
+    # 組み立てて返す
     return format_restart_notice(
-        invite_url=str(invite_url),
-        developer_user_id=user_id,
-        developer_display_name=str(display_name),
+        invite_url=links.discord_invite_url,
+        developer_user_id=links.developer_user_id,
+        developer_display_name=links.developer_display_name,
     )
 
 
-# 後方互換: モジュール定数（既定 config 相当）
+def restart_notice_from_links(links: SupportLinks) -> str:
+    """SupportLinks から直接組み立てる。"""
+    # format に委譲する
+    return format_restart_notice(
+        invite_url=links.discord_invite_url,
+        developer_user_id=links.developer_user_id,
+        developer_display_name=links.developer_display_name,
+    )
+
+
+def shutdown_allowed_user_id(config: Optional[Mapping[str, Any]]) -> Optional[int]:
+    """/shutdown を実行できるユーザー ID（support.developer_user_id）。"""
+    # SupportLinks から uid を返す
+    return load_support_links(config).developer_user_id
+
+
+# 後方互換: 設定無し時の最小文言（個人リンクなし）
 RESTART_NOTICE_TEXT = format_restart_notice()
 
 # 音楽 Now Playing 用も同一文言
