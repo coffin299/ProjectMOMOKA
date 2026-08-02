@@ -38,6 +38,7 @@ from MOMOKA.storage import (
     NS_TTS_SETTINGS,
     resolve_settings_db,
 )
+from MOMOKA.bots.registry import registry
 
 
 class TTSCog(commands.Cog, name="tts_cog"):
@@ -108,6 +109,38 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         logging.getLogger(__name__).info(
             "TTSCog loaded (Internal Style-Bert-VITS2 wrapper, AudioMixer enabled)"
+        )
+
+    def _bot_id_key(self) -> str:
+        """自 Bot の bot_id を返す。"""
+        # Momoka.bot_id があればそれを使う
+        return str(getattr(self.bot, "bot_id", None) or "plana")
+
+    def _partner_voice_block_message(
+        self,
+        guild_id: int,
+        channel_id: int,
+    ) -> Optional[str]:
+        """相方が同 VC にいる場合の拒否メッセージ。いなければ None。"""
+        # 相方が同 channel に接続中か判定する
+        if not registry.partner_in_voice_channel(self._bot_id_key(), guild_id, channel_id):
+            # ブロック不要
+            return None
+        # 相方表示名を解決する
+        partner_name = registry.display_name(registry.partner_id(self._bot_id_key()))
+        # MusicCog の config 文言を再利用する
+        music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
+        # MusicCog があればメッセージキーから組み立てる
+        if music_cog and hasattr(music_cog, "exception_handler"):
+            # music_config の partner_already_in_voice を使う
+            return music_cog.exception_handler.get_message(
+                "partner_already_in_voice",
+                partner_name=partner_name,
+            )
+        # MusicCog 未ロード時の英語フォールバック
+        return (
+            f"❌ **{partner_name}** is already connected to this voice channel. "
+            "PLANA and ARONA cannot join the same VC at once."
         )
 
     async def cog_load(self):
@@ -274,17 +307,28 @@ class TTSCog(commands.Cog, name="tts_cog"):
         # 自動参加: 登録ユーザーがVCに入室したらBotも自動接続
         if member.id in guild_settings.get("auto_join_users", []) and not before.channel and after.channel:
             if not voice_client or not voice_client.is_connected():
-                try:
-                    # 接続時は自己deafせず、直後にサーバー側スピーカーミュートへ
-                    await after.channel.connect(self_deaf=False)
-                    # MusicCog があればサーバー側 deafen 処理を再利用する
-                    music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
-                    # MusicCog のヘルパーが使える場合は緑アイコン deafen を適用
-                    if music_cog and hasattr(music_cog, "_apply_server_deafen"):
-                        # サーバー側スピーカーミュートを適用
-                        await music_cog._apply_server_deafen(guild)
-                except Exception as e:
-                    logging.getLogger(__name__).error("[TTSCog] 自動参加エラー: %s", e)
+                # 相方が同一 VC にいる場合は自動参加しない
+                block_msg = self._partner_voice_block_message(guild.id, after.channel.id)
+                # ブロック時はログだけ残して接続しない
+                if block_msg:
+                    # 同居拒否を記録する
+                    logging.getLogger(__name__).info(
+                        "[TTSCog] autojoin skipped guild=%s channel=%s: partner already in VC",
+                        guild.id,
+                        after.channel.id,
+                    )
+                else:
+                    try:
+                        # 接続時は自己deafせず、直後にサーバー側スピーカーミュートへ
+                        await after.channel.connect(self_deaf=False)
+                        # MusicCog があればサーバー側 deafen 処理を再利用する
+                        music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
+                        # MusicCog のヘルパーが使える場合は緑アイコン deafen を適用
+                        if music_cog and hasattr(music_cog, "_apply_server_deafen"):
+                            # サーバー側スピーカーミュートを適用
+                            await music_cog._apply_server_deafen(guild)
+                    except Exception as e:
+                        logging.getLogger(__name__).error("[TTSCog] 自動参加エラー: %s", e)
 
         if not voice_client:
             return
@@ -332,6 +376,12 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return await interaction.response.send_message("❌ ボイスチャンネルに接続してから実行してください。", ephemeral=True)
         
         vc = interaction.user.voice.channel
+        # 相方が同一 VC にいる場合は接続・移動を拒否する
+        block_msg = self._partner_voice_block_message(interaction.guild.id, vc.id)
+        # 拒否メッセージがあれば ephemeral で返して終了する
+        if block_msg:
+            # ユーザーへ同居不可を伝える
+            return await interaction.response.send_message(block_msg, ephemeral=True)
         try:
             if interaction.guild.voice_client:
                 # 既存接続をユーザーのVCへ移動する

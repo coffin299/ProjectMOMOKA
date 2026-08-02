@@ -337,6 +337,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "**使い方**\n"
                 "• Bot をメンションして話しかける\n"
                 "• Bot の返信にリプライで会話を続ける\n"
+                "• **DM** ではメンション不要（平文で応答・履歴あり）\n"
                 "• `/chat <message>` — メンションなしの単発対話（履歴なし）\n\n"
                 "**コマンド**\n"
                 "• `/switch-models` — チャンネルの AI モデル切替\n"
@@ -346,7 +347,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 " — 画像モデル（**PLANA**）\n\n"
                 "**メモ**\n"
                 "• 対応モデルなら画像添付を認識できます\n"
-                "• 履歴はチャンネル単位で保持されます\n"
+                "• 履歴はチャンネル単位で保持されます（DM も同様）\n"
                 "• Agent ルーターが会話 / コーディング / コマンドを振り分けます"
                 f"{note}"
             )
@@ -361,6 +362,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "**How to use**\n"
             "• Mention the bot to chat\n"
             "• Reply to bot messages to continue\n"
+            "• **In DMs**, no mention needed (plain text replies with history)\n"
             "• `/chat <message>` — one-shot chat without mention (no history)\n\n"
             "**Commands**\n"
             "• `/switch-models` — switch channel AI model\n"
@@ -370,7 +372,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             " — image models (**PLANA**)\n\n"
             "**Notes**\n"
             "• Vision-capable models can read attached images\n"
-            "• History is kept per channel\n"
+            "• History is kept per channel (same in DMs)\n"
             "• Agent router dispatches conversation / coding / command"
             f"{note_en}"
         )

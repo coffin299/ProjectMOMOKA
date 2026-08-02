@@ -18,6 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
+from MOMOKA.bots.registry import registry
 from MOMOKA.utilities.donation import donation_from_bot, make_subtle_link_button
 from MOMOKA.music.music_helpers import format_duration
 
@@ -253,6 +254,85 @@ class MusicCog(commands.Cog, name="music_cog"):
         # Momoka.bot_id があればそれを使う
         return str(getattr(self.bot, "bot_id", None) or "unknown")
 
+    def _is_companion_bot(self) -> bool:
+        """companion（ARONA）ロールかどうか。"""
+        # bot_role 未設定時は primary 扱い
+        return getattr(self.bot, "bot_role", "primary") == "companion"
+
+    def _partner_display_name(self) -> str:
+        """相方 Bot の表示名を返す。"""
+        # 自 bot_id から相方 id を解決する
+        partner_bot_id = registry.partner_id(self._bot_id_key())
+        # レジストリの表示名を返す
+        return registry.display_name(partner_bot_id)
+
+    def _partner_blocks_channel(self, guild_id: int, channel_id: int) -> bool:
+        """相方が同一 VC に接続中なら True（新規入室拒否用）。"""
+        # レジストリの実接続判定を使う
+        return registry.partner_in_voice_channel(
+            self._bot_id_key(),
+            guild_id,
+            channel_id,
+        )
+
+    async def _leave_if_partner_coexists(
+        self,
+        guild_id: int,
+        channel: Optional[discord.abc.Connectable],
+        *,
+        notify: bool = True,
+    ) -> bool:
+        """Companion のみ: Primary と同 VC なら自己切断する。切断したら True。"""
+        # Primary は同居理由では退出しない
+        if not self._is_companion_bot():
+            # 対象外
+            return False
+        # チャンネルが無ければ判定不能
+        if channel is None or not hasattr(channel, "id"):
+            # 切断しない
+            return False
+        # Primary が同 channel にいなければ何もしない
+        if not self._partner_blocks_channel(guild_id, int(channel.id)):
+            # 同居なし
+            return False
+        # 通知用に状態を先に読む
+        state = self.get_existing_guild_state(guild_id)
+        # テキスト案内が必要なら送る
+        if notify and state and state.last_text_channel_id:
+            # Companion 退出メッセージをバックグラウンド送信する
+            await self._send_background_message(
+                state.last_text_channel_id,
+                "partner_coexist_left",
+                partner_name=self._partner_display_name(),
+            )
+        # 切断理由をログする
+        logger.info(
+            "Guild %s: companion leaving VC %s due to primary coexistence",
+            guild_id,
+            getattr(channel, "name", channel.id),
+        )
+        # Music 状態ごと切断する
+        await self._cleanup_guild_state(guild_id)
+        # 切断した
+        return True
+
+    async def _evacuate_companion_coexistence_all(self) -> None:
+        """Companion の全接続を点検し、Primary 同居分だけ退出する。"""
+        # Primary では sweep 不要
+        if not self._is_companion_bot():
+            # 早期リターン
+            return
+        # 接続中ギルドをスナップショットする
+        for guild_id, state in list(self.guild_states.items()):
+            # VoiceClient が無ければスキップ
+            if not state.voice_client or not state.voice_client.is_connected():
+                # 次へ
+                continue
+            # 現在のチャンネルを取る
+            channel = state.voice_client.channel
+            # 同居なら自己切断する
+            await self._leave_if_partner_coexists(guild_id, channel, notify=True)
+
     @staticmethod
     def _track_to_persist_dict(track: Track) -> dict:
         """Track から永続化可能なフィールドだけを抜き出す。"""
@@ -420,12 +500,26 @@ class MusicCog(commands.Cog, name="music_cog"):
                 await state.cleanup_voice_client()
                 # 短い間隔を空ける
                 await asyncio.sleep(0.3)
+            # 相方が同一 VC にいる場合は復元接続しない
+            if self._partner_blocks_channel(guild_id, int(channel.id)):
+                # 拒否理由をログする
+                logger.info(
+                    "Guild %s: skip VC restore to %s — partner already connected",
+                    guild_id,
+                    getattr(channel, "name", channel.id),
+                )
+                # 復元失敗扱い
+                return None
             try:
                 # VC へ接続する
                 state.voice_client = await asyncio.wait_for(
                     channel.connect(timeout=30.0, reconnect=True, self_deaf=False),
                     timeout=35.0,
                 )
+                # Companion は接続直後に Primary 同居を再点検する
+                if await self._leave_if_partner_coexists(guild_id, channel, notify=True):
+                    # 同居解消のため切断済み
+                    return None
                 # サーバー側スピーカーミュートを試みる
                 if guild is not None:
                     # deafen を適用する
@@ -936,6 +1030,17 @@ class MusicCog(commands.Cog, name="music_cog"):
                         pass
 
             if not vc and connect_if_not_in:
+                # 相方が同一 VC にいる場合は新規接続を拒否する
+                if self._partner_blocks_channel(ctx.guild.id, user_voice.channel.id):
+                    # ユーザーへ拒否メッセージを返す
+                    await self._send_response(
+                        ctx,
+                        "partner_already_in_voice",
+                        ephemeral=True,
+                        partner_name=self._partner_display_name(),
+                    )
+                    # 接続しない
+                    return None
                 try:
                     # 接続前の短い待機で前回切断との競合を避ける
                     await asyncio.sleep(0.3)
@@ -945,6 +1050,21 @@ class MusicCog(commands.Cog, name="music_cog"):
                             timeout=30.0, reconnect=True, self_deaf=False),
                         timeout=35.0
                     )
+                    # Companion は接続直後に Primary 同居を再点検する
+                    if await self._leave_if_partner_coexists(
+                        ctx.guild.id,
+                        user_voice.channel,
+                        notify=False,
+                    ):
+                        # 同居解消で切断した旨をユーザーへ返す
+                        await self._send_response(
+                            ctx,
+                            "partner_coexist_left",
+                            ephemeral=True,
+                            partner_name=self._partner_display_name(),
+                        )
+                        # 利用不可
+                        return None
                     # 緑アイコンのサーバー側スピーカーミュートを適用（権限不足時は自己deafへ）
                     await self._apply_server_deafen(ctx.guild)
                     # 接続成功をログに残す
@@ -1667,12 +1787,51 @@ class MusicCog(commands.Cog, name="music_cog"):
         # 対象チャンネルを返す
         return channel
 
+    @staticmethod
+    def _is_vc_status_permission_error(exc: BaseException) -> bool:
+        """VC ステータス更新の権限不足系例外かどうかを判定する。"""
+        # Forbidden は権限不足の典型
+        if isinstance(exc, discord.Forbidden):
+            return True
+        # HTTPException でも 403 / Missing Permissions (50013) なら同様に扱う
+        if isinstance(exc, discord.HTTPException):
+            # HTTP ステータスが 403
+            if getattr(exc, "status", None) == 403:
+                return True
+            # Discord エラーコード 50013 = Missing Permissions
+            if getattr(exc, "code", None) == 50013:
+                return True
+            # 文言フォールバック（実装差・ラップ例外向け）
+            text = str(exc).lower()
+            if "missing permissions" in text or "missing access" in text:
+                return True
+        return False
+
+    def _mark_vc_status_permission_denied(
+        self,
+        state: GuildState,
+        guild_id: int,
+        detail: object,
+    ) -> None:
+        """権限不足を記録し、初回のみ INFO（以降は完全サプレッション）。"""
+        # 既に諦め済みなら何も出さない
+        if state.vc_status_permission_denied:
+            return
+        # 以降の API 呼び出しを止める
+        state.vc_status_permission_denied = True
+        # 初回だけ INFO（ERROR/WARNING にはしない）
+        logger.info(
+            "Guild %s: VC status permission denied (%s); suppressing further updates",
+            guild_id,
+            detail,
+        )
+
     async def _apply_voice_channel_status(
         self,
         guild_id: int,
         status_text: Optional[str],
     ) -> None:
-        """VC ステータスを API 経由で設定する（権限不足時は INFO のみ）。"""
+        """VC ステータスを API 経由で設定する（権限不足は INFO 1回＋以降サプレッション）。"""
         # ギルド状態を取得する
         state = self.get_existing_guild_state(guild_id)
         # 状態が無い、ロック中、権限諦め済みなら何もしない
@@ -1694,15 +1853,12 @@ class MusicCog(commands.Cog, name="music_cog"):
             return
         # Set Voice Channel Status 権限を確認する
         if not channel.permissions_for(me).set_voice_channel_status:
-            # 初回のみ INFO で知らせ、以降は静かにスキップ
-            if not state.vc_status_permission_denied:
-                logger.info(
-                    "Guild %s: Missing set_voice_channel_status permission; "
-                    "skipping VC status updates",
-                    guild_id,
-                )
-                # 再試行しない
-                state.vc_status_permission_denied = True
+            # キャッシュ上の権限不足も INFO 1回でサプレッション
+            self._mark_vc_status_permission_denied(
+                state,
+                guild_id,
+                "missing set_voice_channel_status",
+            )
             return
         # Bot 自身の更新 echo を待つため pending をセットする
         state.vc_status_pending_active = True
@@ -1718,46 +1874,68 @@ class MusicCog(commands.Cog, name="music_cog"):
             )
             # 成功した値を Bot 設定済みとして記録する
             state.vc_status_last_bot = status_text
-        except discord.Forbidden as exc:
-            # 権限不足は INFO のみで、以降は更新しない
-            state.vc_status_permission_denied = True
-            logger.info(
-                "Guild %s: Cannot set VC status (%s); skipping future updates",
-                guild_id,
-                exc,
-            )
-        except discord.HTTPException as exc:
-            # その他 HTTP 失敗も INFO に留める
-            logger.info(
-                "Guild %s: VC status update failed (%s)",
-                guild_id,
-                exc,
-            )
+        except Exception as exc:
+            # 権限不足は INFO 1回＋以降スキップ（外側の ERROR に伝播させない）
+            if self._is_vc_status_permission_error(exc):
+                self._mark_vc_status_permission_denied(state, guild_id, exc)
+            elif isinstance(exc, discord.HTTPException):
+                # 一時的 HTTP 失敗は INFO のみ（再生自体は継続）
+                logger.info(
+                    "Guild %s: VC status update failed (%s)",
+                    guild_id,
+                    exc,
+                )
+            else:
+                # 想定外も ERROR にせず INFO（ステータスはベストエフォート）
+                logger.info(
+                    "Guild %s: VC status update unexpected failure (%s)",
+                    guild_id,
+                    exc,
+                )
         finally:
             # echo 待ちを終了する
             state.vc_status_pending_active = False
 
     async def _sync_voice_channel_status(self, guild_id: int) -> None:
         """現在の再生状態を VC ステータスへ反映する。"""
-        # ギルド状態を取得する
-        state = self.get_existing_guild_state(guild_id)
-        # 状態が無ければ何もしない
-        if not state:
-            return
-        # 表示文字列を組み立てる
-        status_text = self._format_vc_status_text(state)
-        # API で反映する
-        await self._apply_voice_channel_status(guild_id, status_text)
+        try:
+            # ギルド状態を取得する
+            state = self.get_existing_guild_state(guild_id)
+            # 状態が無ければ何もしない
+            if not state:
+                return
+            # 表示文字列を組み立てる
+            status_text = self._format_vc_status_text(state)
+            # API で反映する
+            await self._apply_voice_channel_status(guild_id, status_text)
+        except Exception as exc:
+            # 呼び出し元の Now Playing ERROR に混ぜない
+            logger.info(
+                "Guild %s: VC status sync suppressed (%s)",
+                guild_id,
+                exc,
+            )
 
     async def _clear_voice_channel_status(self, guild_id: int) -> None:
         """Bot が設定した VC ステータスをクリアする。"""
-        # ギルド状態を取得する
-        state = self.get_existing_guild_state(guild_id)
-        # 状態が無い、ロック中、Bot が一度も設定していなければ触らない
-        if not state or state.vc_status_locked or state.vc_status_last_bot is None:
-            return
-        # ステータスを None（削除）で反映する
-        await self._apply_voice_channel_status(guild_id, None)
+        try:
+            # ギルド状態を取得する
+            state = self.get_existing_guild_state(guild_id)
+            # 状態が無い、ロック中、Bot が一度も設定していなければ触らない
+            if not state or state.vc_status_locked or state.vc_status_last_bot is None:
+                return
+            # 権限諦め済みならクリアも試行しない
+            if state.vc_status_permission_denied:
+                return
+            # ステータスを None（削除）で反映する
+            await self._apply_voice_channel_status(guild_id, None)
+        except Exception as exc:
+            # クリア失敗も再生フローを汚さない
+            logger.info(
+                "Guild %s: VC status clear suppressed (%s)",
+                guild_id,
+                exc,
+            )
 
     def _schedule_auto_leave(self, guild_id: int):
         # 対象ギルドの再生状態を取得する
@@ -1913,6 +2091,13 @@ class MusicCog(commands.Cog, name="music_cog"):
         except Exception as e:
             # 復元失敗でも Cog は生かす
             logger.warning("VC session restore on_ready failed: %s", e)
+        # Companion は復元後に Primary 同居分を掃除する
+        try:
+            # 既存同居を一括点検する
+            await self._evacuate_companion_coexistence_all()
+        except Exception as e:
+            # sweep 失敗でも Cog は生かす
+            logger.warning("companion coexistence sweep failed: %s", e)
 
     @commands.Cog.listener()
     async def on_socket_raw_receive(self, msg: dict):
@@ -1965,6 +2150,43 @@ class MusicCog(commands.Cog, name="music_cog"):
             await self._cleanup_guild_state(member.guild.id)
             # 以降の無人判定は不要
             return
+
+        # Companion: Primary が自 VC に入ってきた／同居している場合は自己切断する
+        if self._is_companion_bot() and after.channel is not None:
+            # Primary の Discord user id を解決する
+            primary_user_id = registry.user_id("plana")
+            # Primary 本人の移動イベントだけを同居トリガにする
+            if primary_user_id is not None and member.id == primary_user_id:
+                # 自 Bot の状態を取得する
+                own_state = self.get_existing_guild_state(member.guild.id)
+                # 自 Bot が接続中で、Primary の到着先が同じ VC なら退出する
+                if (
+                    own_state
+                    and own_state.voice_client
+                    and own_state.voice_client.is_connected()
+                    and own_state.voice_client.channel
+                    and own_state.voice_client.channel.id == after.channel.id
+                ):
+                    # テキスト案内用のチャンネルを控える
+                    text_channel_id = own_state.last_text_channel_id
+                    # 退出理由をログする
+                    logger.info(
+                        "Guild %s: companion leaving VC %s — primary joined same channel",
+                        member.guild.id,
+                        after.channel.id,
+                    )
+                    # 切断前に案内を送る（cleanup で状態が消える）
+                    if text_channel_id:
+                        # partner_coexist_left をバックグラウンド送信する
+                        await self._send_background_message(
+                            text_channel_id,
+                            "partner_coexist_left",
+                            partner_name=self._partner_display_name(),
+                        )
+                    # Music 状態ごと切断する
+                    await self._cleanup_guild_state(member.guild.id)
+                    # 退出後は無人判定不要
+                    return
 
         # 対象ギルドIDを取得する
         guild_id = member.guild.id

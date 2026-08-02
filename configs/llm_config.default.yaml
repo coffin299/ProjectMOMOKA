@@ -116,7 +116,7 @@ llm:
       # coding: plain 本文 + article.md + 言語別コードファイル
       always_attach_if_code_fence: true
       skip_stream_preview: true
-      plain_text_max_chars: 500
+      plain_text_max_chars: 1000
       article_filename: article.md
       attach_as_file_threshold: 1800
       ask_attach_if_over: true

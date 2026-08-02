@@ -77,8 +77,8 @@
 
 ## Music Playback / 音楽再生
 
-**JA:** ボイスチャンネルで再生（キュー・ループ・シャッフルなど）。両ボット対応。  
-**EN:** Play audio in voice channels with queue, loop, shuffle, and more. Both bots.
+**JA:** ボイスチャンネルで再生（キュー・ループ・シャッフルなど）。両ボット対応（同一 VC への同時接続は不可）。PCM ミキサーは NumPy で音楽+TTS を合成。  
+**EN:** Play audio in voice channels with queue, loop, shuffle, and more. Both bots (same VC at once is not allowed). PCM mixer uses NumPy for music+TTS mix.
 
 - YouTube / Spotify / Google Drive / ニコニコ動画 / その他 yt-dlp 対応ソース  
   **EN:** YouTube, Spotify, Google Drive, NicoNico, and other yt-dlp sources

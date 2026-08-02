@@ -1,6 +1,5 @@
 # MOMOKA/music/audio_mixer.py
 import discord
-import struct
 import asyncio
 import io
 import shlex
@@ -11,12 +10,21 @@ from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 import logging
 
+import numpy as np
+
 from MOMOKA.music.plugins.process_log_bridge import (
     ChildProcessLogPump,
     redact_media_url,
 )
 
 logger = logging.getLogger(__name__)
+
+# Discord PCM: 20ms / 48kHz / 16bit LE / stereo → 960*2*2 = 3840 bytes
+_FRAME_BYTES = 3840
+# 1フレームあたりのサンプル数（L/R を含む）
+_FRAME_SAMPLES = _FRAME_BYTES // 2
+# PCM int16 リトルエンディアン（Discord 仕様に合わせる）
+_PCM_DTYPE = np.dtype('<i2')
 
 
 class AudioMixer(discord.AudioSource):
@@ -56,8 +64,6 @@ class AudioMixer(discord.AudioSource):
         if not self.active or self._is_done:
             return b''
 
-        # 3840バイト = 960サンプル * 2バイト(16bit) * 2チャンネル(ステレオ) = 20ms分のPCMデータ
-        final_frame = bytearray(3840)
         # 終了したソースを (名前, ソース参照) のタプルで記録
         finished_sources: List[Tuple[str, discord.AudioSource]] = []
 
@@ -69,7 +75,10 @@ class AudioMixer(discord.AudioSource):
         if not sources_to_process:
             return b''
 
-        # 各ソースからフレームを読み取り、ミキシング
+        # int32 累積バッファ（加算オーバーフロー回避、最後に一度だけ clip）
+        mixed = np.zeros(_FRAME_SAMPLES, dtype=np.int32)
+
+        # 各ソースからフレームを読み取り、NumPy でベクタ加算
         for name, source in sources_to_process:
             try:
                 # ソースからPCMフレームを読み取る
@@ -79,29 +88,24 @@ class AudioMixer(discord.AudioSource):
                     finished_sources.append((name, source))
                     continue
 
-                # フレームが3840バイト未満の場合はゼロパディング
-                if len(frame) < 3840:
-                    frame += b'\x00' * (3840 - len(frame))
+                # フレーム長を Discord 20ms に揃える（不足はゼロ埋め、超過は切り捨て）
+                frame_len = len(frame)
+                if frame_len < _FRAME_BYTES:
+                    frame = frame + b'\x00' * (_FRAME_BYTES - frame_len)
+                elif frame_len > _FRAME_BYTES:
+                    frame = frame[:_FRAME_BYTES]
 
-                # 16bitリトルエンディアンPCMサンプルをイテレート
-                source_samples = struct.iter_unpack('<h', frame)
-                final_samples = struct.iter_unpack('<h', final_frame)
-
-                mixed_frame_data = bytearray()
+                # 16bit LE PCM をゼロコピーで int16 ビュー化
+                src = np.frombuffer(frame, dtype=_PCM_DTYPE)
                 # このソースの音量を取得
                 volume = self.volumes.get(name, 1.0)
 
-                # サンプルごとにミキシング（加算合成）
-                for source_sample, final_sample in zip(source_samples, final_samples):
-                    s_val = source_sample[0]
-                    f_val = final_sample[0]
-                    # ボリューム適用してサンプルを加算
-                    mixed_sample = f_val + int(s_val * volume)
-                    # クリッピング（16bit範囲に制限）
-                    mixed_sample = max(-32768, min(32767, mixed_sample))
-                    mixed_frame_data.extend(struct.pack('<h', mixed_sample))
-
-                final_frame = mixed_frame_data
+                # volume=1.0 は乗算を省略して int32 加算のみ
+                if volume == 1.0:
+                    mixed += src.astype(np.int32, copy=False)
+                else:
+                    # int(s * volume) 相当（ゼロ方向へ切り捨て）で加算
+                    mixed += (src.astype(np.float32) * np.float32(volume)).astype(np.int32)
 
             except Exception as read_err:
                 # 読み取りエラーが発生したソースは終了扱い
@@ -151,7 +155,9 @@ class AudioMixer(discord.AudioSource):
         if not self.has_sources():
             return b''
 
-        return bytes(final_frame)
+        # 16bit 範囲へ一括クリップして PCM bytes に戻す
+        np.clip(mixed, -32768, 32767, out=mixed)
+        return mixed.astype(_PCM_DTYPE).tobytes()
 
     async def add_source(self, name: str, source: discord.AudioSource, volume: float = 1.0):
         """

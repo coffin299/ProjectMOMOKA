@@ -68,6 +68,42 @@ class BotRegistry:
             return default_partner
         return "plana"
 
+    def partner_in_voice_channel(
+        self,
+        bot_id: str,
+        guild_id: int,
+        channel_id: int,
+    ) -> bool:
+        """相方 Bot が指定ギルドの指定 VC に接続中なら True。"""
+        # 相方の bot_id を解決する
+        partner_bot_id = self.partner_id(bot_id)
+        # 相方 Client を取得する
+        partner = self._bots.get(partner_bot_id)
+        # 未登録・未起動なら同居判定の対象外
+        if partner is None:
+            # 単体運用では常に False
+            return False
+        # 相方の VoiceClient を走査する
+        for voice_client in partner.voice_clients:
+            # ギルド不一致はスキップする
+            if voice_client.guild is None or voice_client.guild.id != guild_id:
+                # 次の接続へ
+                continue
+            # 切断済みは同居とみなさない
+            if not voice_client.is_connected():
+                # 次の接続へ
+                continue
+            # チャンネル参照が無ければスキップする
+            if voice_client.channel is None:
+                # 次の接続へ
+                continue
+            # 同一 channel id なら同居中
+            if voice_client.channel.id == channel_id:
+                # 相方が同 VC にいる
+                return True
+        # どの接続も該当しない
+        return False
+
     def user_id(self, bot_id: str) -> Optional[int]:
         """ログイン済み user.id。未ログインなら None。"""
         # Client を取得する

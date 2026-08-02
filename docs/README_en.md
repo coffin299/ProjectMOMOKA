@@ -45,7 +45,7 @@
 
 ### 1. AI Chat (LLM)
 
-Mention `@PLANA` or `@ARONA` to chat.
+Mention `@PLANA` or `@ARONA` to chat. **In DMs, no mention is required** — plain messages get a reply and conversation history is kept.
 
 #### Supported Models
 
@@ -66,6 +66,9 @@ Mention `@PLANA` or `@ARONA` to chat.
 ### 2. Music Playback
 
 Both bots can play in voice channels (queue, loop, shuffle, etc.).
+They **cannot share the same VC at once** (load control): if one bot is already connected, the other is refused. If both are already in the same channel, **ARONA (companion) disconnects** and PLANA stays.
+
+The PCM mixer (`AudioMixer`) uses NumPy vectorized add/clip so music and TTS can share one VC with lower CPU cost.
 
 #### Sources
 
@@ -296,7 +299,8 @@ llm:
 | Command | Description |
 |---------|-------------|
 | `@PLANA` / `@ARONA` `<message>` | Chat via mention |
-| `/chat <message>` | Chat without mention |
+| (Plain text in DM) | Chat without mention (history kept) |
+| `/chat <message>` | Chat without mention (no history; no history hint in DMs) |
 | `/clear_history` | Reset history |
 | `/switch-models` | Per-channel model |
 
@@ -376,7 +380,8 @@ Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit
 
 ### Music
 
-Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the queue finishes, auto-leave when the VC is empty. While playing, the voice channel status is synced as `NowPlaying - track title` (if a user edits it manually, the bot stops updating; requires **Set Voice Channel Status** permission).
+Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the queue finishes, auto-leave when the VC is empty. While playing, the voice channel status is synced as `NowPlaying - track title` (if a user edits it manually, the bot stops updating; requires **Set Voice Channel Status** permission; missing permission logs once at INFO then suppresses further updates).
+**No shared VC:** PLANA and ARONA cannot connect to the same voice channel at once. If they already coexist, ARONA disconnects and PLANA stays.
 
 **Graceful restart resilience:** On `/shutdown`, GUI shutdown, or Ctrl+C, active VC playback (position + queue) is saved to `vc_playback_sessions` in `data/momoka.db`, then restored after startup (re-join + seek). The row is deleted once playback starts successfully. Hard kills/crashes are out of scope. LLM replies are not auto-resumed; in-flight messages are overwritten with a restart notice and users should re-mention. Support links come from `utilities_config.yaml` (`support.discord_invite_url`, `developer_user_id`, etc.).
 

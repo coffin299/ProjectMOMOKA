@@ -19,6 +19,10 @@ music:
     already_connected: ✅ Already connected to a voice channel.
     leaving_voice_channel: 👋 Left the voice channel.
     auto_left_empty_channel: 👋 Auto-left the voice channel as it became empty.
+    # PLANA / ARONA cannot share the same VC (load control). Refuse join when the partner is already there.
+    partner_already_in_voice: ❌ **{partner_name}** is already connected to this voice channel. PLANA and ARONA cannot join the same VC at once — use the other bot, or pick a different channel.
+    # Companion (ARONA) left after detecting coexistence with primary.
+    partner_coexist_left: 👋 Left this voice channel because **{partner_name}** was already here. Only PLANA may stay when both would share the same VC.
     now_playing: '🎵 **Now Playing:** {title}
 
       ⏱️ **Duration:** {duration}

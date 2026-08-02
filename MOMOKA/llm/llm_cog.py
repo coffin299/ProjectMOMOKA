@@ -359,6 +359,9 @@ class LLMCog(commands.Cog, name="llm"):
             base_content: str,
     ) -> None:
         """/chat 応答の末尾に会話履歴の注意書き（-# サブテキスト）を付ける。"""
+        # DM では平文でも履歴が繋がるため案内は不要
+        if getattr(channel, "guild", None) is None:
+            return
         # message.content は followup/edit 後に空のことがあるため、呼び出し側の本文を使う
         # 案内文言を結合した最終テキストを組み立てる
         hinted_content = f"{base_content}{CHAT_HISTORY_HINT}"
@@ -1176,6 +1179,12 @@ class LLMCog(commands.Cog, name="llm"):
         
         if message.id in self.message_to_thread[guild_id]: 
             return self.message_to_thread[guild_id][message.id]
+
+        # DM はチャンネル単位で1会話に固定する（平文でも履歴を繋ぐ）
+        if message.guild is None:
+            thread_id = message.channel.id
+            self.message_to_thread[guild_id][message.id] = thread_id
+            return thread_id
         
         current_msg, visited_ids = message, set()
         while current_msg.reference and current_msg.reference.message_id:
@@ -1192,12 +1201,34 @@ class LLMCog(commands.Cog, name="llm"):
         self.message_to_thread[guild_id][message.id] = thread_id
         return thread_id
 
+    def _truncate_conversation_history(
+            self, history: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """会話履歴を max_messages ターン（user+assistant）に切り詰める。"""
+        # guild / DM 共通で同じ上限式を使う
+        max_history_entries = self.llm_config.get('max_messages', 10) * 2
+        if len(history) > max_history_entries:
+            return history[-max_history_entries:]
+        return history
+
     async def _collect_conversation_history(self, message: discord.Message) -> List[Dict[str, Any]]:
         guild_id = message.guild.id if message.guild else 0  # DMの場合は0
         
         # ギルド固有の会話履歴を初期化
         if guild_id not in self.conversation_threads:
             self.conversation_threads[guild_id] = {}
+
+        # DM: reply チェーンではなくチャンネル単位の保存済み履歴を使う
+        if message.guild is None:
+            thread_id = message.channel.id
+            stored = self.conversation_threads[guild_id].get(thread_id, [])
+            history: List[Dict[str, Any]] = []
+            for msg in stored:
+                role = msg.get("role")
+                # API には role / content のみ渡す（message_id 等は内部用）
+                if role in ("user", "assistant") and "content" in msg:
+                    history.append({"role": role, "content": msg["content"]})
+            return self._truncate_conversation_history(history)
         
         history, current_msg, visited_ids = [], message, set()
         while current_msg.reference and current_msg.reference.message_id:
@@ -1241,8 +1272,7 @@ class LLMCog(commands.Cog, name="llm"):
             except (discord.NotFound, discord.HTTPException):
                 break
         history.reverse()
-        max_history_entries = self.llm_config.get('max_messages', 10) * 2
-        return history[-max_history_entries:] if len(history) > max_history_entries else history
+        return self._truncate_conversation_history(history)
 
     async def _process_image_url(self, url: str) -> Optional[Dict[str, Any]]:
         # 画像バイト上限（未設定時は従来どおり 20 MiB）
@@ -1534,6 +1564,8 @@ class LLMCog(commands.Cog, name="llm"):
     async def on_message(self, message: discord.Message):
         if message.author.bot: return
 
+        # DM は 1:1 のためメンション／リプライなしでも反応する
+        is_dm = message.guild is None
         # スレッド内ではBotのメッセージへのリプライのみに反応
         is_thread = isinstance(message.channel, discord.Thread)
         is_mentioned = self.bot.user.mentioned_in(message) and not message.mention_everyone
@@ -1541,13 +1573,14 @@ class LLMCog(commands.Cog, name="llm"):
                            isinstance(message.reference.resolved, discord.Message) and 
                            message.reference.resolved.author == self.bot.user)
         
-        # スレッド内ではBotのメッセージへのリプライのみ、通常チャンネルではメンション・リプライが必要
-        if is_thread:
-            if not is_reply_to_bot:
-                return
-        else:
-            if not (is_mentioned or is_reply_to_bot):
-                return
+        # DM 以外: スレッドはリプライのみ、通常チャンネルはメンション・リプライが必要
+        if not is_dm:
+            if is_thread:
+                if not is_reply_to_bot:
+                    return
+            else:
+                if not (is_mentioned or is_reply_to_bot):
+                    return
         try:
             llm_client = await self._get_llm_client_for_channel(message.channel.id)
             if not llm_client:
@@ -1670,6 +1703,10 @@ class LLMCog(commands.Cog, name="llm"):
                 self.conversation_threads[guild_id][thread_id].append(user_message_for_api)
                 assistant_message = {"role": "assistant", "content": llm_response, "message_id": sent_messages[0].id}
                 self.conversation_threads[guild_id][thread_id].append(assistant_message)
+                # 保存側も max_messages と同じ上限で切り詰める（特に DM の単一スレッド肥大を防ぐ）
+                self.conversation_threads[guild_id][thread_id] = self._truncate_conversation_history(
+                    self.conversation_threads[guild_id][thread_id]
+                )
                 for msg in sent_messages: 
                     guild_id_for_msg = msg.guild.id if msg.guild else 0
                     if guild_id_for_msg not in self.message_to_thread:
