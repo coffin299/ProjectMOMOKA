@@ -180,10 +180,11 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
    pip install -r requirements.txt
    python main.py
    ```
-   On start, the **Electron** host GUI (Discord dark) opens. Sidebar: Overview / General / LLM / TTS+Music / Error. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently.  
-   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged.  
+   On start, the **Electron** host GUI (Discord dark) opens. Sidebar: Overview / General / LLM / TTS+Music / Error / **Log management**. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently.  
+   Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged. `[LLM_RESPONSE]` includes `requester_id=<Discord user id>` for search.  
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
    All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores up to **10000 lines** from the `.log` tail (history across restarts, including join/leave). Clear affects the UI only.  
+   **Log management** panel: search logs and DB (`speech_auto_join_users` / VC restart-session `requester_id`) by Discord user ID. Logs: mask selected/all (keep timestamp only in `.log`/`.txt`). DB: hard-delete selected/all. APIs: `GET /privacy/search`, `POST /privacy/logs/mask`, `POST /privacy/db/delete`.  
    On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). Bot still runs if the GUI build fails.  
    Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 

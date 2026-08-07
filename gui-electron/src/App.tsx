@@ -4,11 +4,14 @@ import { StatusBar } from "./components/StatusBar";
 import { ShutdownButton } from "./components/ShutdownButton";
 import { OpsDashboard } from "./components/OpsDashboard";
 import { LogPanel } from "./components/LogPanel";
+import { UserDataPanel } from "./components/UserDataPanel";
 import { useStatus } from "./hooks/useStatus";
 import { useLogStream } from "./hooks/useLogStream";
 import "./styles/discord-theme.css";
 
-const LOG_TITLES: Record<Exclude<NavId, "overview">, string> = {
+type LogNavId = Exclude<NavId, "overview" | "privacy">;
+
+const LOG_TITLES: Record<LogNavId, string> = {
   general: "一般ログ",
   llm: "LLMログ",
   tts: "TTS+Musicログ",
@@ -46,8 +49,9 @@ export default function App() {
     [entries]
   );
 
-  const logCategory =
-    nav === "overview" ? null : (nav as Exclude<NavId, "overview">);
+  const isLogNav =
+    nav === "general" || nav === "llm" || nav === "tts" || nav === "error";
+  const logCategory = isLogNav ? (nav as LogNavId) : null;
   const logEntries = logCategory
     ? filterBy(logCategory === "tts" ? "tts" : logCategory, levels[logCategory])
     : [];
@@ -77,13 +81,15 @@ export default function App() {
             uptime={format.uptime}
             alive={status?.alive}
           />
+        ) : nav === "privacy" ? (
+          <UserDataPanel />
         ) : (
           <LogPanel
-            title={LOG_TITLES[nav]}
+            title={LOG_TITLES[nav as LogNavId]}
             entries={logEntries}
-            level={levels[nav]}
+            level={levels[nav as LogNavId]}
             onLevelChange={(lv) =>
-              setLevels((prev) => ({ ...prev, [nav]: lv }))
+              setLevels((prev) => ({ ...prev, [nav as LogNavId]: lv }))
             }
             autoScroll={autoScroll}
             onAutoScrollChange={setAutoScroll}

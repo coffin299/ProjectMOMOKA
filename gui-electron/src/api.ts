@@ -56,6 +56,22 @@ export async function apiPost<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
+  const cfg = getHostConfig();
+  const res = await fetch(`${cfg.apiBase}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${cfg.token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`POST ${path} failed: ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
   const cfg = getHostConfig();
   const res = await fetch(`${cfg.apiBase}${path}`, {

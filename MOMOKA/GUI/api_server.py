@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, Set
 
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     FastAPI,
     Header,
@@ -35,6 +36,11 @@ from MOMOKA.GUI.persistent_log import (
     DEFAULT_HISTORY_LINES,
     categorize_logger_name,
     load_log_history,
+)
+from MOMOKA.GUI.user_data_purge import (
+    delete_db_user_data,
+    mask_log_lines,
+    search_user_data,
 )
 from MOMOKA.services.log_sanitize import sanitize_log_message
 from MOMOKA.storage import NS_LOG_VIEWER_CONFIG, get_default_settings_db
@@ -252,6 +258,71 @@ def create_host_gui_app(
         items = load_log_history(max_lines=max_lines)
         # クライアントへ
         return {"items": items, "source": "momoka_gui.log"}
+
+    @router.get("/privacy/search")
+    def privacy_search(
+        user_id: str = Query(..., min_length=1),
+        _: None = Depends(require_token),
+    ) -> Dict[str, Any]:
+        """ユーザー ID でログ・DB を横断検索する。"""
+        # 数字以外は拒否
+        if not str(user_id).isdigit():
+            # 不正入力
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_user_id",
+            )
+        # 検索実行
+        return search_user_data(int(user_id))
+
+    @router.post("/privacy/logs/mask")
+    def privacy_mask_logs(
+        body: Dict[str, Any] = Body(default_factory=dict),
+        _: None = Depends(require_token),
+    ) -> Dict[str, Any]:
+        """指定ログ行を日時のみ残してマスクする。"""
+        # items 配列を取る
+        items = body.get("items") if isinstance(body, dict) else None
+        # 不正なら空扱い
+        if not isinstance(items, list):
+            # 空リスト
+            items = []
+        # マスク実行
+        return mask_log_lines(items)
+
+    @router.post("/privacy/db/delete")
+    def privacy_delete_db(
+        body: Dict[str, Any] = Body(default_factory=dict),
+        _: None = Depends(require_token),
+    ) -> Dict[str, Any]:
+        """ユーザー紐付け DB 行を削除する。"""
+        # 本体が dict でなければ拒否
+        if not isinstance(body, dict):
+            # 不正ボディ
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_body",
+            )
+        # user_id 必須
+        raw_uid = body.get("user_id")
+        # 数字チェック
+        if raw_uid is None or not str(raw_uid).isdigit():
+            # 不正
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_user_id",
+            )
+        # 削除実行
+        return delete_db_user_data(
+            int(raw_uid),
+            delete_all=bool(body.get("all")),
+            auto_join=body.get("auto_join") if isinstance(body.get("auto_join"), list) else None,
+            vc_sessions=(
+                body.get("vc_sessions")
+                if isinstance(body.get("vc_sessions"), list)
+                else None
+            ),
+        )
 
     @router.websocket("/logs")
     async def ws_logs(

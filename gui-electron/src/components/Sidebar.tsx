@@ -1,4 +1,10 @@
-type NavId = "overview" | "general" | "llm" | "tts" | "error";
+type NavId =
+  | "overview"
+  | "general"
+  | "llm"
+  | "tts"
+  | "error"
+  | "privacy";
 
 const ITEMS: { id: NavId; label: string }[] = [
   { id: "overview", label: "Overview" },
@@ -6,6 +12,7 @@ const ITEMS: { id: NavId; label: string }[] = [
   { id: "llm", label: "LLM" },
   { id: "tts", label: "TTS+Music" },
   { id: "error", label: "エラー" },
+  { id: "privacy", label: "ログ管理" },
 ];
 
 type Props = {

@@ -190,10 +190,11 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
    pip install -r requirements.txt
    python main.py
    ```
-   起動時のホスト GUI は **Electron**（Discord ダーク）。左サイドバーで Overview（運用）/ 一般 / LLM / TTS+Music / エラーを切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。  
-   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。  
+   起動時のホスト GUI は **Electron**（Discord ダーク）。左サイドバーで Overview（運用）/ 一般 / LLM / TTS+Music / エラー / **ログ管理** を切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。  
+   ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。`[LLM_RESPONSE]` には検索用に `requester_id=<DiscordユーザーID>` を付与。  
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
    全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾 **最大 10000 行** を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
+   **ログ管理**パネル: Discord ユーザー ID でログ・DB（`speech_auto_join_users` / VC 再起動セッション内 `requester_id`）を検索。ログは選択／一括で日時のみ残してマスク（`.log`/`.txt`）、DB は選択／一括で完全削除。API: `GET /privacy/search`・`POST /privacy/logs/mask`・`POST /privacy/db/delete`。  
    初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。未ビルドでも Bot は起動継続。  
    本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 

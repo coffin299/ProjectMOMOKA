@@ -1024,6 +1024,65 @@ class SettingsDB:
              str(levels.get("error", "WARNING"))),
         )
 
+    def find_auto_join_by_user_id(self, user_id: int) -> List[Dict[str, Any]]:
+        """speech_auto_join_users から指定ユーザー行を返す。"""
+        # 読み取りを排他する。
+        with self._lock:
+            # 接続を開く。
+            conn = self._connect()
+            try:
+                # 一致行を取得する。
+                rows = conn.execute(
+                    "SELECT guild_id, user_id FROM speech_auto_join_users "
+                    "WHERE user_id = ?",
+                    (int(user_id),),
+                ).fetchall()
+            finally:
+                # 接続を閉じる。
+                conn.close()
+        # 公開形状へ写す。
+        return [
+            {"guild_id": str(guild_id), "user_id": int(uid)}
+            for guild_id, uid in rows
+        ]
+
+    def delete_auto_join_by_user_id(
+        self,
+        user_id: int,
+        guild_ids: Optional[List[str]] = None,
+    ) -> int:
+        """指定ユーザーの autojoin 行を削除し、削除件数を返す。"""
+        # 書き込みを排他する。
+        with self._lock:
+            # 接続を開く。
+            conn = self._connect()
+            try:
+                # ギルド限定が無ければ全削除。
+                if not guild_ids:
+                    # 全ギルド対象。
+                    cursor = conn.execute(
+                        "DELETE FROM speech_auto_join_users WHERE user_id = ?",
+                        (int(user_id),),
+                    )
+                else:
+                    # 指定ギルドだけ削除する。
+                    placeholders = ",".join("?" for _ in guild_ids)
+                    # パラメータを組み立てる。
+                    params: List[Any] = [int(user_id), *[str(g) for g in guild_ids]]
+                    # 削除を実行する。
+                    cursor = conn.execute(
+                        "DELETE FROM speech_auto_join_users "
+                        f"WHERE user_id = ? AND guild_id IN ({placeholders})",
+                        params,
+                    )
+                # 確定する。
+                conn.commit()
+                # 削除件数を返す。
+                return int(cursor.rowcount or 0)
+            finally:
+                # 接続を閉じる。
+                conn.close()
+
     @staticmethod
     def _load_gdrive(conn: sqlite3.Connection) -> Optional[Dict[str, float]]:
         """file_id → delete_at を返す。"""

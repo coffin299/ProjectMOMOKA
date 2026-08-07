@@ -8,7 +8,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from MOMOKA.storage.settings.constants import DEFAULT_DB_PATH
 
@@ -207,6 +207,243 @@ class VcPlaybackSessionStore:
             finally:
                 # 接続を閉じる。
                 conn.close()
+
+    @staticmethod
+    def _parse_track_requester(track: Any) -> Optional[int]:
+        """トラック dict の requester_id を整数化する。"""
+        # dict 以外は対象外。
+        if not isinstance(track, dict):
+            return None
+        # 生値を取る。
+        raw = track.get("requester_id")
+        # 無ければ無し。
+        if raw is None:
+            return None
+        try:
+            # 整数へ変換する。
+            return int(raw)
+        except (TypeError, ValueError):
+            # 壊れていれば無視する。
+            return None
+
+    def find_by_requester_id(self, user_id: int) -> List[Dict[str, Any]]:
+        """requester_id が一致するトラックを含むセッション要約を返す。"""
+        # 対象ユーザー。
+        uid = int(user_id)
+        # 読み取りを排他する。
+        with self._lock:
+            # 接続を開く。
+            conn = self._connect()
+            try:
+                # 全セッションを取る。
+                rows = conn.execute(
+                    """
+                    SELECT bot_id, guild_id, current_track_json, queue_json
+                    FROM vc_playback_sessions
+                    """
+                ).fetchall()
+            finally:
+                # 接続を閉じる。
+                conn.close()
+        # 結果。
+        hits: List[Dict[str, Any]] = []
+        # 各行を検査する。
+        for bot_id, guild_id, current_json, queue_json in rows:
+            # current を復元する。
+            current = None
+            # 文字列があれば loads する。
+            if current_json:
+                try:
+                    # JSON を dict にする。
+                    current = json.loads(current_json)
+                except json.JSONDecodeError:
+                    # 壊れていれば無視する。
+                    current = None
+            # キューを復元する。
+            queue: List[Any] = []
+            # 文字列があれば loads する。
+            if queue_json:
+                try:
+                    # JSON を list にする。
+                    loaded = json.loads(queue_json)
+                    # list 以外は空にする。
+                    queue = loaded if isinstance(loaded, list) else []
+                except json.JSONDecodeError:
+                    # 壊れていれば空キューにする。
+                    queue = []
+            # current が対象か。
+            current_hit = self._parse_track_requester(current) == uid
+            # キュー内の一致タイトルを集める。
+            matched_titles: List[str] = []
+            # キューを走査する。
+            for track in queue:
+                # requester 不一致はスキップ。
+                if self._parse_track_requester(track) != uid:
+                    continue
+                # タイトルを控える。
+                title = ""
+                # dict なら title を取る。
+                if isinstance(track, dict):
+                    title = str(track.get("title") or "")
+                # 積む。
+                matched_titles.append(title or "(no title)")
+            # current タイトル。
+            current_title = None
+            # current ヒット時だけ。
+            if current_hit and isinstance(current, dict):
+                # タイトルを文字列化。
+                current_title = str(current.get("title") or "(no title)")
+            # 何も無ければスキップ。
+            if not current_hit and not matched_titles:
+                continue
+            # 要約を積む。
+            hits.append(
+                {
+                    "bot_id": str(bot_id),
+                    "guild_id": int(guild_id),
+                    "current_match": current_hit,
+                    "current_title": current_title,
+                    "queue_match_count": len(matched_titles),
+                    "queue_titles": matched_titles[:20],
+                }
+            )
+        # ヒット一覧を返す。
+        return hits
+
+    def scrub_requester_id(
+        self,
+        user_id: int,
+        session_keys: Optional[List[Tuple[str, int]]] = None,
+    ) -> Dict[str, Any]:
+        """指定 requester_id のトラックをセッションから除去する。"""
+        # 対象ユーザー。
+        uid = int(user_id)
+        # キー絞り込み集合。
+        key_filter: Optional[Set[Tuple[str, int]]] = None
+        # 指定があれば集合化。
+        if session_keys is not None:
+            # (bot_id, guild_id) の集合。
+            key_filter = {(str(b), int(g)) for b, g in session_keys}
+        # カウンタ。
+        updated = 0
+        deleted_sessions = 0
+        removed_tracks = 0
+        # 書き込みを排他する。
+        with self._lock:
+            # 接続を開く。
+            conn = self._connect()
+            try:
+                # 全行を取る。
+                rows = conn.execute(
+                    """
+                    SELECT bot_id, guild_id, current_track_json, queue_json
+                    FROM vc_playback_sessions
+                    """
+                ).fetchall()
+                # 各セッションを処理する。
+                for bot_id, guild_id, current_json, queue_json in rows:
+                    # キー。
+                    key = (str(bot_id), int(guild_id))
+                    # フィルタ外はスキップ。
+                    if key_filter is not None and key not in key_filter:
+                        continue
+                    # current を復元する。
+                    current = None
+                    # 文字列があれば loads する。
+                    if current_json:
+                        try:
+                            # JSON を dict にする。
+                            current = json.loads(current_json)
+                        except json.JSONDecodeError:
+                            # 壊れていれば無視する。
+                            current = None
+                    # キューを復元する。
+                    queue: List[Any] = []
+                    # 文字列があれば loads する。
+                    if queue_json:
+                        try:
+                            # JSON を list にする。
+                            loaded = json.loads(queue_json)
+                            # list 以外は空にする。
+                            queue = loaded if isinstance(loaded, list) else []
+                        except json.JSONDecodeError:
+                            # 壊れていれば空キューにする。
+                            queue = []
+                    # 変更有無。
+                    dirty = False
+                    # current が対象なら落とす。
+                    if self._parse_track_requester(current) == uid:
+                        # current を空にする。
+                        current = None
+                        # 変更あり。
+                        dirty = True
+                        # 除去数。
+                        removed_tracks += 1
+                    # 残すキュー。
+                    kept: List[Any] = []
+                    # キューをフィルタする。
+                    for track in queue:
+                        # 対象 requester は落とす。
+                        if self._parse_track_requester(track) == uid:
+                            # 変更あり。
+                            dirty = True
+                            # 除去数。
+                            removed_tracks += 1
+                            # 次へ。
+                            continue
+                        # 残す。
+                        kept.append(track)
+                    # 変更無ければ次へ。
+                    if not dirty:
+                        continue
+                    # current もキューも空なら行削除。
+                    if current is None and not kept:
+                        # セッション行を消す。
+                        conn.execute(
+                            "DELETE FROM vc_playback_sessions "
+                            "WHERE bot_id = ? AND guild_id = ?",
+                            (str(bot_id), int(guild_id)),
+                        )
+                        # 削除件数。
+                        deleted_sessions += 1
+                        # 次へ。
+                        continue
+                    # JSON へ戻す。
+                    new_current = (
+                        json.dumps(current, ensure_ascii=False)
+                        if current is not None
+                        else None
+                    )
+                    # キュー JSON。
+                    new_queue = json.dumps(kept, ensure_ascii=False)
+                    # 行を更新する。
+                    conn.execute(
+                        """
+                        UPDATE vc_playback_sessions
+                        SET current_track_json = ?, queue_json = ?, updated_at = ?
+                        WHERE bot_id = ? AND guild_id = ?
+                        """,
+                        (
+                            new_current,
+                            new_queue,
+                            float(time.time()),
+                            str(bot_id),
+                            int(guild_id),
+                        ),
+                    )
+                    # 更新件数。
+                    updated += 1
+                # 確定する。
+                conn.commit()
+            finally:
+                # 接続を閉じる。
+                conn.close()
+        # 集計を返す。
+        return {
+            "updated": updated,
+            "deleted_sessions": deleted_sessions,
+            "removed_tracks": removed_tracks,
+        }
 
 
 # プロセス共有の既定ストア（遅延生成）。

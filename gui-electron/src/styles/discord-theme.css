@@ -239,3 +239,75 @@ button.secondary {
   border-radius: 4px;
   padding: 4px 8px;
 }
+
+.privacy-panel {
+  min-height: 0;
+}
+
+.privacy-search input {
+  background: var(--bg-primary);
+  color: var(--text-normal);
+  border: 1px solid #1a1b1e;
+  border-radius: 4px;
+  padding: 4px 8px;
+  min-width: 220px;
+}
+
+.privacy-error {
+  color: var(--danger);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.privacy-empty {
+  padding: 16px 12px;
+}
+
+.privacy-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.privacy-grid .card h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.privacy-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.privacy-list {
+  font-family: Consolas, "Cascadia Mono", "Meiryo UI", monospace;
+  font-size: 12px;
+}
+
+.privacy-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+}
+
+.privacy-row input {
+  margin-top: 2px;
+}
+
+@media (max-width: 1100px) {
+  .privacy-grid {
+    grid-template-columns: 1fr;
+  }
+}

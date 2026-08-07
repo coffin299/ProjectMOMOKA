@@ -1690,7 +1690,12 @@ class LLMCog(commands.Cog, name="llm"):
                     f"✅ LLM response completed | model='{model_in_use}' | response_length={len(llm_response)} chars")
                 log_response = (llm_response[:200] + '...') if len(llm_response) > 203 else llm_response
                 key_log_str = f" [key{used_key_index + 1}]" if used_key_index is not None else ""
-                logger.info(f"🤖 [LLM_RESPONSE][{self._bot_tag()}]{key_log_str} {log_response.replace(chr(10), ' ')}")
+                # 検索・削除用に requester_id を残す
+                logger.info(
+                    f"🤖 [LLM_RESPONSE][{self._bot_tag()}] "
+                    f"requester_id={message.author.id}{key_log_str} "
+                    f"{log_response.replace(chr(10), ' ')}"
+                )
                 logger.debug(f"LLM full response (length: {len(llm_response)} chars):\n{llm_response}")
                 guild_id = message.guild.id if message.guild else 0  # DMの場合は0
                 
@@ -3522,7 +3527,12 @@ class LLMCog(commands.Cog, name="llm"):
                         f"✅ LLM response completed | model='{model_in_use}' | response_length={len(full_response_text)} chars")
                     log_response, key_log_str = (full_response_text[:200] + '...') if len(
                         full_response_text) > 203 else full_response_text, f" [key{used_key_index + 1}]" if used_key_index is not None else ""
-                    logger.info(f"🤖 [LLM_RESPONSE][{self._bot_tag()}]{key_log_str} {log_response.replace(chr(10), ' ')}")
+                    # 検索・削除用に requester_id を残す
+                    logger.info(
+                        f"🤖 [LLM_RESPONSE][{self._bot_tag()}] "
+                        f"requester_id={interaction.user.id}{key_log_str} "
+                        f"{log_response.replace(chr(10), ' ')}"
+                    )
                     logger.debug(
                         f"LLM full response for /chat (length: {len(full_response_text)} chars):\n{full_response_text}")
                     # /chat は履歴非保存のため、メンション/リプライへ誘導する案内を末尾に付与する
