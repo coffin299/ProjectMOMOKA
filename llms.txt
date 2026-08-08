@@ -12,7 +12,7 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 - Support Discord: https://discord.gg/H79HKKqx3s
 - Operator contact (DM): https://discord.com/users/270446628622696449 (display name: coffin299)
 - Source code: https://github.com/coffin299/ProjectMOMOKA
-- Invite PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot
+- Invite PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands
 
 ## What to invite
 
@@ -29,7 +29,7 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 - Trackers: Valorant, Rainbow Six Siege (PLANA)
 - Link Fix suppresses original social embeds and quote-replies with fixer URLs (PLANA); skip with `fxignore` or `<>` around URLs; configure via `/linkfix` (master/site/bulk-all toggles; disabled by default — enable when needed)
 - Media download via `/download_audio` / `/download_video` (PLANA)
-- Utilities: `/help`, `/invite`, `/support`, `/feedback`, timers, `/match_time`, etc.
+- Utilities: `/help`, `/invite`, `/support`, `/feedback`, `/ping`, `/latex`, etc.
 - Components V2 / Modal UI language: Discord app locale → guild `preferred_locale` → English (music Now Playing excluded)
 
 ## Common answers
