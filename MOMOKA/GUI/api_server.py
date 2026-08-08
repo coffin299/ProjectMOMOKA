@@ -27,7 +27,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from MOMOKA.GUI.bot_bridge import (
@@ -277,6 +277,8 @@ def create_host_gui_app(
     router = APIRouter(prefix=f"{API_PREFIX}/api")
     # 接続中 WebSocket 集合
     subscribers: Set[WebSocket] = set()
+    # SSE（Bearer 付き fetch）購読キュー
+    sse_subscribers: Set[asyncio.Queue] = set()
     # 購読前に落ちるログを残す直近バッファ
     recent_logs: Deque[Dict[str, Any]] = deque(maxlen=_RECENT_LOG_BACKLOG)
     # 設定 DB
@@ -288,7 +290,7 @@ def create_host_gui_app(
         return categorize_logger_name(name, level)
 
     async def _pump_logs() -> None:
-        """キューから WebSocket 購読者へログを流す。"""
+        """キューから WebSocket / SSE 購読者へログを流す。"""
         # 永続ループ
         while True:
             try:
@@ -315,7 +317,14 @@ def create_host_gui_app(
             }
             # 購読者が居なくても直近へ残す（接続直後の穴埋め用）
             recent_logs.append(payload)
-            # 購読者がいなければ送信スキップ
+            # SSE 購読者へ非ブロッキング配信
+            for sse_q in list(sse_subscribers):
+                try:
+                    sse_q.put_nowait(payload)
+                except asyncio.QueueFull:
+                    # 溢れた接続はスキップ（次行で追いつく）
+                    pass
+            # WS 購読者がいなければ WS 送信スキップ
             if not subscribers:
                 continue
             # 切断済みを集める
@@ -486,6 +495,52 @@ def create_host_gui_app(
         # クライアントへ
         return {"items": items, "source": "momoka_gui.log"}
 
+    @router.get("/logs/stream")
+    async def logs_stream(_: None = Depends(require_token)) -> StreamingResponse:
+        """Bearer 付き SSE ログストリーム（WS 認証不可時の主経路）。"""
+        # 接続専用キュー
+        sse_q: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        # 購読登録
+        sse_subscribers.add(sse_q)
+
+        async def _event_gen():
+            """SSE イベントを生成する。"""
+            try:
+                # 直近 backlog を先に送る
+                for item in list(recent_logs):
+                    yield (
+                        "data: "
+                        + json.dumps(item, ensure_ascii=False)
+                        + "\n\n"
+                    )
+                # ライブ配信
+                while True:
+                    try:
+                        # タイムアウト付きで次ログを待つ
+                        item = await asyncio.wait_for(sse_q.get(), timeout=20.0)
+                        yield (
+                            "data: "
+                            + json.dumps(item, ensure_ascii=False)
+                            + "\n\n"
+                        )
+                    except asyncio.TimeoutError:
+                        # プロキシ切断防止のコメント行
+                        yield ": ping\n\n"
+            finally:
+                # 購読解除
+                sse_subscribers.discard(sse_q)
+
+        # text/event-stream で返す
+        return StreamingResponse(
+            _event_gen(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     @router.get("/privacy/search")
     def privacy_search(
         user_id: str = Query(..., min_length=1),
@@ -556,9 +611,8 @@ def create_host_gui_app(
         """ログストリーム（クエリ token 不可）。
 
         認証:
-        - 接続直後の認証メッセージ（JSON `{type,token}` または生トークン）を基本とする
-        - Sec-WebSocket-Protocol: bearer.<token> も互換として受理（任意）
-        - 不明プロトコルだけでは拒否せず、メッセージ認証へフォールバックする
+        - Sec-WebSocket-Protocol: bearer.<token>（Electron 推奨）
+        - または接続直後の JSON `{type,token}`
         """
         # Sec-WebSocket-Protocol から Bearer 系を探す
         raw_protocols = websocket.headers.get("sec-websocket-protocol") or ""
@@ -573,15 +627,19 @@ def create_host_gui_app(
             # 互換経路: 選択プロトコル付きで accept
             await websocket.accept(subprotocol=chosen_subprotocol)
         else:
-            # 現行 Electron / 不明プロトコル: メッセージ認証
-            # （以前は offered があるだけで即 4401 しており、再接続不能になり得た）
+            # メッセージ認証（プロトコル無し、または不一致）
             await websocket.accept()
             try:
                 # 認証タイムアウト（秒）
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-            except Exception:
-                # 受信失敗は切断
-                _logger.warning("Host GUI WS /logs: auth message timeout/error")
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=8.0)
+            except Exception as auth_err:
+                # 受信失敗は切断（原因を残す）
+                _logger.warning(
+                    "Host GUI WS /logs: auth message timeout/error "
+                    "(offered_protocols=%s err=%s)",
+                    offered,
+                    auth_err,
+                )
                 await websocket.close(code=4401)
                 return
             # メッセージからトークンを取る

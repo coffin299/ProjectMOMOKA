@@ -21,6 +21,10 @@ class UnsupportedMediaError(RuntimeError):
     """DRM / 非対応サイトなど、再試行しても取得できないメディア向け例外。"""
 
 
+# リポジトリルート（cwd に依存せず cookie 等を解決する）
+# MOMOKA/music/plugins/ytdlp_wrapper.py → parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 # Trackクラス定義
 @dataclass
 class Track:
@@ -165,10 +169,79 @@ def set_youtube_cookie_path(path: Optional[str]) -> None:
         logger.info("YouTube cookie path override cleared; using auto-detect.")
         # 処理を終了する
         return
-    # 相対/絶対パスを Path オブジェクトへ変換する
-    _youtube_cookie_override = Path(path)
+    # 相対パスはリポジトリルート基準へ解決する（起動 cwd ズレ対策）
+    raw = Path(path)
+    _youtube_cookie_override = raw if raw.is_absolute() else (_REPO_ROOT / raw)
     # 設定内容をログへ出力する
     logger.info("YouTube cookie path override set to: %s", _youtube_cookie_override.resolve())
+    # 起動時点でファイルが無ければ年齢制限等が落ちるため明示警告する
+    try:
+        if not (
+            _youtube_cookie_override.is_file()
+            and _youtube_cookie_override.stat().st_size > 0
+        ):
+            logger.warning(
+                "YouTube cookie file not found or empty: %s "
+                "(age-restricted videos will run with cookies=False)",
+                _youtube_cookie_override.resolve(),
+            )
+    except OSError as e:
+        logger.warning(
+            "YouTube cookie file not readable: %s (%s)",
+            _youtube_cookie_override,
+            e,
+        )
+
+
+def _cookie_path_candidates() -> list[Path]:
+    """cookie 探索候補をリポジトリルート基準の絶対 Path で返す。"""
+    # 探索対象
+    candidates: list[Path] = []
+    # config 上書きが指定されているか判定する
+    if _youtube_cookie_override is not None:
+        # 上書きパスを最優先候補へ追加する
+        candidates.append(_youtube_cookie_override)
+    # 既定候補もルート基準へ揃える
+    for raw in _YOUTUBE_COOKIE_CANDIDATES:
+        # 絶対ならそのまま、相対ならリポジトリルート結合
+        candidates.append(raw if raw.is_absolute() else (_REPO_ROOT / raw))
+    # 返す
+    return candidates
+
+
+def resolve_youtube_cookie_path() -> Optional[Path]:
+    """
+    利用可能な YouTube クッキーファイルを解決する。
+    優先順: config 上書き → youtube_cookie.txt → youtube_cookies.txt
+    空ファイルは無効扱いとする。パスはリポジトリルート基準。
+    """
+    # 重複を除きつつ候補を順に検査する
+    seen = set()
+    # 各候補パスを走査する
+    for path in _cookie_path_candidates():
+        # 解決済みの絶対パス文字列をキーにする
+        try:
+            key = str(path.resolve())
+        except OSError:
+            key = str(path)
+        # 既に検査済みならスキップする
+        if key in seen:
+            # 次の候補へ進む
+            continue
+        # 検査済み集合へ登録する
+        seen.add(key)
+        # ファイルが存在し、かつサイズが 0 より大きいか判定する
+        try:
+            # 実ファイルかつ非空のみ有効とする
+            if path.is_file() and path.stat().st_size > 0:
+                # 有効なクッキーファイルを返す
+                return path.resolve()
+        # 権限エラー等で stat に失敗した場合のハンドリング
+        except OSError as e:
+            # 警告を出して次の候補へ進む
+            logger.warning("Failed to inspect YouTube cookie file %s: %s", path, e)
+    # 有効なファイルが無ければ None を返す
+    return None
 
 
 def set_bgutil_provider_base_url(base_url: Optional[str]) -> None:
@@ -182,47 +255,6 @@ def set_bgutil_provider_base_url(base_url: Optional[str]) -> None:
         "BgUtils PO Token Provider URL: %s",
         _bgutil_provider_base_url or "disabled",
     )
-
-
-def resolve_youtube_cookie_path() -> Optional[Path]:
-    """
-    利用可能な YouTube クッキーファイルを解決する。
-    優先順: config 上書き → youtube_cookie.txt → youtube_cookies.txt
-    空ファイルは無効扱いとする。
-    """
-    # 探索対象のパス一覧を組み立てる（上書きがあれば先頭へ）
-    candidates = []
-    # config 上書きが指定されているか判定する
-    if _youtube_cookie_override is not None:
-        # 上書きパスを最優先候補へ追加する
-        candidates.append(_youtube_cookie_override)
-    # 既定の候補パスを続けて追加する
-    candidates.extend(_YOUTUBE_COOKIE_CANDIDATES)
-
-    # 重複を除きつつ候補を順に検査する
-    seen = set()
-    # 各候補パスを走査する
-    for path in candidates:
-        # 解決済みの絶対パス文字列をキーにする
-        key = str(path.resolve()) if path.exists() else str(path)
-        # 既に検査済みならスキップする
-        if key in seen:
-            # 次の候補へ進む
-            continue
-        # 検査済み集合へ登録する
-        seen.add(key)
-        # ファイルが存在し、かつサイズが 0 より大きいか判定する
-        try:
-            # 実ファイルかつ非空のみ有効とする
-            if path.is_file() and path.stat().st_size > 0:
-                # 有効なクッキーファイルを返す
-                return path
-        # 権限エラー等で stat に失敗した場合のハンドリング
-        except OSError as e:
-            # 警告を出して次の候補へ進む
-            logger.warning("Failed to inspect YouTube cookie file %s: %s", path, e)
-    # 有効なファイルが無ければ None を返す
-    return None
 
 
 def _apply_youtube_cookie(opts: dict) -> dict:
@@ -680,6 +712,19 @@ def _extract_with_fallbacks(opts: dict, url: str, *, download: bool, resolve_str
     has_cookies = ("cookiefile" in opts) or ("cookiesfrombrowser" in opts)
     # クッキー有り→無しの順で試す（指定が無ければ無しのみ）
     cookie_modes = [True, False] if has_cookies else [False]
+    # フォールバック開始時に cookie 有無を1回だけ明示する
+    if not has_cookies:
+        logger.warning(
+            "yt-dlp extract starting without cookiefile "
+            "(all attempts will be cookies=False). url=%s",
+            url,
+        )
+    else:
+        logger.info(
+            "yt-dlp extract starting with cookiefile=%s url=%s",
+            opts.get("cookiefile"),
+            url,
+        )
     # ストリーム解決時は全 format 候補、それ以外も最低2候補は試す
     # （SABR 等で先頭 format だけ空になるケースへの保険）
     format_tries = _FORMAT_TRIES if resolve_stream else _FORMAT_TRIES[:2]

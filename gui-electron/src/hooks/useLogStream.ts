@@ -17,10 +17,10 @@ const LEVEL_RANK: Record<string, number> = {
   CRITICAL: 50,
 };
 
-/** 履歴ポーリング間隔（WS が死んでも追従する） */
+/** 履歴ポーリング間隔（SSE/WS 不通時の保険） */
 const HISTORY_POLL_MS = 2000;
-/** WS 再接続間隔 */
-const WS_RETRY_MS = 2000;
+/** ライブ切断後の再接続間隔 */
+const LIVE_RETRY_MS = 2000;
 
 let seq = 0;
 
@@ -56,11 +56,35 @@ function appendFresh(
   return next;
 }
 
+function parseSseChunk(
+  chunk: string,
+  onData: (payload: Omit<LogEntry, "id">) => void
+): string {
+  // 未完了フレームを末尾に残す
+  const parts = chunk.split("\n\n");
+  const rest = parts.pop() ?? "";
+  for (const frame of parts) {
+    const dataLines = frame
+      .split("\n")
+      .filter((ln) => ln.startsWith("data:"))
+      .map((ln) => ln.slice(5).trimStart());
+    if (!dataLines.length) continue;
+    try {
+      const data = JSON.parse(dataLines.join("\n")) as Omit<LogEntry, "id">;
+      if (data && typeof data.message === "string") onData(data);
+    } catch {
+      /* ignore */
+    }
+  }
+  return rest;
+}
+
 export function useLogStream(maxLines = 10000) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const [restored, setRestored] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const liveRef = useRef(false);
 
   useEffect(() => {
     const cfg = getHostConfig();
@@ -68,7 +92,6 @@ export function useLogStream(maxLines = 10000) {
     let closed = false;
     let retry: number | undefined;
     let pollTimer: number | undefined;
-    let authTimer: number | undefined;
 
     const loadHistory = async (
       mode: "replace" | "append",
@@ -91,87 +114,128 @@ export function useLogStream(maxLines = 10000) {
       }
     };
 
-    const connect = () => {
+    const connectLive = async () => {
       if (closed) return;
-      // 毎回最新 config を読む
       const live = getHostConfig();
       if (!live.token) return;
-      // 古いソケットを捨てる
+
+      // 前回の SSE を中断
       try {
-        wsRef.current?.close();
+        abortRef.current?.abort();
       } catch {
         /* ignore */
       }
-      // クエリにも subprotocol にも token を載せない（接続直後メッセージで認証）
-      const ws = new WebSocket(live.wsLogsUrl);
-      wsRef.current = ws;
-      let authed = false;
+      const ac = new AbortController();
+      abortRef.current = ac;
 
-      ws.onopen = () => {
-        // 必須: 初回メッセージ認証
-        try {
-          ws.send(JSON.stringify({ type: "auth", token: live.token }));
-        } catch {
-          /* ignore */
+      try {
+        // REST と同じ Bearer で繋ぐ（WS 認証タイムアウトを回避）
+        const res = await fetch(`${live.apiBase}/logs/stream`, {
+          headers: { Authorization: `Bearer ${live.token}` },
+          signal: ac.signal,
+        });
+        if (!res.ok || !res.body) {
+          throw new Error(`SSE HTTP ${res.status}`);
         }
-        // auth_ok が来なければ未接続扱いのまま再接続へ
-        if (authTimer) window.clearTimeout(authTimer);
-        authTimer = window.setTimeout(() => {
-          if (!authed && ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.close();
-            } catch {
-              /* ignore */
-            }
-          }
-        }, 5000);
-      };
-      ws.onclose = () => {
-        authed = false;
+        liveRef.current = true;
+        setConnected(true);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (!closed) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          buf = parseSseChunk(buf, (row) => {
+            setEntries((prev) => appendFresh(prev, [row], maxLines));
+          });
+        }
+      } catch (err) {
+        if (ac.signal.aborted || closed) return;
+        // SSE 失敗時は WS にフォールバック（切断まで待機）
+        try {
+          await connectWsFallback(live.wsLogsUrl, live.token);
+        } catch {
+          /* 次のリトライへ */
+        }
+      } finally {
+        liveRef.current = false;
         setConnected(false);
-        if (authTimer) window.clearTimeout(authTimer);
-        if (!closed) {
-          // 再起動直後は API 起動待ちがあるので少し長めにリトライ
-          retry = window.setTimeout(connect, WS_RETRY_MS);
-        }
-      };
-      ws.onerror = () => {
-        try {
-          ws.close();
-        } catch {
-          /* ignore */
-        }
-      };
-      ws.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data) as Record<string, unknown>;
-          if (!data || typeof data !== "object") return;
-          // 認証 ACK
-          if (data.type === "auth_ok") {
-            authed = true;
-            setConnected(true);
-            if (authTimer) window.clearTimeout(authTimer);
-            return;
-          }
-          // ログ行以外は無視
-          if (typeof data.message !== "string") return;
-          const row = data as unknown as Omit<LogEntry, "id">;
-          setEntries((prev) => appendFresh(prev, [row], maxLines));
-        } catch {
-          /* ignore */
-        }
-      };
+      }
+      if (!closed) {
+        retry = window.setTimeout(() => {
+          void connectLive();
+        }, LIVE_RETRY_MS);
+      }
     };
 
-    // 先に .log 末尾を復元してからライブ接続
+    const connectWsFallback = (wsUrl: string, token: string) =>
+      new Promise<void>((resolve, reject) => {
+        let settled = false;
+        // subprotocol + 初回メッセージの二段認証
+        const ws = new WebSocket(wsUrl, [`bearer.${token}`]);
+        const timer = window.setTimeout(() => {
+          if (settled) return;
+          settled = true;
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          reject(new Error("ws auth timeout"));
+        }, 8000);
+        ws.onopen = () => {
+          try {
+            ws.send(JSON.stringify({ type: "auth", token }));
+          } catch {
+            /* ignore */
+          }
+        };
+        ws.onmessage = (ev) => {
+          try {
+            const data = JSON.parse(ev.data) as Record<string, unknown>;
+            if (data?.type === "auth_ok") {
+              if (!settled) {
+                settled = true;
+                window.clearTimeout(timer);
+                liveRef.current = true;
+                setConnected(true);
+              }
+              return;
+            }
+            if (typeof data?.message !== "string") return;
+            setEntries((prev) =>
+              appendFresh(prev, [data as unknown as Omit<LogEntry, "id">], maxLines)
+            );
+          } catch {
+            /* ignore */
+          }
+        };
+        ws.onerror = () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(timer);
+          reject(new Error("ws error"));
+        };
+        ws.onclose = () => {
+          window.clearTimeout(timer);
+          liveRef.current = false;
+          setConnected(false);
+          if (!settled) {
+            settled = true;
+            reject(new Error("ws closed"));
+            return;
+          }
+          resolve();
+        };
+      });
+
     loadHistory("replace").finally(() => {
       if (closed) return;
-      connect();
-      // WS 不通時の保険: ファイル履歴を定期マージ（live 中は末尾だけ）
+      void connectLive();
       pollTimer = window.setInterval(() => {
         if (closed) return;
-        const liveNow = wsRef.current?.readyState === WebSocket.OPEN;
-        void loadHistory("append", liveNow ? 400 : maxLines);
+        void loadHistory("append", liveRef.current ? 400 : maxLines);
       }, HISTORY_POLL_MS);
     });
 
@@ -179,12 +243,14 @@ export function useLogStream(maxLines = 10000) {
       closed = true;
       if (retry) window.clearTimeout(retry);
       if (pollTimer) window.clearInterval(pollTimer);
-      if (authTimer) window.clearTimeout(authTimer);
-      wsRef.current?.close();
+      try {
+        abortRef.current?.abort();
+      } catch {
+        /* ignore */
+      }
     };
   }, [maxLines]);
 
-  // Clear は画面上のみ（ファイルは消さない）
   const clear = () => setEntries([]);
 
   const filterBy = (category: string, minLevel: string): LogEntry[] => {
