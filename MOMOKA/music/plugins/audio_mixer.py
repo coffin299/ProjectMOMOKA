@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 import logging
@@ -288,6 +289,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         self._produced_audio_frames = 0
         # 1フレームでもオーディオを出力したかどうか
         self._has_produced_audio = False
+        # prime_until_audio で先読みした先頭フレーム（次の read で返す）
+        self._primed_frame: Optional[bytes] = None
         # yt-dlp パイプ用プロセス（未使用時は None）
         self._ytdlp_proc: Optional[subprocess.Popen] = None
         # yt-dlp stderrを常時排出するログポンプ（未使用時はNone）
@@ -531,6 +534,115 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         # 1 フレーム = 20ms
         return self._produced_audio_frames * 0.02
 
+    def _process_still_starting(self) -> bool:
+        """FFmpeg / yt-dlp がまだ生存しているか（起動待ち判定用）。"""
+        # FFmpeg 生存
+        process_alive = False
+        try:
+            if hasattr(self, "_process") and self._process:
+                process_alive = self._process.poll() is None
+        except Exception:
+            process_alive = False
+        # yt-dlp 生存
+        ytdlp_alive = False
+        try:
+            if self._ytdlp_proc is not None:
+                ytdlp_alive = self._ytdlp_proc.poll() is None
+        except Exception:
+            ytdlp_alive = False
+        return process_alive or ytdlp_alive
+
+    def _normalize_pcm_frame(self, data: bytes) -> bytes:
+        """Discord 20ms フレーム長へ揃える。"""
+        # 不足はゼロ埋め
+        if len(data) < _FRAME_BYTES:
+            return data + b"\x00" * (_FRAME_BYTES - len(data))
+        # 超過は切り捨て
+        if len(data) > _FRAME_BYTES:
+            return data[:_FRAME_BYTES]
+        return data
+
+    def prime_until_audio(self, timeout_sec: float = 20.0) -> bool:
+        """
+        Discord play 前に実 PCM 先頭フレームを待つ。
+
+        起動直後の無音パディングを VC に流すと、Discord 側では数秒経過後に
+        曲の 0 秒地点が始まるように聞こえるため、先に実音を確保してから play する。
+        """
+        # 既にプライム済み／出力済みなら成功扱い
+        if self._primed_frame is not None or self._has_produced_audio:
+            return True
+        # 期限（単調時計）
+        deadline = time.monotonic() + max(0.5, float(timeout_sec))
+        # 期限まで FFmpeg を読む
+        while time.monotonic() < deadline:
+            # 生の FFmpeg 読み（自前の無音パディングは使わない）
+            try:
+                data = super().read()
+            except Exception as read_err:
+                logger.warning(
+                    "Guild %s: prime read failed for '%s': %s",
+                    self.guild_id,
+                    self.title,
+                    read_err,
+                )
+                break
+            # 試行回数を進める
+            self._read_count += 1
+            # 実データが来たら先頭フレームとして保持する
+            if data:
+                # フレーム長を揃える
+                frame = self._normalize_pcm_frame(data)
+                # 次の read() で返す
+                self._primed_frame = frame
+                # 出力開始フラグ
+                self._has_produced_audio = True
+                # 所要をログする
+                logger.info(
+                    "Guild %s: Primed first audio for '%s' after %s reads (~%sms)",
+                    self.guild_id,
+                    self.title,
+                    self._read_count,
+                    self._read_count * 20,
+                )
+                return True
+            # プロセスが死んでいてデータも無いなら失敗
+            if not self._process_still_starting():
+                break
+        # プライム失敗を NO audio 扱いにする
+        self.no_audio_failure = True
+        # stderr を拾ってリトライ判定材料にする
+        stderr_output = self._read_stderr_file()
+        ytdlp_err = self._read_ytdlp_stderr()
+        combined_err = f"{stderr_output}\n{ytdlp_err}".lower()
+        if "403" in combined_err or "forbidden" in combined_err:
+            self.http_forbidden_failure = True
+            self.stream_retryable_failure = True
+        elif any(
+            marker in combined_err
+            for marker in (
+                "0 bytes read",
+                "partial file",
+                "giving up after",
+                "invalid data found",
+                "nothing was encoded",
+                "truncated",
+                "requested format is not available",
+            )
+        ):
+            self.stream_retryable_failure = True
+        logger.warning(
+            "Guild %s: Failed to prime audio for '%s' within %.1fs "
+            "(reads=%s)\n  stderr=%s\n  ytdlp_stderr=%s",
+            self.guild_id,
+            self.title,
+            timeout_sec,
+            self._read_count,
+            stderr_output,
+            ytdlp_err,
+        )
+        return False
+
     def read(self) -> bytes:
         """
         PCMフレームを読み取る。
@@ -538,6 +650,15 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         discord.pyのFFmpegPCMAudio.read()は「3840バイト未満 → ソース終了」と判定してb''を返す。
         FFmpegプロセスがまだ生きている間は無音フレームを返して即終了を防止する。
         """
+        # プライム済み先頭フレームがあればそれを返す
+        if self._primed_frame is not None:
+            # 一度だけ返す
+            frame = self._primed_frame
+            self._primed_frame = None
+            # 位置カウント
+            self._produced_audio_frames += 1
+            return frame
+
         data = super().read()
         self._read_count += 1
 
@@ -554,25 +675,12 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
 
         # --- 空データが返された ---
 
-        # FFmpegプロセスがまだ生きているか確認
-        process_alive = False
-        try:
-            if hasattr(self, "_process") and self._process:
-                process_alive = self._process.poll() is None
-        except Exception:
-            pass
+        # FFmpeg / yt-dlp 生存確認
+        still_starting = self._process_still_starting()
 
-        # yt-dlp がまだ生きていれば起動中とみなす材料にする
-        ytdlp_alive = False
-        try:
-            if self._ytdlp_proc is not None:
-                ytdlp_alive = self._ytdlp_proc.poll() is None
-        except Exception:
-            pass
-
-        # FFmpeg または yt-dlp が生きていて、オーディオ未出力で、猶予フレーム内なら無音を返す
+        # 未プライム経路のフォールバック: 生きていて猶予内なら無音
         if (
-            (process_alive or ytdlp_alive)
+            still_starting
             and not self._has_produced_audio
             and self._read_count <= self.STARTUP_GRACE_FRAMES
         ):
@@ -626,7 +734,7 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             logger.warning(
                 f"Guild {self.guild_id}: FFmpeg for '{self.title}' produced NO audio!\n"
                 f"  read_count={self._read_count}, returncode={returncode}, "
-                f"process_alive={process_alive}, ytdlp_alive={ytdlp_alive}\n"
+                f"still_starting={still_starting}\n"
                 f"  url={self._safe_stream_url[:200]}\n"
                 f"  stderr={stderr_output}\n"
                 f"  ytdlp_stderr={ytdlp_err}"

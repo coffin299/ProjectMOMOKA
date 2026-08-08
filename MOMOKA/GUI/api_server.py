@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import queue
 import secrets
 import socket
+from collections import deque
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Deque, Dict, Optional, Set
 
 from fastapi import (
     APIRouter,
@@ -63,6 +66,10 @@ _ALLOWED_LOG_LEVELS = frozenset(
 )
 # max_lines 上限
 _MAX_LINES_LIMIT = 50_000
+# WS 接続直後に送る直近ログ件数
+_RECENT_LOG_BACKLOG = 300
+# このモジュール用ロガー（GUI キュー経由で観測可能）
+_logger = logging.getLogger(__name__)
 
 
 class HostGuiAuth:
@@ -266,12 +273,87 @@ def create_host_gui_app(
     auth: HostGuiAuth,
 ) -> FastAPI:
     """ホスト GUI 用 FastAPI アプリを構築する。"""
+    # ルーター（/host-gui 配下）
+    router = APIRouter(prefix=f"{API_PREFIX}/api")
+    # 接続中 WebSocket 集合
+    subscribers: Set[WebSocket] = set()
+    # 購読前に落ちるログを残す直近バッファ
+    recent_logs: Deque[Dict[str, Any]] = deque(maxlen=_RECENT_LOG_BACKLOG)
+    # 設定 DB
+    settings_db = get_default_settings_db()
+
+    def _categorize(name: str, level: str) -> str:
+        """ログカテゴリを決める。"""
+        # persistent_log と同一ロジック
+        return categorize_logger_name(name, level)
+
+    async def _pump_logs() -> None:
+        """キューから WebSocket 購読者へログを流す。"""
+        # 永続ループ
+        while True:
+            try:
+                # 短タイムアウトでキュー取得
+                name, level, message = await asyncio.to_thread(
+                    log_queue.get, True, 0.25
+                )
+            except queue.Empty:
+                # 空なら継続
+                await asyncio.sleep(0.05)
+                continue
+            except Exception:
+                # 想定外は短休止
+                await asyncio.sleep(0.1)
+                continue
+            # 伏せ字
+            safe = sanitize_log_message(str(message), max_length=100_000)
+            # ペイロード
+            payload = {
+                "name": name,
+                "level": level,
+                "message": safe,
+                "category": _categorize(str(name), str(level)),
+            }
+            # 購読者が居なくても直近へ残す（接続直後の穴埋め用）
+            recent_logs.append(payload)
+            # 購読者がいなければ送信スキップ
+            if not subscribers:
+                continue
+            # 切断済みを集める
+            dead: list[WebSocket] = []
+            # 全員へ送る
+            for ws in list(subscribers):
+                try:
+                    # JSON 送信
+                    await ws.send_json(payload)
+                except Exception:
+                    # 死んだ接続
+                    dead.append(ws)
+            # 掃除
+            for ws in dead:
+                subscribers.discard(ws)
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        """ログポンプを lifespan で確実に起動する。"""
+        # バックグラウンドタスク
+        pump_task = asyncio.create_task(_pump_logs(), name="host-gui-log-pump")
+        try:
+            # アプリ稼働中
+            yield
+        finally:
+            # 終了時にポンプを止める
+            pump_task.cancel()
+            # CancelledError は握りつぶす
+            with suppress(asyncio.CancelledError):
+                await pump_task
+
     # アプリ本体（docs はローカルでも余計な面を減らすため閉じる）
     app = FastAPI(
         title="MOMOKA Host GUI API",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=_lifespan,
     )
     # CORS: ブラウザ横断を許可しない（allow_origins 空相当）
     app.add_middleware(
@@ -281,12 +363,6 @@ def create_host_gui_app(
         allow_methods=[],
         allow_headers=[],
     )
-    # ルーター（/host-gui 配下）
-    router = APIRouter(prefix=f"{API_PREFIX}/api")
-    # 接続中 WebSocket 集合
-    subscribers: Set[WebSocket] = set()
-    # 設定 DB
-    settings_db = get_default_settings_db()
 
     def require_token(
         authorization: Optional[str] = Header(default=None),
@@ -399,11 +475,6 @@ def create_host_gui_app(
         # 保存後を返す
         return cfg
 
-    def _categorize(name: str, level: str) -> str:
-        """ログカテゴリを決める。"""
-        # persistent_log と同一ロジック
-        return categorize_logger_name(name, level)
-
     @router.get("/logs/history")
     def get_logs_history(
         max_lines: int = Query(default=DEFAULT_HISTORY_LINES, ge=1, le=50_000),
@@ -485,8 +556,9 @@ def create_host_gui_app(
         """ログストリーム（クエリ token 不可）。
 
         認証:
-        - 接続直後の認証メッセージ（JSON `{type,token}` または生トークン）を必須とする
+        - 接続直後の認証メッセージ（JSON `{type,token}` または生トークン）を基本とする
         - Sec-WebSocket-Protocol: bearer.<token> も互換として受理（任意）
+        - 不明プロトコルだけでは拒否せず、メッセージ認証へフォールバックする
         """
         # Sec-WebSocket-Protocol から Bearer 系を探す
         raw_protocols = websocket.headers.get("sec-websocket-protocol") or ""
@@ -495,34 +567,44 @@ def create_host_gui_app(
         # subprotocol からトークン抽出
         proto_token, chosen_subprotocol = _extract_ws_token_from_protocols(offered)
         # subprotocol だけで認証成功したか
-        authed_via_protocol = bool(offered) and _tokens_match(
-            proto_token, auth.token
-        )
-        # クライアントがプロトコルを提示した場合、一致時のみエコーして accept
-        if offered:
-            # 不一致ならメッセージ認証へフォールバックできない環境があるため拒否
-            # （現行 Electron はプロトコル無しで繋ぐ）
-            if not authed_via_protocol:
-                await websocket.close(code=4401)
-                return
-            # 選択プロトコル付きで accept
+        authed_via_protocol = _tokens_match(proto_token, auth.token)
+
+        if authed_via_protocol and chosen_subprotocol:
+            # 互換経路: 選択プロトコル付きで accept
             await websocket.accept(subprotocol=chosen_subprotocol)
         else:
-            # プロトコル無し: メッセージ認証
+            # 現行 Electron / 不明プロトコル: メッセージ認証
+            # （以前は offered があるだけで即 4401 しており、再接続不能になり得た）
             await websocket.accept()
             try:
                 # 認証タイムアウト（秒）
                 raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
             except Exception:
                 # 受信失敗は切断
+                _logger.warning("Host GUI WS /logs: auth message timeout/error")
                 await websocket.close(code=4401)
                 return
             # メッセージからトークンを取る
             parsed_token = _parse_ws_auth_message(raw)
             # 不一致なら切断
             if not _tokens_match(parsed_token, auth.token):
+                _logger.warning("Host GUI WS /logs: auth token mismatch")
                 await websocket.close(code=4401)
                 return
+
+        try:
+            # クライアントが接続成功を判定できるよう ACK を返す
+            await websocket.send_json({"type": "auth_ok"})
+            # 接続前に落ちた直近ログを先に流す
+            for item in list(recent_logs):
+                await websocket.send_json(item)
+        except Exception:
+            # ACK / backlog 失敗は購読しない
+            _logger.warning("Host GUI WS /logs: failed to send auth_ok/backlog")
+            with suppress(Exception):
+                await websocket.close(code=1011)
+            return
+
         # 購読者に追加
         subscribers.add(websocket)
         try:
@@ -536,55 +618,6 @@ def create_host_gui_app(
         finally:
             # 購読解除
             subscribers.discard(websocket)
-
-    async def _pump_logs() -> None:
-        """キューから WebSocket 購読者へログを流す。"""
-        # 永続ループ
-        while True:
-            try:
-                # 短タイムアウトでキュー取得
-                name, level, message = await asyncio.to_thread(
-                    log_queue.get, True, 0.25
-                )
-            except queue.Empty:
-                # 空なら継続
-                await asyncio.sleep(0.05)
-                continue
-            except Exception:
-                # 想定外は短休止
-                await asyncio.sleep(0.1)
-                continue
-            # 伏せ字
-            safe = sanitize_log_message(str(message), max_length=100_000)
-            # ペイロード
-            payload = {
-                "name": name,
-                "level": level,
-                "message": safe,
-                "category": _categorize(str(name), str(level)),
-            }
-            # 購読者がいなければ破棄
-            if not subscribers:
-                continue
-            # 切断済みを集める
-            dead: list[WebSocket] = []
-            # 全員へ送る
-            for ws in list(subscribers):
-                try:
-                    # JSON 送信
-                    await ws.send_json(payload)
-                except Exception:
-                    # 死んだ接続
-                    dead.append(ws)
-            # 掃除
-            for ws in dead:
-                subscribers.discard(ws)
-
-    @app.on_event("startup")
-    async def _on_startup() -> None:
-        """ログポンプを起動する。"""
-        # バックグラウンドタスク
-        asyncio.create_task(_pump_logs())
 
     # ルーター登録
     app.include_router(router)

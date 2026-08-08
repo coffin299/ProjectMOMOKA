@@ -423,6 +423,19 @@ class MusicCog(commands.Cog, name="music_cog"):
                 if isinstance(state.loop_mode, LoopMode)
                 else "OFF"
             )
+            # 現在位置（永続化用）。異常値は 0 に丸める
+            raw_position = int(state.get_current_position() or 0)
+            # 負値を捨てる
+            position_sec = max(0, raw_position)
+            # 曲長が分かっていて終端以降なら 0（復元時の壊れた -ss を防ぐ）
+            if (
+                state.current_track is not None
+                and int(getattr(state.current_track, "duration", 0) or 0) > 0
+                and position_sec
+                >= int(state.current_track.duration)
+            ):
+                # 終端扱いで先頭再開させる
+                position_sec = 0
             try:
                 # DB へ UPSERT する
                 self._vc_session_store.upsert(
@@ -434,7 +447,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                         "volume": float(state.volume),
                         "loop_mode": loop_name,
                         "is_paused": bool(state.is_paused),
-                        "position_sec": int(state.get_current_position() or 0),
+                        "position_sec": position_sec,
                         "current_track_json": current_dict,
                         "queue_json": queue_items,
                     }
@@ -705,8 +718,20 @@ class MusicCog(commands.Cog, name="music_cog"):
             self._delete_vc_restart_session(guild_id)
             # 解決済み
             return True
-        # シーク位置
-        position = max(0, int(session.get("position_sec") or 0))
+        # 保存されていた再生位置（参考用）
+        saved_position = max(0, int(session.get("position_sec") or 0))
+        # yt-dlp パイプ再生では大きな -ss が起動猶予内に PCM を出せず
+        # NO-audio → 曲スキップ／無音になるため、再起動復元は常に先頭から再開する
+        resume_seconds = 0
+        # 途中位置を捨てる場合はログに残す
+        if saved_position > 0:
+            # 運用者が理由を追えるようにする
+            logger.info(
+                "Guild %s: VC restore starts from 0s (saved position_sec=%s ignored; "
+                "mid-track resume is unreliable with yt-dlp pipe)",
+                guild_id,
+                saved_position,
+            )
         # 一時停止だったかを覚える
         was_paused = bool(session.get("is_paused"))
         # 再生後に pause するフラグ
@@ -719,16 +744,35 @@ class MusicCog(commands.Cog, name="music_cog"):
             state.current_track = current
             # 再生中フラグは下ろしたまま再生処理へ渡す
             state.is_playing = False
-            # キューを消費せず現在曲を再開する（位置 0 でも force_current）
+            # キューを消費せず現在曲を先頭から再開する
             await self._play_next_song(
                 guild_id,
-                seek_seconds=position,
+                seek_seconds=resume_seconds,
                 force_current=True,
             )
         else:
             # 現在曲が無くキューだけなら通常の次曲再生
             await self._play_next_song(guild_id)
-        # 復元処理完了（行削除は再生開始成功側）
+        # 再生開始に失敗していれば DB を残して再試行する
+        state_after = self.get_existing_guild_state(guild_id)
+        # 状態が消えていれば失敗扱い
+        if state_after is None:
+            # 未解決
+            return False
+        # 再生中または意図的一時停止なら成功
+        if state_after.is_playing or state_after.is_paused:
+            # 解決済み
+            return True
+        # まだ曲が残っているのに再生フラグが立っていなければ再試行待ち
+        if state_after.current_track is not None or not state_after.queue.empty():
+            # 失敗をログする
+            logger.warning(
+                "Guild %s: VC restore playback did not start; will retry",
+                guild_id,
+            )
+            # 未解決（セッション行は play 成功時のみ削除される）
+            return False
+        # 曲もキューも無いなら完了
         return True
 
     @tasks.loop(minutes=5)
@@ -1546,6 +1590,21 @@ class MusicCog(commands.Cog, name="music_cog"):
                 options=self.ffmpeg_options,
             )
 
+            # Discord play 前に実 PCM 先頭を待つ（無音パディングで 2〜3 秒ズレるのを防ぐ）
+            primed_ok = await asyncio.to_thread(source.prime_until_audio, 20.0)
+            # プライム失敗は NO-audio と同じ扱いでソースを捨てる
+            if not primed_ok:
+                # 外側の play_next 早期 return ガードを外す
+                state.is_playing = False
+                # 子プロセス等を解放する
+                try:
+                    source.cleanup()
+                except Exception:
+                    pass
+                # 失敗フラグ付きソースとして次曲／リトライ経路へ渡す
+                await self._on_music_source_removed(guild_id, source)
+                return
+
             if state.mixer is None:
                 def on_source_removed(name: str, removed_source=None):
                     """ソースが削除されたときのコールバック"""
@@ -1570,6 +1629,11 @@ class MusicCog(commands.Cog, name="music_cog"):
             current_mixer = state.mixer
 
             await current_mixer.add_source('music', source, volume=state.volume)
+
+            # 実音準備後に進捗起点を合わせる（プライム待ち時間を曲位置に含めない）
+            state.seek_position = seek_seconds
+            state.playback_start_time = time.time()
+            state.paused_at = None
 
             if not state.voice_client or not state.voice_client.is_connected():
                 # ボイスクライアントが存在しない、あるいは切断されている場合は再生を中断する

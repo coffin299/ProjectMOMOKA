@@ -759,9 +759,11 @@ def _extract_with_fallbacks(opts: dict, url: str, *, download: bool, resolve_str
                 return info, used_opts, cookiejar
             # URL が無い場合は警告して次候補へ進む
             logger.warning(
-                "yt-dlp returned no playable URL (format=%s clients=%s); trying next",
+                "yt-dlp returned no playable URL "
+                "(format=%s clients=%s cookies=%s); trying next",
                 fmt,
                 clients or "default",
+                use_cookies,
             )
         # 抽出失敗を捕捉して次の候補へ進む
         except Exception as e:

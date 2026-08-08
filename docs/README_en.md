@@ -245,7 +245,7 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 #### Host ops GUI (Electron) vs future guild dashboard
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
-- Host GUI WebSocket logs do **not** use a query-string token (first-message JSON auth `{type:"auth",token}`; `Sec-WebSocket-Protocol: bearer.<token>` still accepted for compatibility)
+- Host GUI WebSocket logs do **not** use a query-string token (first-message JSON auth `{type:"auth",token}` then `auth_ok`; `Sec-WebSocket-Protocol: bearer.<token>` still accepted for compatibility). If the socket is down, the UI keeps up via periodic `/logs/history` polling
 - LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 
@@ -321,7 +321,7 @@ llm:
 | `/play` `/pause` `/resume` `/stop` `/skip` | Playback |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | Queue & volume |
 
-Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Position is based on real PCM frames (does not advance during startup silence padding or before audio starts). Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle (in-place queue shuffle; does not replace the Queue object). Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
+Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Position is based on real PCM frames. Audio is primed before Discord `play` so startup silence does not shift the audible start by a few seconds. Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle (in-place queue shuffle; does not replace the Queue object). Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
 Playlist fetch limit is `music.max_playlist_items` (default 10000).
 The maximum number of retained guild playback states is `music.max_guilds` (default 50). When full, the oldest inactive state is evicted before a new state can be accepted.
 Music messages are sent `@silent` (suppress notifications) by default.
@@ -390,7 +390,7 @@ Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit
 Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the queue finishes, auto-leave when the VC is empty. While playing, the voice channel status is synced as `NowPlaying - track title` (if a user edits it manually, the bot stops updating; requires **Set Voice Channel Status** permission; missing permission logs once at INFO then suppresses further updates).
 **No shared VC:** PLANA and ARONA cannot connect to the same voice channel at once. If they already coexist, ARONA disconnects and PLANA stays.
 
-**Graceful restart resilience:** On `/shutdown`, GUI shutdown, or Ctrl+C, active VC playback (position + queue) is saved to `vc_playback_sessions` in `data/momoka.db`, then restored after startup (re-join + seek). The row is deleted once playback starts successfully. Transient misses (guild/channel not cached yet, connect timeout) keep the row and leave the restore flag unset for retry. Hard kills/crashes are out of scope. LLM replies are not auto-resumed; in-flight messages are overwritten with a restart notice and users should re-mention. Support links come from `utilities_config.yaml` (`support.discord_invite_url`, `developer_user_id`, etc.).
+**Graceful restart resilience:** On `/shutdown`, GUI shutdown, or Ctrl+C, active VC playback (position + queue) is saved to `vc_playback_sessions` in `data/momoka.db`, then restored after startup (re-join). **Resume always starts the current track from 0s** (mid-track `-ss` with yt-dlp pipe often hits NO-audio within the startup grace window). The row is deleted once playback starts successfully. Transient misses (guild/channel not cached yet, connect timeout) keep the row and leave the restore flag unset for retry. Hard kills/crashes are out of scope. LLM replies are not auto-resumed; in-flight messages are overwritten with a restart notice and users should re-mention. Support links come from `utilities_config.yaml` (`support.discord_invite_url`, `developer_user_id`, etc.).
 
 ### Image generation (PLANA)
 

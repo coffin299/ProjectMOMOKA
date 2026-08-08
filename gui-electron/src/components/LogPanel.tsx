@@ -9,6 +9,8 @@ type Props = {
   autoScroll: boolean;
   onAutoScrollChange: (v: boolean) => void;
   onClear: () => void;
+  /** WS ライブ接続中なら true（ポーリングのみのときは false） */
+  live?: boolean;
 };
 
 const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"];
@@ -21,6 +23,7 @@ export function LogPanel({
   autoScroll,
   onAutoScrollChange,
   onClear,
+  live = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState(true);
@@ -48,6 +51,16 @@ export function LogPanel({
     <div className="main" style={{ display: "flex", flexDirection: "column" }}>
       <div className="log-toolbar">
         <strong>{title}</strong>
+        <span
+          title={
+            live
+              ? "WebSocket ライブ接続中"
+              : "履歴ポーリング中（WS 未接続でも更新されます）"
+          }
+          style={{ opacity: 0.75, fontSize: "0.85em" }}
+        >
+          {live ? "● live" : "○ poll"}
+        </span>
         <label>
           Level{" "}
           <select

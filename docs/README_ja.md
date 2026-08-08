@@ -247,7 +247,7 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 #### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
-- Host GUI の WebSocket ログは **クエリ token を使わない**（接続直後の JSON 認証メッセージ `{type:"auth",token}`。互換で `Sec-WebSocket-Protocol: bearer.<token>` も可）
+- Host GUI の WebSocket ログは **クエリ token を使わない**（接続直後の JSON 認証メッセージ `{type:"auth",token}` → サーバが `auth_ok`。互換で `Sec-WebSocket-Protocol: bearer.<token>` も可）。WS 不通時は `/logs/history` を定期ポーリングして追従する
 - LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証）
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない
 
@@ -343,7 +343,7 @@ music:
 | `/play` `/pause` `/resume` `/stop` `/skip` | 再生制御 |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | キュー・音量など |
 
-Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。位置は実 PCM フレーム基準（起動中の無音パディングや未出力時は進めない）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle（待ちキューは Queue 差し替えなしの in-place シャッフル）。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
+Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。位置は実 PCM フレーム基準。再生開始前に実音フレームをプライムしてから Discord へ流す（起動無音で数秒ズレるのを防止）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle（待ちキューは Queue 差し替えなしの in-place シャッフル）。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
 プレイリスト取得上限は `music.max_playlist_items`（既定 10000）。
 保持するギルド再生状態の上限は `music.max_guilds`（既定 50）。上限到達時は非再生の最古状態を削除し、削除完了後に新規状態を受け付けます。
 音楽メッセージは既定で `@silent`（通知抑制）送信。
@@ -412,7 +412,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 キュー最大 10,000 曲、ループ（OFF/ONE/ALL）、音量 0–200%、キュー終了時の VC 自動退出、VC 空室時の自動退出に対応。再生中は VC ステータスを `NowPlaying - 曲名` 形式で自動更新（ユーザーが手動編集した場合は以降 Bot は書き換えない。`Set Voice Channel Status` 権限が必要。権限不足時は INFO を1回だけ出し、以降は更新をサプレッション）。
 **同一 VC 同居禁止:** PLANA と ARONA は同じボイスチャンネルに同時接続できません。既に同居している場合は ARONA のみ切断します。
 
-**グレースフル再起動耐性:** `/shutdown`・GUI・Ctrl+C による終了時、接続中 VC の再生位置・キューを `data/momoka.db` の `vc_playback_sessions` に保存し、起動後に再 join してシーク再生を再開します（再生開始成功で行削除）。ギルド／チャンネル未キャッシュや接続タイムアウトなどの一時失敗では行を残し、復元完了フラグを立てずに再試行します。強制終了／クラッシュは対象外。LLM 応答は自動再開せず、生成中メッセージを再起動案内に差し替えたうえで再メンションを待ちます。サポート誘導 URL は `utilities_config.yaml` の `support.discord_invite_url` / `developer_user_id` 等。
+**グレースフル再起動耐性:** `/shutdown`・GUI・Ctrl+C による終了時、接続中 VC の再生位置・キューを `data/momoka.db` の `vc_playback_sessions` に保存し、起動後に再 join して再生を再開します（**yt-dlp パイプの都合で途中シークはせず曲の先頭から**。再生開始成功で行削除）。ギルド／チャンネル未キャッシュや接続タイムアウトなどの一時失敗では行を残し、復元完了フラグを立てずに再試行します。強制終了／クラッシュは対象外。LLM 応答は自動再開せず、生成中メッセージを再起動案内に差し替えたうえで再メンションを待ちます。サポート誘導 URL は `utilities_config.yaml` の `support.discord_invite_url` / `developer_user_id` 等。
 
 ### 画像生成（PLANA）
 
