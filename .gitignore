@@ -13,6 +13,7 @@ __pycache__/
 youtube_cookie.txt
 youtube_cookies.txt
 nico_cookies.txt
+data/youtube_cookies.runtime.txt
 
 # 資格情報・シークレット（リポジトリへコミットしない）
 client_secrets.json

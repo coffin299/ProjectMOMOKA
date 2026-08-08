@@ -320,6 +320,9 @@ llm:
 |---------|-------------|
 | `/play` `/pause` `/resume` `/stop` `/skip` | Playback |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | Queue & volume |
+| `/reload_yt_cookies` | Reload YouTube cookies (bot operators only: `admin_user_ids` or `support.developer_user_id`) |
+
+YouTube cookies use a project-root source file (`youtube_cookies.txt`, `youtube_cookie.txt`, or `music.youtube_cookie_file`). **On startup, any non-empty match is loaded automatically** into `data/youtube_cookies.runtime.txt` so yt-dlp write-back cannot wipe the original. `/reload_yt_cookies` refreshes that copy after you replace the file while the bot is running.
 
 Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Position is based on real PCM frames. Audio is primed before Discord `play` so startup silence does not shift the audible start by a few seconds. Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle (in-place queue shuffle; does not replace the Queue object). Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
 Playlist fetch limit is `music.max_playlist_items` (default 10000).

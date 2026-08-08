@@ -20,6 +20,8 @@ music:
   # FFmpeg 出力オプション（-vn = 映像捨てて音声のみ）
   ffmpeg_options: -vn
   # YouTube 用 cookies.txt のパス（年齢制限・ログイン必須動画向け。無ければ空運用可）
+  # 原本は yt-dlp に直接渡さず data/youtube_cookies.runtime.txt へコピーして使用する
+  # 再読込: 運用者向け /reload_yt_cookies
   youtube_cookie_file: youtube_cookies.txt
   # file.io の API キー（任意）。空なら匿名 POST。設定時は Bearer 付き
   file_io_api_key: ''

@@ -342,6 +342,9 @@ music:
 |---------|------|
 | `/play` `/pause` `/resume` `/stop` `/skip` | 再生制御 |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | キュー・音量など |
+| `/reload_yt_cookies` | YouTube cookie 再読込（Bot 運用者のみ。`admin_user_ids` または `support.developer_user_id`） |
+
+YouTube cookie はプロジェクト直下の `youtube_cookies.txt`（または `youtube_cookie.txt` / `music.youtube_cookie_file`）を原本とし、**起動時に非空なら自動ロード**して `data/youtube_cookies.runtime.txt` へコピーします（原本の書き戻し破壊を防ぐ）。起動後にファイルを置き直したとき用に `/reload_yt_cookies`（Bot 運用者のみ）もあります。
 
 Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。位置は実 PCM フレーム基準。再生開始前に実音フレームをプライムしてから Discord へ流す（起動無音で数秒ズレるのを防止）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle（待ちキューは Queue 差し替えなしの in-place シャッフル）。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
 プレイリスト取得上限は `music.max_playlist_items`（既定 10000）。

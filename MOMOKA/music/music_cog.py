@@ -31,6 +31,8 @@ try:
         extract as extract_audio_data,
         ensure_stream,
         set_youtube_cookie_path,
+        reload_youtube_cookies,
+        ensure_youtube_cookies_loaded,
         clear_ytdlp_cache,
         UnsupportedMediaError,
         COMMON_YTDL_OPTS,
@@ -53,6 +55,8 @@ except ImportError as e:
     extract_audio_data = None
     ensure_stream = None
     set_youtube_cookie_path = None
+    reload_youtube_cookies = None
+    ensure_youtube_cookies_loaded = None
     clear_ytdlp_cache = None
     UnsupportedMediaError = None
     COMMON_YTDL_OPTS = None
@@ -157,6 +161,15 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # キャッシュ削除失敗でも Cog ロードは続行する
                 logger.warning(f"yt-dlp cache cleanup failed (non-fatal): {e}")
 
+        # 直下の非空 youtube_cookie(s).txt を起動時に必ずロードする
+        if ensure_youtube_cookies_loaded is not None:
+            try:
+                # config 反映後の再確認（cookie / cookies 両候補）
+                ensure_youtube_cookies_loaded(reason="startup")
+            except Exception as e:
+                # cookie 失敗でも音楽 Cog 自体は落とさない
+                logger.warning("YouTube cookie startup load failed (non-fatal): %s", e)
+
         if not self.cleanup_task or self.cleanup_task.done():
             self.cleanup_task = self.cleanup_task_loop.start()
         logger.info("MusicCog loaded and cleanup task started")
@@ -167,8 +180,34 @@ class MusicCog(commands.Cog, name="music_cog"):
         if set_youtube_cookie_path is None:
             # 早期リターンする
             return
-        # 未指定時は youtube_cookie.txt を既定として渡す（自動検出の優先候補になる）
-        set_youtube_cookie_path(self.music_config.get('youtube_cookie_file', 'youtube_cookie.txt'))
+        # 未指定時は youtube_cookies.txt を既定として渡す（自動検出の優先候補になる）
+        set_youtube_cookie_path(
+            self.music_config.get("youtube_cookie_file", "youtube_cookies.txt")
+        )
+
+    def _is_bot_operator(self, user_id: int) -> bool:
+        """Bot 運用者か判定する（admin_user_ids または support.developer_user_id）。"""
+        # Bot に is_admin があれば先に見る
+        is_admin_fn = getattr(self.bot, "is_admin", None)
+        # 呼び出し可能なら admin_user_ids を確認する
+        if callable(is_admin_fn):
+            try:
+                # 管理者リストに入っていれば許可
+                if bool(is_admin_fn(user_id)):
+                    return True
+            except Exception:
+                # 判定失敗時は developer_user_id へフォールバック
+                pass
+        # /shutdown と同じ developer_user_id も許可する
+        from MOMOKA.utilities.restart_notice import shutdown_allowed_user_id
+
+        # 設定から許可 UID を取る
+        allowed = shutdown_allowed_user_id(getattr(self.bot, "config", None))
+        # 未設定なら不可
+        if allowed is None:
+            return False
+        # ID 一致で許可
+        return int(user_id) == int(allowed)
 
     def _load_bot_config(self) -> dict:
         # bot.config（configs/ マージ結果）のみ使う。ルート config.yaml は非対応。
@@ -2388,6 +2427,67 @@ class MusicCog(commands.Cog, name="music_cog"):
         elif state.auto_leave_task and not state.auto_leave_task.done():
             # 人間が戻ったので予定されていた自動退出を取り消す
             state.auto_leave_task.cancel()
+
+    @app_commands.command(
+        name="reload_yt_cookies",
+        description="Reload YouTube cookies from disk (bot operator only).",
+    )
+    async def reload_yt_cookies(self, interaction: discord.Interaction):
+        """原本 cookie を再読込し、yt-dlp 用 runtime コピーを作り直す。"""
+        # Bot 運用者以外は拒否する
+        if not self._is_bot_operator(interaction.user.id):
+            # ephemeral で権限エラーを返す
+            await interaction.response.send_message(
+                "❌ You are not allowed to use this command.",
+                ephemeral=True,
+            )
+            # 終了する
+            return
+        # ラッパー未ロードなら失敗する
+        if reload_youtube_cookies is None:
+            await interaction.response.send_message(
+                "❌ Cookie reload is unavailable (music backend not loaded).",
+                ephemeral=True,
+            )
+            return
+        # 応答を遅延する
+        await interaction.response.defer(ephemeral=True)
+        # 現在 config のパスを再適用する
+        cfg_path = self.music_config.get(
+            "youtube_cookie_file", "youtube_cookies.txt"
+        )
+        # 再読込を実行する
+        result = reload_youtube_cookies(cfg_path)
+        # 失敗時
+        if not result.get("ok"):
+            # エラー種別に応じた文言
+            err = result.get("error") or "unknown"
+            await interaction.followup.send(
+                f"❌ Cookie reload failed (`{err}`).\n"
+                f"Config path: `{cfg_path}`\n"
+                "Place a non-empty Netscape cookie file and retry.",
+                ephemeral=True,
+            )
+            return
+        # パスはファイル名だけ見せる（絶対パスの露出を抑える）
+        source_name = Path(str(result["source"])).name
+        runtime_name = Path(str(result["runtime"])).name
+        # 成功応答
+        await interaction.followup.send(
+            "✅ YouTube cookies reloaded.\n"
+            f"- source: `{source_name}` ({result['size']} bytes)\n"
+            f"- runtime copy: `data/{runtime_name}`\n"
+            "Age-restricted plays will use the refreshed copy "
+            "(original file is not overwritten by yt-dlp).",
+            ephemeral=True,
+        )
+        # 運用ログに残す
+        logger.info(
+            "/reload_yt_cookies by user=%s ok source=%s size=%s",
+            interaction.user.id,
+            result.get("source"),
+            result.get("size"),
+        )
 
     @commands.hybrid_command(name="play", description="Play a song or add it to the queue.")
     @app_commands.describe(query="Song title or URL to play.")

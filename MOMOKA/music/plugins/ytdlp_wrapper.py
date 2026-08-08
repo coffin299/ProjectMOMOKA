@@ -8,7 +8,7 @@ import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Union, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import logging
 import yt_dlp
@@ -155,6 +155,8 @@ _YOUTUBE_COOKIE_CANDIDATES = (
 _youtube_cookie_override: Optional[Path] = None
 # BgUtils HTTP ProviderのURL（main.py起動時に設定される）
 _bgutil_provider_base_url: Optional[str] = None
+# yt-dlp 書き戻しで原本を壊さないための runtime コピー
+_RUNTIME_COOKIE_PATH = _REPO_ROOT / "data" / "youtube_cookies.runtime.txt"
 
 
 def set_youtube_cookie_path(path: Optional[str]) -> None:
@@ -167,34 +169,81 @@ def set_youtube_cookie_path(path: Optional[str]) -> None:
         _youtube_cookie_override = None
         # 設定解除をログに残す
         logger.info("YouTube cookie path override cleared; using auto-detect.")
-        # 処理を終了する
-        return
-    # 相対パスはリポジトリルート基準へ解決する（起動 cwd ズレ対策）
-    raw = Path(path)
-    _youtube_cookie_override = raw if raw.is_absolute() else (_REPO_ROOT / raw)
-    # 設定内容をログへ出力する
-    logger.info("YouTube cookie path override set to: %s", _youtube_cookie_override.resolve())
-    # 起動時点でファイルが無ければ年齢制限等が落ちるため明示警告する
-    try:
-        if not (
-            _youtube_cookie_override.is_file()
-            and _youtube_cookie_override.stat().st_size > 0
-        ):
-            logger.warning(
-                "YouTube cookie file not found or empty: %s "
-                "(age-restricted videos will run with cookies=False)",
-                _youtube_cookie_override.resolve(),
-            )
-    except OSError as e:
-        logger.warning(
-            "YouTube cookie file not readable: %s (%s)",
-            _youtube_cookie_override,
-            e,
+    else:
+        # 相対パスはリポジトリルート基準へ解決する（起動 cwd ズレ対策）
+        raw = Path(path)
+        _youtube_cookie_override = raw if raw.is_absolute() else (_REPO_ROOT / raw)
+        # 設定内容をログへ出力する
+        logger.info(
+            "YouTube cookie path override set to: %s",
+            _youtube_cookie_override.resolve(),
         )
+    # 指定パスが空でも、直下の cookie/cookies など他候補を含めてロードを試みる
+    ensure_youtube_cookies_loaded(reason="config")
+
+
+def ensure_youtube_cookies_loaded(*, reason: str = "startup") -> Dict[str, Any]:
+    """
+    プロジェクト直下（および config 指定）の非空 cookie 原本を検出し、
+    runtime コピーへロードする。
+
+    `/reload_yt_cookies` 無しでも起動時・再生時に有効になるための共通入口。
+    """
+    # 原本を解決する（youtube_cookie.txt / youtube_cookies.txt 両方候補）
+    source = resolve_youtube_cookie_source_path()
+    # 無ければ警告して終了する
+    if source is None:
+        logger.warning(
+            "YouTube cookies not loaded (%s): no non-empty "
+            "youtube_cookie.txt / youtube_cookies.txt "
+            "(or music.youtube_cookie_file) under %s",
+            reason,
+            _REPO_ROOT,
+        )
+        return {
+            "ok": False,
+            "source": None,
+            "runtime": None,
+            "size": 0,
+            "error": "source_missing_or_empty",
+        }
+    # runtime へコピーする
+    runtime = _sync_runtime_cookie_copy()
+    # コピー失敗
+    if runtime is None:
+        logger.warning(
+            "YouTube cookies found but runtime copy failed (%s): source=%s",
+            reason,
+            source,
+        )
+        return {
+            "ok": False,
+            "source": str(source),
+            "runtime": None,
+            "size": int(source.stat().st_size),
+            "error": "runtime_copy_failed",
+        }
+    # 成功を INFO で明示する（起動ログで確認しやすくする）
+    size = int(source.stat().st_size)
+    logger.info(
+        "YouTube cookies loaded (%s): source=%s size=%s bytes → runtime=%s",
+        reason,
+        source,
+        size,
+        runtime,
+    )
+    # 結果辞書を返す
+    return {
+        "ok": True,
+        "source": str(source),
+        "runtime": str(runtime),
+        "size": size,
+        "error": None,
+    }
 
 
 def _cookie_path_candidates() -> list[Path]:
-    """cookie 探索候補をリポジトリルート基準の絶対 Path で返す。"""
+    """cookie 原本の探索候補をリポジトリルート基準の絶対 Path で返す。"""
     # 探索対象
     candidates: list[Path] = []
     # config 上書きが指定されているか判定する
@@ -209,12 +258,16 @@ def _cookie_path_candidates() -> list[Path]:
     return candidates
 
 
-def resolve_youtube_cookie_path() -> Optional[Path]:
+def resolve_youtube_cookie_source_path() -> Optional[Path]:
     """
-    利用可能な YouTube クッキーファイルを解決する。
-    優先順: config 上書き → youtube_cookie.txt → youtube_cookies.txt
-    空ファイルは無効扱いとする。パスはリポジトリルート基準。
+    ユーザー管理の YouTube クッキー原本を解決する。
+    runtime コピーは対象外。空ファイルは無効。
     """
+    # runtime パス文字列（比較用）
+    try:
+        runtime_key = str(_RUNTIME_COOKIE_PATH.resolve())
+    except OSError:
+        runtime_key = str(_RUNTIME_COOKIE_PATH)
     # 重複を除きつつ候補を順に検査する
     seen = set()
     # 各候補パスを走査する
@@ -224,24 +277,107 @@ def resolve_youtube_cookie_path() -> Optional[Path]:
             key = str(path.resolve())
         except OSError:
             key = str(path)
+        # runtime 自身は原本扱いにしない
+        if key == runtime_key:
+            continue
         # 既に検査済みならスキップする
         if key in seen:
-            # 次の候補へ進む
             continue
         # 検査済み集合へ登録する
         seen.add(key)
         # ファイルが存在し、かつサイズが 0 より大きいか判定する
         try:
-            # 実ファイルかつ非空のみ有効とする
             if path.is_file() and path.stat().st_size > 0:
-                # 有効なクッキーファイルを返す
+                # 有効な原本を返す
                 return path.resolve()
-        # 権限エラー等で stat に失敗した場合のハンドリング
         except OSError as e:
-            # 警告を出して次の候補へ進む
             logger.warning("Failed to inspect YouTube cookie file %s: %s", path, e)
-    # 有効なファイルが無ければ None を返す
+    # 無し
     return None
+
+
+def _sync_runtime_cookie_copy() -> Optional[Path]:
+    """原本を data/youtube_cookies.runtime.txt へコピーしてそのパスを返す。"""
+    # 原本を解決する
+    source = resolve_youtube_cookie_source_path()
+    # 無ければ失敗
+    if source is None:
+        return None
+    try:
+        # data ディレクトリを用意する
+        _RUNTIME_COOKIE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        # 原本を runtime へ上書きコピーする（yt-dlp 書き戻し隔離）
+        shutil.copy2(source, _RUNTIME_COOKIE_PATH)
+        # 成功をログする（毎回の再生では debug、管理者 reload は別途 INFO）
+        logger.debug(
+            "YouTube cookie runtime copy refreshed: source=%s runtime=%s size=%s",
+            source,
+            _RUNTIME_COOKIE_PATH.resolve(),
+            _RUNTIME_COOKIE_PATH.stat().st_size,
+        )
+        # runtime パスを返す
+        return _RUNTIME_COOKIE_PATH.resolve()
+    except OSError as e:
+        # コピー失敗は警告
+        logger.warning("Failed to refresh YouTube cookie runtime copy: %s", e)
+        return None
+
+
+def resolve_youtube_cookie_path() -> Optional[Path]:
+    """
+    yt-dlp に渡すクッキーパスを返す（常に runtime コピー）。
+    呼び出すたびに原本から再コピーし、書き戻しで runtime が壊れても次回に備える。
+    """
+    # 原本→runtime を同期して返す
+    return _sync_runtime_cookie_copy()
+
+
+def reload_youtube_cookies(config_path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    管理者コマンド用: cookie パスを再設定し runtime を作り直す。
+
+    Returns:
+        ok / source / runtime / size / error を含む辞書（パス文字列は絶対）。
+    """
+    # config パス指定があれば上書きを更新する（内部で ensure 済み）
+    if config_path is not None:
+        set_youtube_cookie_path(config_path)
+        # set 内 ensure の結果を返す形に揃える
+        source = resolve_youtube_cookie_source_path()
+        if source is None:
+            return {
+                "ok": False,
+                "source": None,
+                "runtime": None,
+                "size": 0,
+                "error": "source_missing_or_empty",
+            }
+        if not (
+            _RUNTIME_COOKIE_PATH.is_file() and _RUNTIME_COOKIE_PATH.stat().st_size > 0
+        ):
+            return {
+                "ok": False,
+                "source": str(source),
+                "runtime": None,
+                "size": int(source.stat().st_size),
+                "error": "runtime_copy_failed",
+            }
+        runtime = _RUNTIME_COOKIE_PATH.resolve()
+        logger.info(
+            "YouTube cookies reloaded: source=%s runtime=%s size=%s",
+            source,
+            runtime,
+            source.stat().st_size,
+        )
+        return {
+            "ok": True,
+            "source": str(source),
+            "runtime": str(runtime),
+            "size": int(source.stat().st_size),
+            "error": None,
+        }
+    # パス指定なし: 現設定のまま再ロードする
+    return ensure_youtube_cookies_loaded(reason="reload")
 
 
 def set_bgutil_provider_base_url(base_url: Optional[str]) -> None:
