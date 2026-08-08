@@ -43,8 +43,7 @@
 3. サーバーで `/help`、または [コマンド一覧](https://momoka-project.com/commands.html)  
    **EN:** Run `/help` in your server, or see the [command list](https://momoka-project.com/commands.html)
 
-**JA:** サポート — [Discord](https://discord.gg/H79HKKqx3s) · DM [coffin299](https://discord.com/users/270446628622696449) · [FAQ](https://momoka-project.com/faq.html)  
-**EN:** Support — [Discord](https://discord.gg/H79HKKqx3s) · DM [coffin299](https://discord.com/users/270446628622696449) · [FAQ](https://momoka-project.com/faq.html)
+サポート/Support — [Discord](https://discord.gg/H79HKKqx3s) · DM [coffin299](https://discord.com/users/270446628622696449) · [FAQ](https://momoka-project.com/faq.html)  
 
 ---
 
