@@ -24,6 +24,7 @@ from MOMOKA.storage.settings.constants import (
     NS_SPEECH_SETTINGS,
     NS_TTS_SETTINGS,
     NS_TWITCH_SETTINGS,
+    NS_MEDIA_SHARE_ENTRIES,
     SCHEMA_VERSION,
 )
 
@@ -166,6 +167,11 @@ class SettingsDB:
             CREATE TABLE IF NOT EXISTS gdrive_deletion_schedule (
                 file_id TEXT PRIMARY KEY, delete_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS media_share_entries (
+                token TEXT PRIMARY KEY,
+                filename TEXT NOT NULL,
+                expires_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS vc_playback_sessions (
                 bot_id TEXT NOT NULL,
                 guild_id INTEGER NOT NULL,
@@ -276,6 +282,7 @@ class SettingsDB:
             NS_LOG_VIEWER_CONFIG: self._load_log_viewer,
             NS_FILEIO_DELETION_SCHEDULE: self._load_fileio,
             NS_GDRIVE_DELETION_SCHEDULE: self._load_fileio,
+            NS_MEDIA_SHARE_ENTRIES: self._load_media_share_entries,
         }
         # 未知 namespace は従来どおり None とログで扱う。
         loader = loaders.get(namespace)
@@ -304,6 +311,7 @@ class SettingsDB:
             NS_LOG_VIEWER_CONFIG: self._save_log_viewer,
             NS_FILEIO_DELETION_SCHEDULE: self._save_fileio,
             NS_GDRIVE_DELETION_SCHEDULE: self._save_fileio,
+            NS_MEDIA_SHARE_ENTRIES: self._save_media_share_entries,
         }
         # 未知 namespace は保存前に例外にする。
         saver = savers.get(namespace)
@@ -1134,6 +1142,54 @@ class SettingsDB:
                     (str(file_key), float(delete_at)),
                 )
             except (TypeError, ValueError):
+                continue
+
+    @staticmethod
+    def _load_media_share_entries(
+        conn: sqlite3.Connection,
+    ) -> Optional[Dict[str, Dict[str, Any]]]:
+        """token → {filename, expires_at} を返す。"""
+        # 共有エントリを全件読む
+        rows = conn.execute(
+            "SELECT token, filename, expires_at FROM media_share_entries"
+        ).fetchall()
+        # 無ければ未設定
+        if not rows:
+            return None
+        # 公開形状へ組み立てる
+        result: Dict[str, Dict[str, Any]] = {}
+        for token, filename, expires_at in rows:
+            result[str(token)] = {
+                "filename": str(filename),
+                "expires_at": float(expires_at),
+            }
+        return result
+
+    @staticmethod
+    def _save_media_share_entries(conn: sqlite3.Connection, data: Any) -> None:
+        """media_share_entries を全置換する。"""
+        # いったん空にする
+        conn.execute("DELETE FROM media_share_entries")
+        # 型が不正なら空のまま
+        if not isinstance(data, dict):
+            return
+        # 各トークンを書く
+        for token, meta in data.items():
+            # メタが辞書以外なら無視
+            if not isinstance(meta, dict):
+                continue
+            try:
+                # INSERT
+                conn.execute(
+                    "INSERT INTO media_share_entries (token, filename, expires_at) "
+                    "VALUES (?, ?, ?)",
+                    (
+                        str(token),
+                        str(meta.get("filename") or "download.bin"),
+                        float(meta["expires_at"]),
+                    ),
+                )
+            except (TypeError, ValueError, KeyError):
                 continue
 
 

@@ -3,8 +3,8 @@
 # デフォルト DB パスをリポジトリルート相対で定義する。
 DEFAULT_DB_PATH = "data/momoka.db"
 
-# 正規化スキーマの現行版を定義する（v3: vc_playback_sessions）。
-SCHEMA_VERSION = 3
+# 正規化スキーマの現行版を定義する（v4: media_share_entries）。
+SCHEMA_VERSION = 4
 
 # チャンネル単位の LLM モデル上書き namespace を定義する。
 NS_CHANNEL_LLM_MODELS = "channel_llm_models"
@@ -32,6 +32,8 @@ NS_LOG_VIEWER_CONFIG = "log_viewer_config"
 NS_FILEIO_DELETION_SCHEDULE = "fileio_deletion_schedule"
 # 後方互換エイリアス（旧名）
 NS_GDRIVE_DELETION_SCHEDULE = NS_FILEIO_DELETION_SCHEDULE
+# Cloudflare Tunnel 一時共有エントリ（再起動耐性）
+NS_MEDIA_SHARE_ENTRIES = "media_share_entries"
 
 # Web ダッシュボードからギルド単位で変更可能な namespace を集約する。
 GUILD_ADMIN_NAMESPACES = frozenset(
@@ -50,6 +52,7 @@ HOST_ONLY_NAMESPACES = frozenset(
         NS_LOGGING_CHANNELS,
         NS_LOG_VIEWER_CONFIG,
         NS_FILEIO_DELETION_SCHEDULE,
+        NS_MEDIA_SHARE_ENTRIES,
         NS_RESPONSE_TIMES,
     }
 )

@@ -134,7 +134,7 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
 - フォーマット選択では拡張子を先頭表示し、同一解像度では mp4 を webm より優先します
 - 対応外 URL やフォーマット取得不可などのエラーは原因別に案内します（タグ／一覧ページは不可）
 - **許可リスト**: `configs/media_downloader_allowlist.default.json`（初回起動で `media_downloader_allowlist.json` にコピー）。成人向け IE・プライベート IP は拒否。`/play` には適用しない
-- 共有リンクは Cloudflare Tunnel（expire≈600 秒・トークン URL）。ローカル一時ファイルは約 600 秒後に削除されます
+- 共有リンクは Cloudflare Tunnel（expire≈600 秒・トークン URL）。エントリは SettingsDB（`media_share_entries`）へ一時保存し再起動後も有効期限内は配信継続。ローカル一時ファイルは約 600 秒後に削除されます
 - YouTube 向けには Deno（推奨）または Node.js 22+ と `yt-dlp[default]` を推奨（音楽機能と同じ EJS 対策）
 
 ---
@@ -242,7 +242,7 @@ TTS / 読み上げ設定のロードに失敗した場合、Cog unload 時の空
 
 Web ダッシュボードが変更できるのはギルド管理 namespace（地震、Twitch、Link Fix、読み上げ設定、読み上げ辞書）だけです。ダッシュボード実装は `SettingsDB.save_guild()` / `save_guild_async()` を使用し、対象ギルド以外の行を変更してはいけません。
 
-`logging_channels`、`log_viewer_config`、`fileio_deletion_schedule`、`response_times` はホスト専用 namespace であり、ギルド管理画面から読み書きしてはいけません。チャンネル単位の LLM・画像モデル・TTS 設定もギルド管理ダッシュボードの対象外です。
+`logging_channels`、`log_viewer_config`、`fileio_deletion_schedule`、`media_share_entries`、`response_times` はホスト専用 namespace であり、ギルド管理画面から読み書きしてはいけません。チャンネル単位の LLM・画像モデル・TTS 設定もギルド管理ダッシュボードの対象外です。
 
 #### 認可マトリクス（Discord / 将来ダッシュボード）
 

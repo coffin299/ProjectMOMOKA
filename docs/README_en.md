@@ -134,7 +134,7 @@ Recommended: rate-limit `/d/*` on Cloudflare. Do not force Cloudflare Access log
 - The format picker shows the extension first and prefers mp4 over webm at the same resolution
 - Unsupported URLs and unavailable formats get cause-specific guidance (tag/listing pages are not allowed)
 - **Allowlist**: `configs/media_downloader_allowlist.default.json` (copied to `media_downloader_allowlist.json` on first start). Adult IEs and private IPs are rejected. Not applied to `/play`
-- Share links use Cloudflare Tunnel (expire≈600s, token URLs). Local temp files are deleted after ~600 seconds
+- Share links use Cloudflare Tunnel (expire≈600s, token URLs). Entries are persisted in SettingsDB (`media_share_entries`) so links survive bot restarts until expiry. Local temp files are deleted after ~600 seconds
 - For YouTube, Deno (recommended) or Node.js 22+ plus `yt-dlp[default]` is advised (same EJS guidance as music)
 
 ---
@@ -240,7 +240,7 @@ If TTS / speech settings fail to load, empty in-memory state is not written back
 
 The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Link Fix, speech settings, and the speech dictionary. Dashboard code must use `SettingsDB.save_guild()` or `save_guild_async()` and must never modify another guild's rows.
 
-`logging_channels`, `log_viewer_config`, `fileio_deletion_schedule`, and `response_times` are host-only namespaces and must not be read or written through guild administration pages. Channel-scoped LLM, image-model, and TTS settings are also outside the guild-admin dashboard scope.
+`logging_channels`, `log_viewer_config`, `fileio_deletion_schedule`, `media_share_entries`, and `response_times` are host-only namespaces and must not be read or written through guild administration pages. Channel-scoped LLM, image-model, and TTS settings are also outside the guild-admin dashboard scope.
 
 #### Authorization matrix (Discord / future dashboard)
 

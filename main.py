@@ -701,6 +701,7 @@ if __name__ == "__main__":
         MediaShareConfig,
         TunnelFileServer,
     )
+    from MOMOKA.storage import resolve_settings_db
 
     # configs/*.yaml を統合した設定辞書を読み込む
     try:
@@ -724,9 +725,12 @@ if __name__ == "__main__":
     bgutil_config = BgutilProviderConfig.from_mapping(merged_config)
     # PLANA/ARONAで共有するProvider Managerを一度だけ生成する。
     bgutil_manager = BgutilProviderManager(bgutil_config)
-    # /download_* 用の localhost 一時配信（Cloudflare Tunnel 公開）
+    # /download_* 用の localhost 一時配信（Cloudflare Tunnel 公開・DB 再起動耐性）
     media_share_config = MediaShareConfig.from_mapping(merged_config)
-    media_share_server = TunnelFileServer(media_share_config)
+    media_share_server = TunnelFileServer(
+        media_share_config,
+        settings_db=resolve_settings_db(),
+    )
 
     # 通常チャット / 討論の並列背圧を初期化する
     try:

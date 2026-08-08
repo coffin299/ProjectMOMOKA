@@ -1,5 +1,5 @@
 # MOMOKA/media_downloader/tunnel_file_server.py
-# Cloudflare Tunnel 向け・localhost 限定の一時ファイル配信。
+# Cloudflare Tunnel 向け・localhost 限定の一時ファイル配信（DB 再起動耐性付き）。
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +14,8 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import quote
 
 from aiohttp import web
+
+from MOMOKA.storage import NS_MEDIA_SHARE_ENTRIES, SettingsDB, resolve_settings_db
 
 logger = logging.getLogger(__name__)
 
@@ -102,12 +104,19 @@ class _ShareEntry:
 class TunnelFileServer:
     """
     127.0.0.1 のみで GET /d/{token} を配信する。
-    公開は Cloudflare Named Tunnel 経由。第三者へアップロードしない。
+    公開は Cloudflare Named Tunnel 経由。エントリは SettingsDB に永続化する。
     """
 
-    def __init__(self, config: MediaShareConfig) -> None:
+    def __init__(
+        self,
+        config: MediaShareConfig,
+        *,
+        settings_db: Optional[SettingsDB] = None,
+    ) -> None:
         # 設定を保持
         self._config = config
+        # 永続化ストア（未指定ならプロセス共通）
+        self._settings_db = settings_db or resolve_settings_db()
         # token -> entry
         self._entries: Dict[str, _ShareEntry] = {}
         # エントリ操作の直列化
@@ -145,7 +154,7 @@ class TunnelFileServer:
         return None
 
     async def start(self) -> bool:
-        """ローカル HTTP サーバを起動する。無効時は False。"""
+        """ローカル HTTP サーバを起動し、DB から有効エントリを復元する。"""
         # 設定不足なら起動しない
         err = self.readiness_error()
         if err:
@@ -156,8 +165,8 @@ class TunnelFileServer:
             return True
         # ストレージを用意
         self._config.storage_dir.mkdir(parents=True, exist_ok=True)
-        # 前回残骸を掃除
-        self._purge_storage_dir()
+        # DB + ディスクから有効分だけ復元（期限切れ・孤児は掃除）
+        restored = self._restore_from_db()
         # ルートを組む
         app = web.Application()
         # 配信のみ（一覧・他パスは aiohttp 既定 404）
@@ -177,15 +186,19 @@ class TunnelFileServer:
         # 期限切れ掃除ループ
         self._janitor_task = asyncio.create_task(self._janitor_loop())
         logger.info(
-            "media_share listening on %s:%s (public=%s)",
+            "media_share listening on %s:%s (public=%s restored=%s)",
             self._config.bind_host,
             self._config.port,
             self._config.public_base_url,
+            restored,
         )
         return True
 
     async def stop(self) -> None:
-        """サーバと掃除タスクを止める。"""
+        """
+        HTTP だけ止める。
+        有効期限内のファイルと DB は残し、再起動後もリンクを生かす。
+        """
         # 掃除タスク停止
         if self._janitor_task is not None:
             self._janitor_task.cancel()
@@ -194,18 +207,18 @@ class TunnelFileServer:
             except asyncio.CancelledError:
                 pass
             self._janitor_task = None
+        # 最新状態を DB へ書いてから止める
+        async with self._lock:
+            self._persist_entries_unlocked()
         # サイト停止
         if self._runner is not None:
             await self._runner.cleanup()
         self._runner = None
         self._site = None
         self._app = None
-        # メモリ上のエントリを破棄（ファイルは残さず掃除）
-        async with self._lock:
-            tokens = list(self._entries.keys())
-            for token in tokens:
-                await self._revoke_unlocked(token, delete_file=True)
-        logger.info("media_share stopped")
+        # メモリは捨てる（ディスク/DB は残す）
+        self._entries.clear()
+        logger.info("media_share stopped (persisted entries kept on disk/db)")
 
     async def register(
         self,
@@ -234,7 +247,7 @@ class TunnelFileServer:
         token = f"{_TOKEN_PREFIX}{secrets.token_urlsafe(_TOKEN_BYTES)}"
         # 表示名（パス区切りを除去）
         safe_name = Path(file_name or src.name).name or "download.bin"
-        # ストレージ先はトークン文字列そのもの（プレフィックス込み・区切り文字なし）
+        # ストレージ先はトークン文字列そのもの
         dest = self._config.storage_dir / token
         try:
             # 配信用に複製（呼び出し側の一時削除と独立）
@@ -249,7 +262,9 @@ class TunnelFileServer:
         )
         async with self._lock:
             self._entries[token] = entry
-        # 公開 URL（ファイル名はクエリに出さない）
+            # DB へ永続化
+            self._persist_entries_unlocked()
+        # 公開 URL
         url = f"{self._config.public_base_url}/d/{token}"
         # トークン全文はログに出さない
         logger.info(
@@ -260,16 +275,97 @@ class TunnelFileServer:
         return token, url
 
     async def revoke(self, token: str) -> None:
-        """トークンを無効化しストレージファイルを削除する。"""
+        """トークンを無効化しストレージファイルと DB を更新する。"""
         if not token:
             return
         async with self._lock:
             await self._revoke_unlocked(token, delete_file=True)
 
+    def _restore_from_db(self) -> int:
+        """DB から有効エントリを復元し、孤児ファイルを掃除する。戻り値は復元件数。"""
+        now = time.time()
+        # DB 読込
+        try:
+            raw = self._settings_db.load(NS_MEDIA_SHARE_ENTRIES)
+        except Exception:
+            logger.exception("media_share db load failed")
+            raw = None
+        restored: Dict[str, _ShareEntry] = {}
+        if isinstance(raw, dict):
+            for token, meta in raw.items():
+                # 形式チェック
+                if not isinstance(token, str) or not _TOKEN_RE.match(token):
+                    continue
+                if not isinstance(meta, dict):
+                    continue
+                try:
+                    expires_at = float(meta["expires_at"])
+                    filename = str(meta.get("filename") or "download.bin")
+                except (TypeError, ValueError, KeyError):
+                    continue
+                # 期限切れは捨てる
+                if expires_at <= now:
+                    path = self._config.storage_dir / token
+                    try:
+                        if path.is_file():
+                            path.unlink()
+                    except OSError:
+                        pass
+                    continue
+                path = self._config.storage_dir / token
+                # ファイルが無ければエントリも無効
+                if not path.is_file():
+                    continue
+                restored[token] = _ShareEntry(
+                    path=path,
+                    filename=Path(filename).name or "download.bin",
+                    expires_at=expires_at,
+                )
+        self._entries = restored
+        # 正規化した内容を DB へ書き戻す
+        self._persist_entries_unlocked()
+        # DB に無い孤児ファイルを削除
+        kept = set(restored.keys())
+        try:
+            for child in self._config.storage_dir.iterdir():
+                if not child.is_file():
+                    continue
+                if child.name not in kept:
+                    try:
+                        child.unlink()
+                    except OSError:
+                        pass
+        except OSError:
+            logger.exception("media_share orphan purge failed")
+        return len(restored)
+
+    def _persist_entries_unlocked(self) -> None:
+        """ロック保持中にメモリ上のエントリを DB へ全置換する。"""
+        payload: Dict[str, Dict[str, Any]] = {}
+        for token, entry in self._entries.items():
+            payload[token] = {
+                "filename": entry.filename,
+                "expires_at": float(entry.expires_at),
+            }
+        try:
+            self._settings_db.save(NS_MEDIA_SHARE_ENTRIES, payload)
+        except Exception:
+            logger.exception("media_share db save failed")
+
     async def _revoke_unlocked(self, token: str, *, delete_file: bool) -> None:
-        """ロック保持中にエントリを外す。"""
+        """ロック保持中にエントリを外し、必要なら DB 更新する。"""
         entry = self._entries.pop(token, None)
         if entry is None:
+            # メモリに無くても DB から落とすため永続化は行う
+            self._persist_entries_unlocked()
+            # ファイルだけ残っていれば消す
+            if delete_file:
+                orphan = self._config.storage_dir / token
+                try:
+                    if orphan.is_file():
+                        orphan.unlink()
+                except OSError:
+                    pass
             return
         if delete_file:
             try:
@@ -277,6 +373,8 @@ class TunnelFileServer:
                     entry.path.unlink()
             except OSError:
                 logger.warning("media_share revoke: unlink failed")
+        # DB 更新
+        self._persist_entries_unlocked()
 
     async def _handle_download(self, request: web.Request) -> web.StreamResponse:
         """GET /d/{token} — 期限切れ・不明は 404。"""
@@ -310,18 +408,6 @@ class TunnelFileServer:
             f"filename*=UTF-8''{utf8_name}"
         )
         return resp
-
-    def _purge_storage_dir(self) -> None:
-        """起動時にストレージ内の全ファイルを捨てる。"""
-        try:
-            for child in self._config.storage_dir.iterdir():
-                try:
-                    if child.is_file():
-                        child.unlink()
-                except OSError:
-                    pass
-        except OSError:
-            logger.exception("media_share storage purge failed")
 
     async def _janitor_loop(self) -> None:
         """期限切れエントリを定期削除する。"""
