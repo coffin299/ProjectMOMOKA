@@ -37,7 +37,7 @@
 - 🎵 **音楽再生** - YouTube、Spotify、Google Drive など（両ボット）
 - 🎨 **画像生成 / TTS / 通知 / tracker** - **PLANA 専用**
 - 🔗 **Link Fix** - 公式 SNS embed を抑制し Fix URL で引用置換（`/linkfix`・**PLANA 専用**）
-- 🎲 **ユーティリティ** - `/help`（🇯🇵/🇺🇸・ページング・app→guild→en）・`/invite`（Components V2）、タイマー、メディアダウンロード（`/download_video` / `/download_audio`・Components V2）など
+- 🎲 **ユーティリティ** - `/help`（🇯🇵/🇺🇸・ページング・app→guild→en）・`/invite`（Components V2）・`/updates`（Components V2・5件ページング）、タイマー、メディアダウンロード（`/download_video` / `/download_audio`・Components V2）など
 
 ---
 
@@ -106,9 +106,9 @@ Rainbow Six Siege / VALORANT の統計表示。
 
 ### 8. ユーティリティ
 
-ダイス、サーバー/ユーザー情報、ガチャ、`/latex`（matplotlib mathtext で数式PNG）など。`/help` は Components V2 で **🇯🇵/🇺🇸 言語切替とページング**（LLM / Music+Download / Link Fix / Twitch を先頭に案内）。`/invite` も Components V2 で両ボットの招待を案内します。
+ダイス、サーバー/ユーザー情報、ガチャ、`/latex`（matplotlib mathtext で数式PNG）など。`/help` は Components V2 で **🇯🇵/🇺🇸 言語切替とページング**（LLM / Music+Download / Link Fix / Twitch を先頭に案内）。`/invite` も Components V2 で両ボットの招待を案内します。`/updates` は GitHub コミットを全件取得し、Components V2 で 5 件ずつ（先頭/前/次/末尾）ページング表示します。
 
-**UI 言語（Components V2 / Modal）:** Discord クライアント言語（app locale）→ サーバーの `preferred_locale`（guild）→ English の順で決定します（音楽 Now Playing 等は対象外）。`/help` `/invite` `/linkfix`、LLM 待機・討論パネル、メディア DL、`/feedback` Modal、画像生成 Modal などが対象です。
+**UI 言語（Components V2 / Modal）:** Discord クライアント言語（app locale）→ サーバーの `preferred_locale`（guild）→ English の順で決定します（音楽 Now Playing 等は対象外）。`/help` `/invite` `/updates` `/linkfix`、LLM 待機・討論パネル、メディア DL、`/feedback` Modal、画像生成 Modal などが対象です。
 
 **スラッシュコマンドの説明文:** Discord クライアント言語（日本語 / 英語 / 韓国語 / ベトナム語 / 中国語簡体・繁体 / スペイン語 / フランス語 / ドイツ語 / ポルトガル語 / ロシア語 / タイ語 / インドネシア語）に応じて表示します（`configs/commands_i18n_config.default.yaml` を直接読み込み）。翻訳が無い言語や未対応 locale は英語にフォールバックします。コマンド名自体は英語のままです。
 
@@ -383,6 +383,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 |---------|------|
 | `/help` | ヘルプ（Components V2・app→guild→en 初期言語・🇯🇵/🇺🇸 切替・ページング） |
 | `/invite` | PLANA / ARONA 招待（Components V2・app→guild→en） |
+| `/updates` | GitHub コミット履歴（Components V2・全件取得・5件ページング・先頭/前/次/末尾） |
 | `/download_video` `/download_audio` | メディアダウンロード（Components V2・Google Drive 共有） |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系（`/ping` は Gateway + Voice WebSocket） |
 | `/latex <expression>` | LaTeX風数式をPNG化（matplotlib mathtext。フルLaTeXではない） |

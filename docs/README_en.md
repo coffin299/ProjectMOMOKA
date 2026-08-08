@@ -37,7 +37,7 @@
 - 🎵 **Music playback** — YouTube, Spotify, Google Drive, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
 - 🔗 **Link Fix** — Suppress original social embeds and quote-replace via fixer proxies (`/linkfix`, **PLANA only**)
-- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en) and `/invite` (Components V2), media download (`/download_video` / `/download_audio`, Components V2), and more
+- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en), `/invite` (Components V2), `/updates` (Components V2, 5 per page), media download (`/download_video` / `/download_audio`, Components V2), and more
 
 ---
 
@@ -106,9 +106,9 @@ When a supported SNS URL is posted, PLANA **suppresses the original Discord embe
 
 ### 8. Utilities
 
-Dice, server/user info, gacha, `/latex` (math PNG via matplotlib mathtext), etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites.
+Dice, server/user info, gacha, `/latex` (math PNG via matplotlib mathtext), etc. `/help` uses Components V2 with **🇯🇵/🇺🇸 language toggle and paging** (LLM / Music+Download / Link Fix / Twitch highlighted first). `/invite` also uses Components V2 for both bot invites. `/updates` fetches all GitHub commits and pages them 5 at a time in Components V2 (first/prev/next/last).
 
-**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/linkfix`, LLM waiting panels, media download, `/feedback` Modal, image-generation Modal, and related surfaces.
+**UI language (Components V2 / Modal):** Resolved as Discord client locale (app) → guild `preferred_locale` → English (music Now Playing panels are excluded). Covers `/help`, `/invite`, `/updates`, `/linkfix`, LLM waiting panels, media download, `/feedback` Modal, image-generation Modal, and related surfaces.
 
 **Slash command descriptions:** Shown according to the Discord client language (Japanese / English / Korean / Vietnamese / Chinese Simplified & Traditional / Spanish / French / German / Portuguese / Russian / Thai / Indonesian) via `configs/commands_i18n_config.default.yaml` (loaded directly; no runtime copy). Missing translations and unsupported locales fall back to English. Command names stay in English.
 
@@ -361,6 +361,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 |---------|-------------|
 | `/help` | Help (Components V2; app→guild→en initial language; 🇯🇵/🇺🇸 toggle + paging) |
 | `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
+| `/updates` | GitHub commit history (Components V2; fetch all; 5 per page; first/prev/next/last) |
 | `/download_video` `/download_audio` | Media download (Components V2, Google Drive share) |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | Info (`/ping` shows Gateway + Voice WebSocket) |
 | `/latex <expression>` | Render LaTeX-like math as PNG (matplotlib mathtext; not full LaTeX) |

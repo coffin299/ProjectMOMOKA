@@ -191,19 +191,19 @@ commands_i18n:
         id: Menampilkan tautan undangan PLANA dan ARONA.
     updates:
       description:
-        en: Shows the bot's latest update history (commit log).
-        ja: Botの最新のアップデート履歴（コミットログ）を表示します。
-        ko: 봇의 최신 업데이트 기록(커밋 로그)을 표시합니다.
-        vi: Hiển thị lịch sử cập nhật mới nhất của bot (commit log).
-        zh-CN: 显示机器人的最新更新历史（提交日志）。
-        zh-TW: 顯示機器人的最新更新紀錄（提交日誌）。
-        es: Muestra el historial reciente de actualizaciones del bot.
-        fr: Affiche l'historique des dernières mises à jour du bot.
-        de: Zeigt die neuesten Aktualisierungen des Bots an.
-        pt-BR: Mostra o histórico recente de atualizações do bot.
-        ru: Показывает последние обновления бота.
-        th: แสดงประวัติการอัปเดตล่าสุดของบอต
-        id: Menampilkan riwayat pembaruan terbaru bot.
+        en: Shows the bot's update history (commit log) with 5-per-page paging.
+        ja: Botのアップデート履歴（コミットログ）を5件ずつのページングで表示します。
+        ko: 봇의 업데이트 기록(커밋 로그)을 5개씩 페이지로 표시합니다.
+        vi: Hiển thị lịch sử cập nhật của bot (commit log) phân trang 5 mục mỗi trang.
+        zh-CN: 以每页 5 条分页显示机器人的更新历史（提交日志）。
+        zh-TW: 以每頁 5 筆分頁顯示機器人的更新紀錄（提交日誌）。
+        es: Muestra el historial de actualizaciones del bot (commit log) con 5 por página.
+        fr: Affiche l'historique des mises à jour du bot (journal des commits), 5 par page.
+        de: Zeigt die Aktualisierungshistorie des Bots (Commit-Log) mit 5 Einträgen pro Seite.
+        pt-BR: Mostra o histórico de atualizações do bot (commit log) com 5 por página.
+        ru: Показывает историю обновлений бота (лог коммитов) по 5 на странице.
+        th: แสดงประวัติการอัปเดตของบอต (commit log) แบบแบ่งหน้า 5 รายการต่อหน้า
+        id: Menampilkan riwayat pembaruan bot (commit log) dengan paging 5 per halaman.
     help:
       description:
         en: Displays help information for the bot.

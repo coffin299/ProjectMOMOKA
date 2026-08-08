@@ -28,6 +28,8 @@ from MOMOKA.utilities.feedback import (
     support_footer_text,
 )
 from MOMOKA.utilities.support_config import load_support_links
+# /updates 用 Components V2 LayoutView
+from MOMOKA.utilities.updates_view import UpdatesLayoutView
 
 logger = logging.getLogger(__name__)
 
@@ -549,74 +551,124 @@ class SlashCommandsCog(commands.Cog, name="slash_commands"):
     @app_commands.command(name="updates",
                           description="Shows the bot's latest update history (commit log).")
     async def updates(self, interaction: discord.Interaction):
+        # GitHub 全ページ取得に時間がかかるため先に defer する
         await interaction.response.defer(ephemeral=False)
+        # UI 言語を app → guild → en で決める
+        lang = resolve_interaction_lang(interaction)
 
+        # リポジトリ未設定ならエラーを返す
         if not self.updates_repository:
             await interaction.followup.send(
-                "エラー: リポジトリのURLが設定されていません。\nError: The repository URL is not configured.",
-                ephemeral=False)
-            logger.warning(f"/updates が実行されましたが、リポジトリURLが未設定です。 (User: {interaction.user.id})")
+                pick_str(
+                    lang,
+                    ja="エラー: リポジトリのURLが設定されていません。",
+                    en="Error: The repository URL is not configured.",
+                ),
+                ephemeral=False,
+            )
+            logger.warning(
+                f"/updates が実行されましたが、リポジトリURLが未設定です。 (User: {interaction.user.id})"
+            )
             return
 
+        # owner/repo を URL から取り出す
         repo_match = re.match(r"https://github\.com/([^/]+)/([^/]+)", self.updates_repository)
+        # 形式不正ならエラーを返す
         if not repo_match:
             await interaction.followup.send(
-                "エラー: 設定されているリポジトリURLの形式が正しくありません。\nError: The configured repository URL format is invalid.",
-                ephemeral=False)
+                pick_str(
+                    lang,
+                    ja="エラー: 設定されているリポジトリURLの形式が正しくありません。",
+                    en="Error: The configured repository URL format is invalid.",
+                ),
+                ephemeral=False,
+            )
             logger.warning(
-                f"/updates が実行されましたが、リポジトリURLの形式が不正です: {self.updates_repository} (User: {interaction.user.id})")
+                f"/updates が実行されましたが、リポジトリURLの形式が不正です: "
+                f"{self.updates_repository} (User: {interaction.user.id})"
+            )
             return
 
+        # owner / repo 名を展開する
         owner, repo = repo_match.groups()
+        # Commits API のベース URL
         api_url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+        # 全件格納用リスト
+        commits: List[Dict[str, Any]] = []
+        # 暴走防止の最大ページ数（100 件 × 10 = 最大 1000 件）
+        max_pages = 10
 
         try:
-            async with self.session.get(api_url) as response:
-                if response.status == 200:
-                    commits: List[Dict[str, Any]] = await response.json()
-                    embed = discord.Embed(
-                        title="📜 アップデート履歴 / Update History",
-                        description=f"最新のコミット25件を表示しています。\nShowing the 25 most recent commits from the [{repo}]({self.updates_repository}) repository.",
-                        color=discord.Color.blue()
-                    )
-
-                    for commit_data in commits[:25]:
-                        sha = commit_data['sha'][:7]
-                        message = commit_data['commit']['message'].split('\n')[0]
-                        author = commit_data['commit']['author']['name']
-                        html_url = commit_data['html_url']
-
-                        date_str = commit_data['commit']['author']['date']
-                        commit_date = datetime.datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-
-                        timestamp = discord.utils.format_dt(commit_date, style='R')
-
-                        if len(message) > 80:
-                            message = message[:77] + "..."
-
-                        embed.add_field(
-                            name=f"📝 `{sha}` by {author} ({timestamp})",
-                            value=f"[{message}]({html_url})",
-                            inline=False
+            # GitHub をページ送りして可能な限り全件取得する
+            for page in range(1, max_pages + 1):
+                # 1 ページ分を取得する
+                async with self.session.get(
+                    api_url,
+                    params={"per_page": 100, "page": page},
+                ) as response:
+                    # 非 200 はエラー表示して終了する
+                    if response.status != 200:
+                        # エラー本文を読む
+                        error_data = await response.json()
+                        # message フィールドを優先する
+                        error_message = error_data.get("message", "Unknown error")
+                        # ユーザー向けエラーを返す
+                        await interaction.followup.send(
+                            pick_str(
+                                lang,
+                                ja=(
+                                    f"エラー: GitHub APIからの情報取得に失敗しました"
+                                    f"（ステータス: {response.status}）。\n`{error_message}`"
+                                ),
+                                en=(
+                                    f"Error: Failed to fetch data from GitHub API "
+                                    f"(Status: {response.status}).\n`{error_message}`"
+                                ),
+                            ),
+                            ephemeral=False,
                         )
+                        logger.error(
+                            f"/updates の実行中にGitHub APIエラーが発生しました "
+                            f"(Status: {response.status}): {error_message}"
+                        )
+                        return
+                    # 成功時は JSON 配列を読む
+                    batch = await response.json()
+                    # 空配列なら全件取得完了
+                    if not batch:
+                        break
+                    # 取得分を結合する
+                    commits.extend(batch)
+                    # 最終ページ（100 未満）なら打ち切る
+                    if len(batch) < 100:
+                        break
 
-                    self._add_support_footer(embed)
-                    await interaction.followup.send(embed=embed, view=self._create_support_view())
-                    logger.info(f"/updates が正常に実行されました。 (User: {interaction.user.id})")
-
-                else:
-                    error_data = await response.json()
-                    error_message = error_data.get("message", "Unknown error")
-                    await interaction.followup.send(
-                        f"エラー: GitHub APIからの情報取得に失敗しました (ステータス: {response.status})。\n`{error_message}`\n\nError: Failed to fetch data from GitHub API (Status: {response.status}).",
-                        ephemeral=False)
-                    logger.error(
-                        f"/updates の実行中にGitHub APIエラーが発生しました (Status: {response.status}): {error_message}")
+            # Components V2 LayoutView を組み立てる（embed 併用不可）
+            view = UpdatesLayoutView(
+                commits=commits,
+                repo_name=repo,
+                repo_url=self.updates_repository.rstrip("/"),
+                lang=lang,
+                page=0,
+            )
+            # view のみで followup する
+            await interaction.followup.send(view=view)
+            # 成功ログ
+            logger.info(
+                f"/updates が正常に実行されました。 "
+                f"(User: {interaction.user.id}, commits={len(commits)}, lang={lang})"
+            )
 
         except aiohttp.ClientError as e:
+            # 接続失敗時のユーザー向けメッセージ
             await interaction.followup.send(
-                "エラー: GitHub APIへの接続中に問題が発生しました。\nError: An issue occurred while connecting to the GitHub API.",
-                ephemeral=False)
+                pick_str(
+                    lang,
+                    ja="エラー: GitHub APIへの接続中に問題が発生しました。",
+                    en="Error: An issue occurred while connecting to the GitHub API.",
+                ),
+                ephemeral=False,
+            )
             logger.error(f"/updates の実行中に接続エラーが発生しました: {e}")
 
     @app_commands.command(name="help",
