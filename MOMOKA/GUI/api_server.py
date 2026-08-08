@@ -627,28 +627,16 @@ def create_host_gui_app(
             # 互換経路: 選択プロトコル付きで accept
             await websocket.accept(subprotocol=chosen_subprotocol)
         else:
-            # メッセージ認証（プロトコル無し、または不一致）
-            await websocket.accept()
-            try:
-                # 認証タイムアウト（秒）
-                raw = await asyncio.wait_for(websocket.receive_text(), timeout=8.0)
-            except Exception as auth_err:
-                # 受信失敗は切断（原因を残す）
-                _logger.warning(
-                    "Host GUI WS /logs: auth message timeout/error "
-                    "(offered_protocols=%s err=%s)",
-                    offered,
-                    auth_err,
-                )
-                await websocket.close(code=4401)
-                return
-            # メッセージからトークンを取る
-            parsed_token = _parse_ws_auth_message(raw)
-            # 不一致なら切断
-            if not _tokens_match(parsed_token, auth.token):
-                _logger.warning("Host GUI WS /logs: auth token mismatch")
-                await websocket.close(code=4401)
-                return
+            # プロトコル無しのメッセージ認証は Electron/localhost で
+            # onopen 取りこぼしが多く、8 秒タイムアウト汚染の元になる。
+            # 現行 GUI は SSE (/logs/stream) が主経路のため、ここでは即拒否する。
+            _logger.info(
+                "Host GUI WS /logs: rejecting non-protocol auth "
+                "(use SSE /logs/stream; offered=%s)",
+                offered,
+            )
+            await websocket.close(code=4401)
+            return
 
         try:
             # クライアントが接続成功を判定できるよう ACK を返す
@@ -694,7 +682,14 @@ def create_host_gui_app(
         @app.get("/")
         def _index() -> FileResponse:
             """Electron が開くインデックス。"""
-            return FileResponse(dist_dir / "index.html")
+            # 旧バンドルキャッシュを避ける
+            return FileResponse(
+                dist_dir / "index.html",
+                headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate",
+                    "Pragma": "no-cache",
+                },
+            )
 
     # 返す
     return app

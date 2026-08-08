@@ -17,10 +17,10 @@ const LEVEL_RANK: Record<string, number> = {
   CRITICAL: 50,
 };
 
-/** 履歴ポーリング間隔（SSE/WS 不通時の保険） */
-const HISTORY_POLL_MS = 2000;
-/** ライブ切断後の再接続間隔 */
-const LIVE_RETRY_MS = 2000;
+/** 履歴ポーリング間隔（SSE 不通時でも必ず追従） */
+const HISTORY_POLL_MS = 1000;
+/** SSE 再接続間隔 */
+const LIVE_RETRY_MS = 1500;
 
 let seq = 0;
 
@@ -60,7 +60,6 @@ function parseSseChunk(
   chunk: string,
   onData: (payload: Omit<LogEntry, "id">) => void
 ): string {
-  // 未完了フレームを末尾に残す
   const parts = chunk.split("\n\n");
   const rest = parts.pop() ?? "";
   for (const frame of parts) {
@@ -114,12 +113,11 @@ export function useLogStream(maxLines = 10000) {
       }
     };
 
-    const connectLive = async () => {
+    const connectSse = async () => {
       if (closed) return;
       const live = getHostConfig();
       if (!live.token) return;
 
-      // 前回の SSE を中断
       try {
         abortRef.current?.abort();
       } catch {
@@ -129,10 +127,14 @@ export function useLogStream(maxLines = 10000) {
       abortRef.current = ac;
 
       try {
-        // REST と同じ Bearer で繋ぐ（WS 認証タイムアウトを回避）
+        // Bearer 付き SSE のみ（WS は localhost onopen 競合で死にやすいので使わない）
         const res = await fetch(`${live.apiBase}/logs/stream`, {
-          headers: { Authorization: `Bearer ${live.token}` },
+          headers: {
+            Authorization: `Bearer ${live.token}`,
+            Accept: "text/event-stream",
+          },
           signal: ac.signal,
+          cache: "no-store",
         });
         if (!res.ok || !res.body) {
           throw new Error(`SSE HTTP ${res.status}`);
@@ -150,92 +152,26 @@ export function useLogStream(maxLines = 10000) {
             setEntries((prev) => appendFresh(prev, [row], maxLines));
           });
         }
-      } catch (err) {
+      } catch {
         if (ac.signal.aborted || closed) return;
-        // SSE 失敗時は WS にフォールバック（切断まで待機）
-        try {
-          await connectWsFallback(live.wsLogsUrl, live.token);
-        } catch {
-          /* 次のリトライへ */
-        }
       } finally {
         liveRef.current = false;
         setConnected(false);
       }
       if (!closed) {
         retry = window.setTimeout(() => {
-          void connectLive();
+          void connectSse();
         }, LIVE_RETRY_MS);
       }
     };
 
-    const connectWsFallback = (wsUrl: string, token: string) =>
-      new Promise<void>((resolve, reject) => {
-        let settled = false;
-        // subprotocol + 初回メッセージの二段認証
-        const ws = new WebSocket(wsUrl, [`bearer.${token}`]);
-        const timer = window.setTimeout(() => {
-          if (settled) return;
-          settled = true;
-          try {
-            ws.close();
-          } catch {
-            /* ignore */
-          }
-          reject(new Error("ws auth timeout"));
-        }, 8000);
-        ws.onopen = () => {
-          try {
-            ws.send(JSON.stringify({ type: "auth", token }));
-          } catch {
-            /* ignore */
-          }
-        };
-        ws.onmessage = (ev) => {
-          try {
-            const data = JSON.parse(ev.data) as Record<string, unknown>;
-            if (data?.type === "auth_ok") {
-              if (!settled) {
-                settled = true;
-                window.clearTimeout(timer);
-                liveRef.current = true;
-                setConnected(true);
-              }
-              return;
-            }
-            if (typeof data?.message !== "string") return;
-            setEntries((prev) =>
-              appendFresh(prev, [data as unknown as Omit<LogEntry, "id">], maxLines)
-            );
-          } catch {
-            /* ignore */
-          }
-        };
-        ws.onerror = () => {
-          if (settled) return;
-          settled = true;
-          window.clearTimeout(timer);
-          reject(new Error("ws error"));
-        };
-        ws.onclose = () => {
-          window.clearTimeout(timer);
-          liveRef.current = false;
-          setConnected(false);
-          if (!settled) {
-            settled = true;
-            reject(new Error("ws closed"));
-            return;
-          }
-          resolve();
-        };
-      });
-
     loadHistory("replace").finally(() => {
       if (closed) return;
-      void connectLive();
+      void connectSse();
+      // WS に依存せず、ファイル履歴ポーリングで必ず追従する
       pollTimer = window.setInterval(() => {
         if (closed) return;
-        void loadHistory("append", liveRef.current ? 400 : maxLines);
+        void loadHistory("append", liveRef.current ? 500 : maxLines);
       }, HISTORY_POLL_MS);
     });
 

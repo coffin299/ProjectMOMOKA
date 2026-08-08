@@ -247,7 +247,7 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 #### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
-- Host GUI のログ配信は **Bearer 付き SSE**（`GET /host-gui/api/logs/stream`）を主経路とし、失敗時のみ WebSocket（`bearer.<token>` / 初回 JSON 認証）へフォールバック。さらに `/logs/history` を定期ポーリングする
+- Host GUI のログ配信は **Bearer 付き SSE**（`GET /host-gui/api/logs/stream`）と `/logs/history` ポーリング。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
 - LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証）
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない
 

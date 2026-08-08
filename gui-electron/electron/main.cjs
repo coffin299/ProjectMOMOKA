@@ -37,13 +37,25 @@ function createWindow() {
   });
 
   const useDev = process.env.MOMOKA_GUI_DEV === "1";
-  if (useDev) {
-    // Vite 開発サーバ（同一マシン loopback）
-    mainWindow.loadURL("http://127.0.0.1:5173");
-  } else {
-    // FastAPI が dist を配信（同一オリジン + Bearer）
-    mainWindow.loadURL(`http://${host}:${port}/`);
-  }
+  const bust = Date.now();
+
+  // 旧 index / JS キャッシュで WS 認証クライアントが残るのを防ぐ
+  const load = async () => {
+    try {
+      await mainWindow.webContents.session.clearCache();
+    } catch {
+      /* ignore */
+    }
+    if (useDev) {
+      // Vite 開発サーバ（同一マシン loopback）
+      await mainWindow.loadURL(`http://127.0.0.1:5173/?v=${bust}`);
+    } else {
+      // FastAPI が dist を配信（同一オリジン + Bearer）
+      await mainWindow.loadURL(`http://${host}:${port}/?v=${bust}`);
+    }
+  };
+
+  void load();
 }
 
 app.whenReady().then(() => {
