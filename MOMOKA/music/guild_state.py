@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from datetime import datetime
 from enum import Enum, auto
@@ -32,6 +33,8 @@ class GuildState:
         self.voice_client: Optional[discord.VoiceClient] = None
         self.current_track: Optional[Track] = None
         self.queue: asyncio.Queue[Track] = asyncio.Queue()
+        # キュー並び替え・取出・投入の競合を防ぐ（shuffle 差し替え事故防止）
+        self.queue_lock = asyncio.Lock()
         self.volume: float = cog_config.get('music', {}).get('default_volume', 20) / 100.0
         self.loop_mode: LoopMode = LoopMode.OFF
         self.is_playing: bool = False
@@ -89,7 +92,37 @@ class GuildState:
         self.last_text_channel_id = channel_id
         self.update_activity()
 
+    def _get_music_audio_source(self):
+        """ミキサー上の music ソース（MusicAudioSource）を返す。無ければ None。"""
+        # ミキサーが無ければ参照できない
+        if self.mixer is None:
+            return None
+        try:
+            # スレッド安全にソース辞書を読む
+            with self.mixer._thread_lock:
+                source = self.mixer.sources.get("music")
+        except Exception:
+            return None
+        # 実 PCM 秒数 API を持つソースだけ採用する
+        if source is not None and hasattr(source, "get_produced_audio_seconds"):
+            return source
+        return None
+
     def get_current_position(self) -> int:
+        """再生位置（秒）。実 PCM が出るまでは進めず、以降はフレーム基準を優先する。"""
+        # 音楽ソースがあればフレーム基準を使う
+        music_source = self._get_music_audio_source()
+        if music_source is not None:
+            # まだ実オーディオ未出力ならシーク位置のまま（壁時計でバーを進めない）
+            if not getattr(music_source, "_has_produced_audio", False):
+                return self.seek_position
+            # 実 PCM 累積秒 + シーク開始位置
+            try:
+                produced = float(music_source.get_produced_audio_seconds())
+            except Exception:
+                produced = 0.0
+            return self.seek_position + int(produced)
+
         # 再生中でなければシーク位置をそのまま返す
         if not self.is_playing:
             return self.seek_position
@@ -102,7 +135,7 @@ class GuildState:
             # シーク基準位置に加算して返す
             return self.seek_position + int(elapsed)
 
-        # 再生中で開始時刻がある場合は現在時刻との差分を使う
+        # フォールバック: ソースが取れないときだけ壁時計
         if self.playback_start_time:
             # 再生開始からの経過秒を算出する
             elapsed = time.time() - self.playback_start_time
@@ -117,14 +150,107 @@ class GuildState:
         self.seek_position = 0
         self.paused_at = None
 
-    async def clear_queue(self):
-        while not self.queue.empty():
+    def _queue_deque(self):
+        """asyncio.Queue 内部 deque を返す（無ければ None）。"""
+        # 内部構造を取る
+        return getattr(self.queue, "_queue", None)
+
+    async def shuffle_queue(self) -> int:
+        """待ちキューを in-place で並べ替え、件数を返す（Queue オブジェクトは差し替えない）。"""
+        # 取出・投入と直列化する
+        async with self.queue_lock:
+            # 内部 deque を取得する
+            raw = self._queue_deque()
+            # 取れなければ何もしない
+            if raw is None:
+                return 0
+            # 現時点の待ち曲をコピーする
+            items = list(raw)
+            # 0〜1 件なら並べ替え不要
+            if len(items) <= 1:
+                return len(items)
+            # 並べ替える
+            random.shuffle(items)
+            # 同一 Queue の中身だけ差し替える（waiters / unfinished を壊さない）
+            raw.clear()
+            # 並べ替え結果を戻す
+            raw.extend(items)
+            # ページを先頭に戻す
+            self.queue_page = 0
+            # 件数を返す
+            return len(items)
+
+    async def pop_queue_track(self) -> Optional[Track]:
+        """キュー先頭を 1 曲取り出す（空なら None）。"""
+        # 並び替えと競合しないようロックする
+        async with self.queue_lock:
             try:
-                self.queue.get_nowait()
-                self.queue.task_done()
+                # 非ブロッキングで取る（差し替え待ちでハングしない）
+                track = self.queue.get_nowait()
             except asyncio.QueueEmpty:
-                break
-        self.queue = asyncio.Queue()
+                return None
+            try:
+                # unfinished_tasks を整合させる
+                self.queue.task_done()
+            except ValueError:
+                # 過剰 task_done は無視する
+                pass
+            return track
+
+    async def put_queue_track(self, track: Track) -> None:
+        """キュー末尾へ 1 曲入れる。"""
+        # 並び替えと競合しないようロックする
+        async with self.queue_lock:
+            # 末尾へ投入する
+            await self.queue.put(track)
+
+    async def remove_queue_index(self, index: int) -> Optional[Track]:
+        """0 始まり index の曲をキューから外して返す。"""
+        # 並び替えと競合しないようロックする
+        async with self.queue_lock:
+            # 内部 deque を取得する
+            raw = self._queue_deque()
+            # 取れなければ失敗
+            if raw is None:
+                return None
+            # 範囲外は失敗
+            if not (0 <= index < len(raw)):
+                return None
+            # 指定位置を取り除く
+            removed = raw[index]
+            del raw[index]
+            try:
+                # get 相当として unfinished を 1 減らす
+                self.queue.task_done()
+            except ValueError:
+                # 整合不能時は無視する
+                pass
+            # ページが溢れたら戻す
+            max_page = max(0, (len(raw) - 1) // 5) if raw else 0
+            if self.queue_page > max_page:
+                self.queue_page = max_page
+            return removed
+
+    async def clear_queue(self):
+        # 並び替え・取出と直列化する
+        async with self.queue_lock:
+            # 残件をすべて捨てる
+            while True:
+                try:
+                    # 非ブロッキングで取る
+                    self.queue.get_nowait()
+                    # unfinished を減らす
+                    self.queue.task_done()
+                except asyncio.QueueEmpty:
+                    # 空になったら終了
+                    break
+                except ValueError:
+                    # task_done 過剰は握りつぶして継続する
+                    continue
+            # 空の新 Queue に戻す（ここは待機者が居ない前提の掃除）
+            self.queue = asyncio.Queue()
+            # ページも先頭へ
+            self.queue_page = 0
 
     def stop_progress_updater(self):
         # プログレス更新タスクが存在し、まだ完了していないか判定する

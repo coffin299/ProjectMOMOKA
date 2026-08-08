@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import random
 import time
 from typing import Optional
 
@@ -764,16 +763,8 @@ class MusicControllerView(discord.ui.LayoutView):
             await self._edit_after_interaction(interaction, state)
             # 終了する
             return
-        # 既存 /shuffle と同じくキュー内容をリスト化して並べ替える
-        queue_list = list(state.queue._queue)
-        # シャッフルする
-        random.shuffle(queue_list)
-        # 新しい Queue に差し替える
-        state.queue = asyncio.Queue()
-        # 並べ替えた曲を順に戻す
-        for item in queue_list:
-            # キューへ投入する
-            await state.queue.put(item)
+        # 待ちキューだけを in-place シャッフルする（再生中曲は触らない）
+        await state.shuffle_queue()
         # 操作時刻を更新する
         state.update_activity()
         # 変更ログを残す

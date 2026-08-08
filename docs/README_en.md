@@ -245,7 +245,7 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 #### Host ops GUI (Electron) vs future guild dashboard
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
-- Host GUI WebSocket logs do **not** use a query-string token (`Sec-WebSocket-Protocol: bearer.<token>` or a first-message auth payload)
+- Host GUI WebSocket logs do **not** use a query-string token (first-message JSON auth `{type:"auth",token}`; `Sec-WebSocket-Protocol: bearer.<token>` still accepted for compatibility)
 - LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 
@@ -321,7 +321,7 @@ llm:
 | `/play` `/pause` `/resume` `/stop` `/skip` | Playback |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | Queue & volume |
 
-Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle. Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
+Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Position is based on real PCM frames (does not advance during startup silence padding or before audio starts). Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle (in-place queue shuffle; does not replace the Queue object). Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
 Playlist fetch limit is `music.max_playlist_items` (default 10000).
 The maximum number of retained guild playback states is `music.max_guilds` (default 50). When full, the oldest inactive state is evicted before a new state can be accepted.
 Music messages are sent `@silent` (suppress notifications) by default.

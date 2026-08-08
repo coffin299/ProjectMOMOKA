@@ -247,7 +247,7 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 #### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
-- Host GUI の WebSocket ログは **クエリ token を使わない**（`Sec-WebSocket-Protocol: bearer.<token>` または接続直後の認証メッセージ）
+- Host GUI の WebSocket ログは **クエリ token を使わない**（接続直後の JSON 認証メッセージ `{type:"auth",token}`。互換で `Sec-WebSocket-Protocol: bearer.<token>` も可）
 - LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証）
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない
 
@@ -343,7 +343,7 @@ music:
 | `/play` `/pause` `/resume` `/stop` `/skip` | 再生制御 |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | キュー・音量など |
 
-Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
+Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。位置は実 PCM フレーム基準（起動中の無音パディングや未出力時は進めない）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle（待ちキューは Queue 差し替えなしの in-place シャッフル）。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
 プレイリスト取得上限は `music.max_playlist_items`（既定 10000）。
 保持するギルド再生状態の上限は `music.max_guilds`（既定 50）。上限到達時は非再生の最古状態を削除し、削除完了後に新規状態を受け付けます。
 音楽メッセージは既定で `@silent`（通知抑制）送信。

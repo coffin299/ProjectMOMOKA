@@ -5,7 +5,6 @@ import io
 import itertools
 import logging
 import math
-import random
 import re
 import subprocess
 import time
@@ -697,7 +696,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 成功したものだけ積む
             if track is not None:
                 # キューへ入れる
-                await state.queue.put(track)
+                await state.put_queue_track(track)
         # 現在曲を復元する
         current = self._track_from_persist_dict(session.get("current_track") or {})
         # 現在曲もキューも無ければ恒久破棄して終了
@@ -1214,7 +1213,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                     # LoopMode.ALL なら終了曲を先にキューへ戻す
                     if finished_track and state.loop_mode == LoopMode.ALL:
                         # 次曲取得より前に再投入を完了させる
-                        await state.queue.put(finished_track)
+                        await state.put_queue_track(finished_track)
                     # 次曲（またはキュー終了処理）へ進む
                     await self._play_next_song(guild_id)
                 finally:
@@ -1330,7 +1329,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                 and state.loop_mode == LoopMode.ALL
                 and not is_no_audio_fail
             ):
-                await state.queue.put(finished_track)
+                await state.put_queue_track(finished_track)
 
             # 次の曲を再生（キューが空の場合はミキサーの停止も行う）
             await self._play_next_song(guild_id)
@@ -1416,14 +1415,14 @@ class MusicCog(commands.Cog, name="music_cog"):
             track_to_play = state.current_track
         elif not state.is_playing and not state.queue.empty() and not is_seek_operation:
             try:
-                track_to_play = await state.queue.get()
-                state.queue.task_done()
+                # ロック付き非ブロッキング取出（shuffle 差し替えとの競合を防ぐ）
+                track_to_play = await state.pop_queue_track()
             except asyncio.CancelledError:
                 # タスク停止要求は上位へ伝播して正常にキャンセルする
                 raise
             except Exception:
                 # キュー取得時の予期しない失敗は再生対象なしとして処理する
-                pass
+                track_to_play = None
 
         if not track_to_play:
             # 終了前に URL 再生履歴を残す（この直後に current_track を消す）
@@ -1791,7 +1790,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                 )
             # Loop ALL のシーク失敗時のみ再投入を維持する
             if state.loop_mode == LoopMode.ALL and track_to_play and not is_seek_operation:
-                await state.queue.put(track_to_play)
+                await state.put_queue_track(track_to_play)
             state.current_track = None
             state.reset_playback_tracking()
             # 再生エラー時はプログレスバー更新を停止する
@@ -2407,7 +2406,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                     # ストリームURLを初期状態としてNoneにする
                     track.stream_url = None
                     # トラックオブジェクトを非同期の再生キューに追加する
-                    await state.queue.put(track)
+                    await state.put_queue_track(track)
                     # 最初のトラックである（added_countが0）か判定する
                     if added_count == 0:
                         # 最初のトラックへの参照を保持する
@@ -3157,11 +3156,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                                       error="シャッフルするにはキューに2曲以上必要です。")
             return
 
-        queue_list = list(state.queue._queue)
-        random.shuffle(queue_list)
-        state.queue = asyncio.Queue()
-        for item in queue_list:
-            await state.queue.put(item)
+        # Queue オブジェクトを差し替えず in-place で並べ替える
+        await state.shuffle_queue()
         await self._send_response(ctx, "queue_shuffled")
         # Now Playing のキュー表示を更新する
         await self._update_now_playing_message_ui(ctx.guild.id)
@@ -3206,11 +3202,11 @@ class MusicCog(commands.Cog, name="music_cog"):
             await self._send_response(ctx, "invalid_queue_number", ephemeral=True)
             return
 
-        queue_list = list(state.queue._queue)
-        removed_track = queue_list.pop(actual_index)
-        state.queue = asyncio.Queue()
-        for item in queue_list:
-            await state.queue.put(item)
+        # Queue を差し替えず指定位置だけ外す
+        removed_track = await state.remove_queue_index(actual_index)
+        if removed_track is None:
+            await self._send_response(ctx, "invalid_queue_number", ephemeral=True)
+            return
         await self._send_response(ctx, "song_removed", title=removed_track.title)
         # Now Playing のキュー表示を更新する
         await self._update_now_playing_message_ui(ctx.guild.id)

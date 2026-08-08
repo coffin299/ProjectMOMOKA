@@ -75,8 +75,8 @@ class HostGuiAuth:
 
 def generate_host_gui_token() -> str:
     """ホスト GUI 用 Bearer トークンを生成する。"""
-    # URL セーフな十分長い乱数
-    return secrets.token_urlsafe(32)
+    # hex のみ（小文字）。WebSocket subprotocol で大小変換されても壊れない
+    return secrets.token_hex(32)
 
 
 def _tokens_match(provided: Optional[str], expected: str) -> bool:
@@ -88,11 +88,66 @@ def _tokens_match(provided: Optional[str], expected: str) -> bool:
     if not provided or not expected:
         return False
     try:
+        # subprotocol 経由で小文字化される環境向けに両方 lower で比較する
+        # （生成トークンは hex 小文字。旧 urlsafe 混在時も救済）
+        left = provided.strip().lower()
+        right = expected.strip().lower()
+        # 長さ不一致は compare_digest 前に弾く
+        if len(left) != len(right):
+            return False
         # タイミング攻撃耐性のある比較を使う
-        return hmac.compare_digest(provided, expected)
+        return hmac.compare_digest(left, right)
     except (TypeError, ValueError):
         # 比較不能も拒否扱い
         return False
+
+
+def _extract_ws_token_from_protocols(
+    offered: list[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Sec-WebSocket-Protocol 一覧から (token, chosen_subprotocol) を返す。"""
+    # 各プロトコル候補を検査する
+    for idx, proto in enumerate(offered):
+        # bearer.<token> 形式
+        if proto.lower().startswith("bearer."):
+            # プレフィックス以降が本体
+            return proto[7:], proto
+        # 一部クライアント向け: 先頭が Bearer で次要素がトークン
+        if proto.lower() == "bearer" and idx + 1 < len(offered):
+            # 次要素をトークン、選択プロトコルは Bearer
+            return offered[idx + 1], proto
+    # 見つからない
+    return None, None
+
+
+def _parse_ws_auth_message(raw: str) -> Optional[str]:
+    """WS 初回テキストからトークンを取り出す。"""
+    # 空は失敗
+    if not raw or not str(raw).strip():
+        return None
+    # JSON または生トークンを解釈する
+    try:
+        # JSON なら type/auth + token
+        payload = json.loads(raw)
+    except Exception:
+        # 生文字列をトークン候補にする
+        return raw.strip() or None
+    # dict 以外は拒否
+    if not isinstance(payload, dict):
+        return None
+    # Bearer 風フィールドも許容
+    parsed_token = (
+        payload.get("token")
+        or payload.get("authorization")
+        or payload.get("auth")
+    )
+    # 文字列でなければ失敗
+    if not isinstance(parsed_token, str):
+        return None
+    # Authorization: Bearer x 形式なら抽出
+    if parsed_token.lower().startswith("bearer "):
+        return parsed_token[7:].strip()
+    return parsed_token.strip() or None
 
 
 def _validate_config_body(body: Any, base: Dict[str, Any]) -> Dict[str, Any]:
@@ -427,45 +482,33 @@ def create_host_gui_app(
 
     @router.websocket("/logs")
     async def ws_logs(websocket: WebSocket) -> None:
-        """ログストリーム（クエリ token 不可。subprotocol Bearer または初回メッセージ）。"""
+        """ログストリーム（クエリ token 不可）。
+
+        認証:
+        - 接続直後の認証メッセージ（JSON `{type,token}` または生トークン）を必須とする
+        - Sec-WebSocket-Protocol: bearer.<token> も互換として受理（任意）
+        """
         # Sec-WebSocket-Protocol から Bearer 系を探す
         raw_protocols = websocket.headers.get("sec-websocket-protocol") or ""
         # カンマ区切りプロトコル一覧
         offered = [part.strip() for part in raw_protocols.split(",") if part.strip()]
-        # 採用する subprotocol（エコー返却用）
-        chosen_subprotocol: Optional[str] = None
-        # 抽出したトークン
-        token: Optional[str] = None
-        # 各プロトコル候補を検査する
-        for idx, proto in enumerate(offered):
-            # bearer.<token> 形式
-            if proto.lower().startswith("bearer."):
-                # プレフィックス以降が本体
-                token = proto[7:]
-                # ネゴシエート用にそのまま採用
-                chosen_subprotocol = proto
-                break
-            # 一部クライアント向け: 先頭が Bearer で次要素がトークン
-            if proto.lower() == "bearer" and idx + 1 < len(offered):
-                # 次要素をトークン候補にする
-                token = offered[idx + 1]
-                # Bearer を選択プロトコルにする
-                chosen_subprotocol = proto
-                break
-        # subprotocol 提示ありならそれで完結（不一致は即切断）
+        # subprotocol からトークン抽出
+        proto_token, chosen_subprotocol = _extract_ws_token_from_protocols(offered)
+        # subprotocol だけで認証成功したか
+        authed_via_protocol = bool(offered) and _tokens_match(
+            proto_token, auth.token
+        )
+        # クライアントがプロトコルを提示した場合、一致時のみエコーして accept
         if offered:
-            # トークン不一致または抽出失敗
-            if not _tokens_match(token, auth.token):
-                # 握手前に閉じる
+            # 不一致ならメッセージ認証へフォールバックできない環境があるため拒否
+            # （現行 Electron はプロトコル無しで繋ぐ）
+            if not authed_via_protocol:
                 await websocket.close(code=4401)
                 return
             # 選択プロトコル付きで accept
-            if chosen_subprotocol:
-                await websocket.accept(subprotocol=chosen_subprotocol)
-            else:
-                await websocket.accept()
+            await websocket.accept(subprotocol=chosen_subprotocol)
         else:
-            # クエリではなく初回メッセージ認証へ進む
+            # プロトコル無し: メッセージ認証
             await websocket.accept()
             try:
                 # 認証タイムアウト（秒）
@@ -474,35 +517,10 @@ def create_host_gui_app(
                 # 受信失敗は切断
                 await websocket.close(code=4401)
                 return
-            # JSON または生トークンを解釈する
-            parsed_token: Optional[str] = None
-            try:
-                # JSON なら type/auth + token
-                payload = json.loads(raw)
-            except Exception:
-                # 生文字列をトークン候補にする
-                parsed_token = raw.strip() or None
-            else:
-                # dict 以外は拒否
-                if isinstance(payload, dict):
-                    # Bearer 風フィールドも許容
-                    parsed_token = (
-                        payload.get("token")
-                        or payload.get("authorization")
-                        or payload.get("auth")
-                    )
-                    # Authorization: Bearer x 形式なら抽出
-                    if isinstance(parsed_token, str) and parsed_token.lower().startswith(
-                        "bearer "
-                    ):
-                        parsed_token = parsed_token[7:].strip()
-                else:
-                    parsed_token = None
+            # メッセージからトークンを取る
+            parsed_token = _parse_ws_auth_message(raw)
             # 不一致なら切断
-            if not _tokens_match(
-                parsed_token if isinstance(parsed_token, str) else None,
-                auth.token,
-            ):
+            if not _tokens_match(parsed_token, auth.token):
                 await websocket.close(code=4401)
                 return
         # 購読者に追加

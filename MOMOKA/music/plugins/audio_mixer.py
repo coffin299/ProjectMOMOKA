@@ -284,6 +284,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         self.guild_id = guild_id
         # read()呼び出し回数（FFmpeg起動猶予の判定に使用）
         self._read_count = 0
+        # 実 PCM（無音パディング以外）を出したフレーム数（再生位置算出用）
+        self._produced_audio_frames = 0
         # 1フレームでもオーディオを出力したかどうか
         self._has_produced_audio = False
         # yt-dlp パイプ用プロセス（未使用時は None）
@@ -524,6 +526,11 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 # 以後の二重クローズを避けるため参照を消す
                 self._stderr_file = None
 
+    def get_produced_audio_seconds(self) -> float:
+        """実 PCM を出した累積秒数を返す（起動時の無音パディングは含めない）。"""
+        # 1 フレーム = 20ms
+        return self._produced_audio_frames * 0.02
+
     def read(self) -> bytes:
         """
         PCMフレームを読み取る。
@@ -541,6 +548,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                     f"after {self._read_count} reads ({self._read_count * 20}ms)"
                 )
             self._has_produced_audio = True
+            # 実データフレームだけ位置に加算する
+            self._produced_audio_frames += 1
             return data
 
         # --- 空データが返された ---

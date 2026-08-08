@@ -50,23 +50,26 @@ export function useLogStream(maxLines = 10000) {
 
     const connect = () => {
       if (closed) return;
-      // トークンはクエリに載せず Sec-WebSocket-Protocol で渡す
-      const protocols = cfg.token ? [`bearer.${cfg.token}`] : undefined;
-      const ws = protocols
-        ? new WebSocket(cfg.wsLogsUrl, protocols)
-        : new WebSocket(cfg.wsLogsUrl);
+      // 毎回最新 config を読む
+      const live = getHostConfig();
+      if (!live.token) return;
+      // クエリにも subprotocol にも token を載せない（接続直後メッセージで認証）
+      const ws = new WebSocket(live.wsLogsUrl);
       wsRef.current = ws;
       ws.onopen = () => {
-        setConnected(true);
-        // subprotocol 非対応環境向けフォールバック（初回メッセージ認証）
-        if (cfg.token && !protocols) {
-          ws.send(JSON.stringify({ type: "auth", token: cfg.token }));
+        // 必須: 初回メッセージ認証
+        try {
+          ws.send(JSON.stringify({ type: "auth", token: live.token }));
+        } catch {
+          /* ignore */
         }
+        setConnected(true);
       };
       ws.onclose = () => {
         setConnected(false);
         if (!closed) {
-          retry = window.setTimeout(connect, 1500);
+          // 再起動直後は API 起動待ちがあるので少し長めにリトライ
+          retry = window.setTimeout(connect, 2000);
         }
       };
       ws.onerror = () => {
@@ -79,6 +82,8 @@ export function useLogStream(maxLines = 10000) {
       ws.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data) as Omit<LogEntry, "id">;
+          // auth 応答などで message が無いものは無視
+          if (!data || typeof data.message !== "string") return;
           setEntries((prev) => {
             const next = [...prev, { ...data, id: ++seq }];
             if (next.length > maxLines) {
