@@ -396,7 +396,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "Now Playing: Pause / Skip / Stop（確認）/ Loop / QLoop / QShuffle。"
                 "次曲があるときだけキュー表示（最大5曲＋ページング）。\n\n"
                 "**ダウンロード（PLANA）**\n"
-                "• `/download_video <query>` — 動画取得 → file.io 共有（約 10 分で失効）\n"
+                "• `/download_video <query>` — 動画取得 → Tunnel 一時共有（約 10 分で失効）\n"
                 "• `/download_audio <query> <format>` — 音声抽出"
                 "（mp3 / m4a / opus / flac / wav）"
             )
@@ -416,7 +416,7 @@ class HelpLayoutView(discord.ui.LayoutView):
             "Now Playing: Pause / Skip / Stop (confirm) / Loop / QLoop / QShuffle. "
             "Queue (up to 5 + paging) only when upcoming tracks exist.\n\n"
             "**Download (PLANA)**\n"
-            "• `/download_video <query>` — fetch video → file.io share (~10 min expiry)\n"
+            "• `/download_video <query>` — fetch video → Tunnel temporary share (~10 min expiry)\n"
             "• `/download_audio <query> <format>` — extract audio "
             "(mp3 / m4a / opus / flac / wav)"
         )

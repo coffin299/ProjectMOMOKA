@@ -91,15 +91,15 @@
 
 ## Media Downloader / メディアダウンローダー
 
-**JA:** 動画・音声を取得し、file.io 経由で共有します（リンクは約 10 分で失効）。  
-**EN:** Fetch video or audio and share via file.io (links expire in ~10 minutes).
+**JA:** 動画・音声を取得し、Cloudflare Tunnel 経由の一時リンクで共有します（約 10 分で失効）。  
+**EN:** Fetch video or audio and share via a Cloudflare Tunnel temporary link (~10 min expiry).
 
 - `/download_video` — **JA:** URL または検索語。フォーマット選択（Components V2）後に共有 · **EN:** URL or search; pick a format (Components V2), then share
 - `/download_audio` — **JA:** 音声のみ（mp3 / m4a / opus / flac / wav） · **EN:** audio only (mp3 / m4a / opus / flac / wav)
 
 ![Media Downloader](https://momoka-project.com/assets/images/media_downloader.png)
 
-*`/download_video` / `/download_audio` — JA: フォーマット選択後、file.io 経由で共有（約 10 分で失効）。 / EN: format picker, then share via file.io (~10 min expiry).*
+*`/download_video` / `/download_audio` — JA: フォーマット選択後、Tunnel 一時リンクで共有（約 10 分で失効）。 / EN: format picker, then share via Tunnel temporary link (~10 min expiry).*
 
 ---
 

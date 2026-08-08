@@ -697,6 +697,10 @@ if __name__ == "__main__":
         BgutilProviderConfig,
         BgutilProviderManager,
     )
+    from MOMOKA.media_downloader.tunnel_file_server import (
+        MediaShareConfig,
+        TunnelFileServer,
+    )
 
     # configs/*.yaml を統合した設定辞書を読み込む
     try:
@@ -720,6 +724,9 @@ if __name__ == "__main__":
     bgutil_config = BgutilProviderConfig.from_mapping(merged_config)
     # PLANA/ARONAで共有するProvider Managerを一度だけ生成する。
     bgutil_manager = BgutilProviderManager(bgutil_config)
+    # /download_* 用の localhost 一時配信（Cloudflare Tunnel 公開）
+    media_share_config = MediaShareConfig.from_mapping(merged_config)
+    media_share_server = TunnelFileServer(media_share_config)
 
     # 通常チャット / 討論の並列背圧を初期化する
     try:
@@ -771,6 +778,8 @@ if __name__ == "__main__":
     )
     # レジストリへ PLANA を登録する
     registry.register('plana', plana_bot, plana_display)
+    # 一時配信サーバを primary に渡す（cog が参照）
+    plana_bot.media_share_server = media_share_server
     print(f"INFO: PLANA ボットを作成し、レジストリへ登録しました。")
 
     # --- ARONA（コンパニオンボット）の作成 ---
@@ -881,6 +890,19 @@ if __name__ == "__main__":
             set_bgutil_provider_base_url(
                 bgutil_manager.base_url if provider_ready else None
             )
+            # Cloudflare Tunnel 向け localhost 配信を起動する
+            try:
+                media_share_ready = await media_share_server.start()
+            except Exception as e_share:
+                logging.error(
+                    "media_share failed to start: %s", e_share, exc_info=True
+                )
+                media_share_ready = False
+            if not media_share_ready:
+                logging.warning(
+                    "media_share is not ready; /download_* share links will fail "
+                    "until external_services.media_share is configured."
+                )
             # 両ボットを並行起動する
             await asyncio.gather(
                 plana_bot.start(plana_token),
@@ -895,6 +917,8 @@ if __name__ == "__main__":
         finally:
             # キャンセル・Ctrl+Cを含む全経路で両Botを閉じる。
             await registry.close_all()
+            # 一時配信を止める
+            await media_share_server.stop()
             # Bot停止後に自分が所有するProviderだけを停止する。
             await bgutil_manager.stop()
             # ホスト Electron GUI も落とす（コンソール pause 阻害防止）

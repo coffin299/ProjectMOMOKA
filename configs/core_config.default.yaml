@@ -62,3 +62,22 @@ external_services:
     port: 4416
     # 起動完了待ちの上限秒数
     startup_timeout_seconds: 20
+  # /download_* 一時共有（Cloudflare Named Tunnel → localhost）
+  media_share:
+    # false ならローカル配信を起動しない
+    enabled: true
+    # 待受は loopback のみ（127.0.0.1 / localhost / ::1）
+    bind_host: 127.0.0.1
+    # Tunnel ingress のポートと一致させる
+    port: 8765
+    # Cloudflare Public Hostname（https・末尾スラッシュ無し）
+    public_base_url: https://downloader.momoka-project.com
+    # 共有リンクの有効秒数
+    expire_seconds: 600
+    # 配信用コピーの置き場（リポジトリ相対可）
+    storage_dir: temp_media_share
+    # cloudflared は OS サービス等で別途常駐（Bot からは起動しない）
+    cloudflared:
+      managed: false
+      binary: cloudflared
+      config_path: ''

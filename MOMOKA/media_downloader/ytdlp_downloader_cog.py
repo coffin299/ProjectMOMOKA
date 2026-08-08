@@ -1,5 +1,5 @@
 # MOMOKA/media_downloader/ytdlp_downloader_cog.py
-# yt-dlp + file.io 一時共有ダウンローダー（Components V2 UI）。
+# yt-dlp + Cloudflare Tunnel 一時共有ダウンローダー（Components V2 UI）。
 from __future__ import annotations
 
 import asyncio
@@ -21,13 +21,13 @@ from MOMOKA.media_downloader.allowlist import (
     load_allowed_extractors,
 )
 from MOMOKA.media_downloader.error.errors import YTDLPExceptionHandler
-from MOMOKA.media_downloader.fileio_uploader import FileIoUploader
+from MOMOKA.media_downloader.tunnel_file_server import TunnelFileServer
 from MOMOKA.music.plugins.ytdlp_wrapper import apply_youtube_ejs_opts
 from MOMOKA.storage import NS_FILEIO_DELETION_SCHEDULE, resolve_settings_db
 from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 # --- 設定項目 ---
-# ローカル削除までの秒数（file.io expires=10m と揃える）
+# 共有リンク失効・ローカル掃除までの秒数（media_share.expire_seconds と揃える想定）
 DELETE_DELAY_SECONDS = 600
 # 一時ダウンロードディレクトリ
 DOWNLOAD_DIR = "temp_media_download"
@@ -392,17 +392,17 @@ class VideoFormatSelect(discord.ui.Select):
                 await interaction.edit_original_response(content=None, embed=None, view=progress)
                 return
 
-            # アップロード進捗へ更新
+            # 公開準備進捗へ更新
             progress.update(
                 pick_str(
                     lang,
                     ja=(
-                        f"### 🔼 アップロード中\n"
-                        f"**{video_title}** を file.io にアップロードしています..."
+                        f"### 🔼 公開準備中\n"
+                        f"**{video_title}** を一時配信リンクにしています..."
                     ),
                     en=(
-                        f"### 🔼 Uploading\n"
-                        f"Uploading **{video_title}** to file.io..."
+                        f"### 🔼 Preparing link\n"
+                        f"Preparing a temporary share link for **{video_title}**..."
                     ),
                 ),
                 accent=_ACCENT_PROGRESS,
@@ -410,12 +410,21 @@ class VideoFormatSelect(discord.ui.Select):
             await interaction.edit_original_response(content=None, embed=None, view=progress)
             # アップロードファイル名
             upload_filename = f"{video_title}.mp4"
-            # file.io へアップロードする
-            file_key, download_link = await self.cog.fileio_uploader.upload_file(
+            # Tunnel 一時配信へ登録する
+            share = self.cog.media_share
+            if share is None or not share.enabled:
+                progress.update(
+                    self.cog.exception_handler.get_upload_error(lang=lang),
+                    accent=_ACCENT_ERROR,
+                )
+                await interaction.edit_original_response(content=None, embed=None, view=progress)
+                return
+            file_key, download_link = await share.register(
                 downloaded_file_path,
                 upload_filename,
+                expire_seconds=share.expire_seconds,
             )
-            # アップロード失敗
+            # 登録失敗
             if not download_link:
                 progress.update(
                     self.cog.exception_handler.get_upload_error(lang=lang),
@@ -425,7 +434,7 @@ class VideoFormatSelect(discord.ui.Select):
                 return
 
             # 有効期限（分）
-            minutes = int(DELETE_DELAY_SECONDS / 60)
+            minutes = int(share.expire_seconds / 60)
             # 完了 LayoutView
             ready = DownloadReadyLayoutView(
                 title=video_title,
@@ -436,7 +445,7 @@ class VideoFormatSelect(discord.ui.Select):
             )
             # 完了表示へ差し替え
             await interaction.edit_original_response(content=None, embed=None, view=ready)
-            # 期限後削除をスケジュール
+            # 期限後 revoke をスケジュール
             if file_key:
                 await self.cog.schedule_fileio_deletion(file_key)
         except Exception as e:
@@ -547,21 +556,20 @@ class VideoSelectLayoutView(discord.ui.LayoutView):
 
 
 class YtdlpDownloaderCog(commands.Cog):
-    """`/download_audio` `/download_video` — file.io 経由の一時メディア共有。"""
+    """`/download_audio` `/download_video` — Cloudflare Tunnel 経由の一時メディア共有。"""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        # 任意 API キー（configs の music.file_io_api_key 等）
-        music_cfg = (getattr(bot, "config", None) or {}).get("music") or {}
-        api_key = music_cfg.get("file_io_api_key") if isinstance(music_cfg, dict) else None
-        # file.io アップローダ
-        self.fileio_uploader = FileIoUploader(api_key=api_key)
+        # main で起動した共有サーバ（無ければ None）
+        self.media_share: Optional[TunnelFileServer] = getattr(
+            bot, "media_share_server", None
+        )
         self.exception_handler = YTDLPExceptionHandler()
         # SettingsDB
         self.settings_db = resolve_settings_db(bot)
-        # 削除予定の UNIX 時刻を key ごとに保持する
+        # 削除予定の UNIX 時刻を token ごとに保持する
         self._fileio_deletion_schedule: Dict[str, float] = {}
-        # 稼働中の削除タスクを key ごとに保持する
+        # 稼働中の削除タスクを token ごとに保持する
         self._fileio_deletion_tasks: Dict[str, asyncio.Task[None]] = {}
         # 削除予定の更新を直列化する
         self._fileio_deletion_lock = asyncio.Lock()
@@ -569,6 +577,11 @@ class YtdlpDownloaderCog(commands.Cog):
         # 起動時に allowlist を読み込み（default.json → json コピー込み）
         load_allowed_extractors()
 
+    def _share_expire_seconds(self) -> int:
+        """共有 TTL 秒（サーバ設定優先）。"""
+        if self.media_share is not None:
+            return int(self.media_share.expire_seconds)
+        return DELETE_DELAY_SECONDS
     def _reject_if_not_allowed(
         self,
         *,
@@ -602,7 +615,9 @@ class YtdlpDownloaderCog(commands.Cog):
         return None
 
     async def cog_load(self) -> None:
-        """永続化済みの file.io 削除予定を復元する。"""
+        """main からの共有サーバ参照を取り直し、revoke 予定を復元する。"""
+        # bot 属性が後から付く場合に備えて再取得
+        self.media_share = getattr(self.bot, "media_share_server", None)
         # 保存済みの削除予定を読み込む
         self._fileio_deletion_schedule = self._load_fileio_deletion_schedule()
         # 各予定を現在のイベントループで再開する
@@ -622,14 +637,14 @@ class YtdlpDownloaderCog(commands.Cog):
             schedule_data = self.settings_db.load(NS_FILEIO_DELETION_SCHEDULE)
         except Exception:
             # 読み込み不能な予定は安全に無視する
-            logger.exception("file.io 削除予定の読み込みに失敗しました。")
+            logger.exception("共有 revoke 予定の読み込みに失敗しました。")
             return {}
         # 無ければ空
         if schedule_data is None:
             return {}
         # 辞書以外は予定として扱わない
         if not isinstance(schedule_data, dict):
-            logger.error("file.io 削除予定の形式が不正です。")
+            logger.error("共有 revoke 予定の形式が不正です。")
             return {}
         # 検証済みの削除予定を格納する
         schedule: Dict[str, float] = {}
@@ -643,7 +658,7 @@ class YtdlpDownloaderCog(commands.Cog):
                 schedule[file_key] = float(delete_at)
             except (TypeError, ValueError):
                 # 時刻へ変換できない値は無視する
-                logger.warning("file.io 削除予定の時刻が不正です: %s", file_key)
+                logger.warning("共有 revoke 予定の時刻が不正です: %s", file_key[:8])
         return schedule
 
     def _save_fileio_deletion_schedule(self) -> None:
@@ -655,10 +670,10 @@ class YtdlpDownloaderCog(commands.Cog):
                 self._fileio_deletion_schedule,
             )
         except Exception:
-            logger.exception("file.io 削除予定の保存に失敗しました。")
+            logger.exception("共有 revoke 予定の保存に失敗しました。")
 
     def _start_fileio_deletion_task(self, file_key: str, delete_at: float) -> None:
-        """同じ key の重複実行を避けて削除タスクを開始する。"""
+        """同じ token の重複実行を避けて revoke タスクを開始する。"""
         # すでに実行中なら同じ key を重複予約しない
         existing_task = self._fileio_deletion_tasks.get(file_key)
         if existing_task and not existing_task.done():
@@ -674,10 +689,10 @@ class YtdlpDownloaderCog(commands.Cog):
         *,
         delete_at: Optional[float] = None,
     ) -> None:
-        """削除予定を保存して期限後の file.io 削除を開始する。"""
+        """削除予定を保存して期限後の共有 revoke を開始する。"""
         # 削除予定時刻が無ければ標準の有効期限を使う
         scheduled_time = (
-            time.time() + DELETE_DELAY_SECONDS
+            time.time() + self._share_expire_seconds()
             if delete_at is None
             else delete_at
         )
@@ -691,12 +706,13 @@ class YtdlpDownloaderCog(commands.Cog):
             self._start_fileio_deletion_task(file_key, scheduled_time)
 
     async def _delete_fileio_file_at(self, file_key: str, delete_at: float) -> None:
-        """保存済みの予定時刻まで待機して file.io ファイルを削除する。"""
+        """保存済みの予定時刻まで待機して共有トークンを revoke する。"""
         try:
             # 過去の予定は再起動後すぐに実行する
             await asyncio.sleep(max(0.0, delete_at - time.time()))
-            # file.io DELETE を実行する
-            await self.fileio_uploader.delete_file(file_key)
+            # ローカル共有を無効化する
+            if self.media_share is not None:
+                await self.media_share.revoke(file_key)
         except asyncio.CancelledError:
             # 停止時は永続予定を残したまま上げる
             raise
@@ -714,7 +730,7 @@ class YtdlpDownloaderCog(commands.Cog):
 
     @app_commands.command(
         name="download_audio",
-        description="Downloads audio and shares it via file.io.",
+        description="Downloads audio and shares it via a temporary Tunnel link.",
     )
     @app_commands.describe(
         query="YouTube URL or search query.",
@@ -832,26 +848,36 @@ class YtdlpDownloaderCog(commands.Cog):
                 )
                 await message.edit(view=progress)
                 return
-            # アップロード進捗
+            # 公開準備進捗
             progress.update(
                 pick_str(
                     lang,
                     ja=(
-                        f"### 🔼 アップロード中\n"
-                        f"**{video_title}** を file.io にアップロードしています..."
+                        f"### 🔼 公開準備中\n"
+                        f"**{video_title}** を一時配信リンクにしています..."
                     ),
                     en=(
-                        f"### 🔼 Uploading\n"
-                        f"Uploading **{video_title}** to file.io..."
+                        f"### 🔼 Preparing link\n"
+                        f"Preparing a temporary share link for **{video_title}**..."
                     ),
                 )
             )
             await message.edit(view=progress)
             upload_filename = f"{video_title}.{audio_format}"
-            file_key, download_link = await self.fileio_uploader.upload_file(
-                output_path, upload_filename
+            share = self.media_share
+            if share is None or not share.enabled:
+                progress.update(
+                    self.exception_handler.get_upload_error(lang=lang),
+                    accent=_ACCENT_ERROR,
+                )
+                await message.edit(view=progress)
+                return
+            file_key, download_link = await share.register(
+                output_path,
+                upload_filename,
+                expire_seconds=share.expire_seconds,
             )
-            # アップロード失敗
+            # 登録失敗
             if not download_link:
                 progress.update(
                     self.exception_handler.get_upload_error(lang=lang),
@@ -861,7 +887,7 @@ class YtdlpDownloaderCog(commands.Cog):
                 return
 
             # 完了表示
-            minutes = int(DELETE_DELAY_SECONDS / 60)
+            minutes = int(share.expire_seconds / 60)
             ready = DownloadReadyLayoutView(
                 title=video_title,
                 download_link=download_link,
@@ -870,7 +896,7 @@ class YtdlpDownloaderCog(commands.Cog):
                 lang=lang,
             )
             await message.edit(view=ready)
-            # 期限後削除
+            # 期限後 revoke
             if file_key:
                 await self.schedule_fileio_deletion(file_key)
         except Exception as e:
@@ -910,7 +936,7 @@ class YtdlpDownloaderCog(commands.Cog):
 
     @app_commands.command(
         name="download_video",
-        description="Downloads a video and shares it via file.io.",
+        description="Downloads a video and shares it via a temporary Tunnel link.",
     )
     @app_commands.describe(query="URL or search query of the video.")
     async def download_video(self, interaction: discord.Interaction, query: str):

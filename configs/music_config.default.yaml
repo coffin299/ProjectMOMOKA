@@ -1,6 +1,6 @@
 # 音楽再生（Music Cog）設定
 # 実行時は configs/music_config.yaml を編集する
-# /download_* の file.io キーもここに置く（music セクション配下）
+# /download_* の一時共有は core_config.external_services.media_share（Cloudflare Tunnel）
 
 music:
   # ギルド新規接続時の既定音量（0–100、%）
@@ -23,8 +23,6 @@ music:
   # 原本は yt-dlp に直接渡さず data/youtube_cookies.runtime.txt へコピーして使用する
   # 再読込: 運用者向け /reload_yt_cookies
   youtube_cookie_file: youtube_cookies.txt
-  # file.io の API キー（任意）。空なら匿名 POST。設定時は Bearer 付き
-  file_io_api_key: ''
   # ニコニコ動画ログイン（任意。プレミアム／制限コンテンツ用）
   niconico:
     # ニコニコのメールアドレス

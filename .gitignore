@@ -54,4 +54,7 @@ configs/*_config.yaml
 # メディアダウンローダー allowlist（ランタイムコピー。*.default.json はコミット可）
 configs/media_downloader_allowlist.json
 !configs/media_downloader_allowlist.default.json
+# /download_* 一時配信用コピー
+temp_media_download/
+temp_media_share/
 /models/image-models/modelA/

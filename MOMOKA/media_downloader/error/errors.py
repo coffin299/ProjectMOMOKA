@@ -81,7 +81,7 @@ def _is_expected_ytdlp_error(e: Exception) -> bool:
 
 
 class YTDLPExceptionHandler:
-    """yt-dlpとfile.io関連のエラーを処理し、ユーザー向けのメッセージを生成するクラス。"""
+    """yt-dlpと一時共有（Tunnel）関連のエラーを処理し、ユーザー向けのメッセージを生成するクラス。"""
 
     def handle_exception(self, e: Exception, *, lang: str = "en") -> str:
         """
@@ -96,10 +96,10 @@ class YTDLPExceptionHandler:
         """
         # 想定内（URL / コンテンツ制限）は WARNING、それ以外は ERROR + traceback
         if _is_expected_ytdlp_error(e):
-            logger.warning("YTDLP/file.io expected error: %s", e)
+            logger.warning("YTDLP/media_share expected error: %s", e)
         else:
             logger.error(
-                "An error occurred in YTDLP/file.io process: %s", e, exc_info=True
+                "An error occurred in YTDLP/media_share process: %s", e, exc_info=True
             )
 
         if isinstance(e, yt_dlp.utils.DownloadError):
@@ -191,11 +191,11 @@ class YTDLPExceptionHandler:
         )
 
     def get_upload_error(self, *, lang: str = "en") -> str:
-        """file.io へのアップロードに失敗した場合のエラーメッセージを返す。"""
+        """一時共有リンクの作成に失敗した場合のエラーメッセージを返す。"""
         return pick_str(
             lang,
-            ja="エラー: file.io へのアップロードに失敗しました。",
-            en="Error: Failed to upload to file.io.",
+            ja="エラー: 一時共有リンクの作成に失敗しました（media_share / Tunnel 設定を確認してください）。",
+            en="Error: Failed to create a temporary share link (check media_share / Tunnel settings).",
         )
 
     def get_conversion_error(self, *, lang: str = "en") -> str:

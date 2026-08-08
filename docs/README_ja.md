@@ -114,7 +114,16 @@ Rainbow Six Siege / VALORANT の統計表示。
 
 #### メディアダウンロード（Components V2）
 
-yt-dlp で取得したメディアを file.io 経由で共有します（リンクは約 10 分で失効）。
+yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一時リンクで共有します（約 10 分で失効）。第三者ホストへファイルは上げません。
+
+#### Cloudflare Tunnel（media_share）セットアップ要約
+
+1. Zero Trust で Named Tunnel を作成し、Public Hostname を用意する（例: `downloader.momoka-project.com`）
+2. サービス URL: `http://127.0.0.1:8765`（Bot と同じ PC で cloudflared 常駐）
+3. `configs/core_config.yaml` の `external_services.media_share` で `public_base_url` / `port` を合わせる
+4. Bot 起動後、リンクは `https://downloader.momoka-project.com/d/momoka-file-token-<token>` 形式
+
+推奨: Cloudflare 上で `/d/*` のレート制限。Access（ログイン強制）は付けない（共有リンクが開けなくなる）。
 
 | コマンド | 説明 |
 |---------|------|
@@ -125,7 +134,7 @@ yt-dlp で取得したメディアを file.io 経由で共有します（リン�
 - フォーマット選択では拡張子を先頭表示し、同一解像度では mp4 を webm より優先します
 - 対応外 URL やフォーマット取得不可などのエラーは原因別に案内します（タグ／一覧ページは不可）
 - **許可リスト**: `configs/media_downloader_allowlist.default.json`（初回起動で `media_downloader_allowlist.json` にコピー）。成人向け IE・プライベート IP は拒否。`/play` には適用しない
-- 共有リンクは file.io（expires≈10 分・autoDelete・ダウンロード回数無制限）。ローカル一時ファイルは約 600 秒後に削除されます
+- 共有リンクは Cloudflare Tunnel（expire≈600 秒・トークン URL）。ローカル一時ファイルは約 600 秒後に削除されます
 - YouTube 向けには Deno（推奨）または Node.js 22+ と `yt-dlp[default]` を推奨（音楽機能と同じ EJS 対策）
 
 ---
@@ -392,7 +401,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | `/help` | ヘルプ（Components V2・app→guild→en 初期言語・🇯🇵/🇺🇸 切替・ページング） |
 | `/invite` | PLANA / ARONA 招待（Components V2・app→guild→en） |
 | `/updates` | GitHub コミット履歴（Components V2・全件取得・5件ページング・先頭/前/次/末尾） |
-| `/download_video` `/download_audio` | メディアダウンロード（Components V2・file.io 共有・約 10 分で失効） |
+| `/download_video` `/download_audio` | メディアダウンロード（Components V2・Tunnel 一時共有・約 10 分で失効） |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系（`/ping` は Gateway + Voice WebSocket） |
 | `/latex <expression>` | LaTeX風数式をPNG化（matplotlib mathtext。フルLaTeXではない） |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | その他 |

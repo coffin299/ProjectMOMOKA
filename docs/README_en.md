@@ -114,7 +114,16 @@ Dice, server/user info, gacha, `/latex` (math PNG via matplotlib mathtext), etc.
 
 #### Media download (Components V2)
 
-Fetches media with yt-dlp and shares it via file.io (links expire in ~10 minutes).
+Fetches media with yt-dlp and shares it via a **Cloudflare Named Tunnel** temporary link (~10 min expiry). Files are not uploaded to third-party hosts.
+
+#### Cloudflare Tunnel (`media_share`) setup (summary)
+
+1. Create a Named Tunnel in Zero Trust and add a Public Hostname (e.g. `downloader.momoka-project.com`)
+2. Service URL: `http://127.0.0.1:8765` (run `cloudflared` on the same PC as the bot)
+3. Align `public_base_url` / `port` under `external_services.media_share` in `configs/core_config.yaml`
+4. Links look like `https://downloader.momoka-project.com/d/momoka-file-token-<token>`
+
+Recommended: rate-limit `/d/*` on Cloudflare. Do not force Cloudflare Access login (shared links must stay open).
 
 | Command | Description |
 |---------|-------------|
@@ -125,7 +134,7 @@ Fetches media with yt-dlp and shares it via file.io (links expire in ~10 minutes
 - The format picker shows the extension first and prefers mp4 over webm at the same resolution
 - Unsupported URLs and unavailable formats get cause-specific guidance (tag/listing pages are not allowed)
 - **Allowlist**: `configs/media_downloader_allowlist.default.json` (copied to `media_downloader_allowlist.json` on first start). Adult IEs and private IPs are rejected. Not applied to `/play`
-- Share links use file.io (expires≈10m, autoDelete, unlimited downloads). Local temp files are deleted after ~600 seconds
+- Share links use Cloudflare Tunnel (expire≈600s, token URLs). Local temp files are deleted after ~600 seconds
 - For YouTube, Deno (recommended) or Node.js 22+ plus `yt-dlp[default]` is advised (same EJS guidance as music)
 
 ---
@@ -370,7 +379,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | `/help` | Help (Components V2; app→guild→en initial language; 🇯🇵/🇺🇸 toggle + paging) |
 | `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
 | `/updates` | GitHub commit history (Components V2; fetch all; 5 per page; first/prev/next/last) |
-| `/download_video` `/download_audio` | Media download (Components V2, file.io share, ~10 min expiry) |
+| `/download_video` `/download_audio` | Media download (Components V2, Tunnel temporary share, ~10 min expiry) |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | Info (`/ping` shows Gateway + Voice WebSocket) |
 | `/latex <expression>` | Render LaTeX-like math as PNG (matplotlib mathtext; not full LaTeX) |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | Misc |

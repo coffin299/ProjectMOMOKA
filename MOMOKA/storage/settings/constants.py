@@ -28,7 +28,7 @@ NS_LOGGING_CHANNELS = "logging_channels"
 NS_RESPONSE_TIMES = "response_times"
 # ホスト全体のログビューア設定 namespace を定義する。
 NS_LOG_VIEWER_CONFIG = "log_viewer_config"
-# ホスト全体の file.io 削除予定 namespace を定義する。
+# ホスト全体の一時共有 revoke 予定 namespace（旧 file.io 名を互換維持）。
 NS_FILEIO_DELETION_SCHEDULE = "fileio_deletion_schedule"
 # 後方互換エイリアス（旧名）
 NS_GDRIVE_DELETION_SCHEDULE = NS_FILEIO_DELETION_SCHEDULE

@@ -2005,19 +2005,19 @@ commands_i18n:
         id: Konfigurasi Link Fix (pengganti embed sosial).
     download_audio:
       description:
-        en: Downloads audio and shares it via file.io.
-        ja: 音声をダウンロードし、file.io経由で共有します。
-        ko: 음성을 다운로드해 file.io로 공유합니다.
-        vi: Tải âm thanh và chia sẻ qua file.io.
-        zh-CN: 下载音频并通过 file.io 分享。
-        zh-TW: 下載音訊並透過 file.io 分享。
-        es: Descarga audio y lo comparte por file.io.
-        fr: Télécharge l'audio et le partage via file.io.
-        de: Lädt Audio herunter und teilt es per file.io.
-        pt-BR: Baixa áudio e compartilha via file.io.
-        ru: Скачивает аудио и делится через file.io.
-        th: ดาวน์โหลดเสียงและแชร์ผ่าน file.io
-        id: Unduh audio dan bagikan via file.io.
+        en: Downloads audio and shares it via a temporary Tunnel link.
+        ja: 音声をダウンロードし、一時Tunnelリンクで共有します。
+        ko: 음성을 다운로드해 Tunnel 임시 링크로 공유합니다.
+        vi: Tải âm thanh và chia sẻ qua liên kết Tunnel tạm thời.
+        zh-CN: 下载音频并通过临时 Tunnel 链接分享。
+        zh-TW: 下載音訊並透過臨時 Tunnel 連結分享。
+        es: Descarga audio y lo comparte por un enlace Tunnel temporal.
+        fr: Télécharge l'audio et le partage via un lien Tunnel temporaire.
+        de: Lädt Audio herunter und teilt es per temporärem Tunnel-Link.
+        pt-BR: Baixa áudio e compartilha via link Tunnel temporário.
+        ru: Скачивает аудио и делится временной Tunnel-ссылкой.
+        th: ดาวน์โหลดเสียงและแชร์ผ่านลิงก์ Tunnel ชั่วคราว
+        id: Unduh audio dan bagikan via tautan Tunnel sementara.
       messages:
         unsupported_site:
           en: Downloads from this site are not supported. Please use a URL from an allowed video site.
@@ -2061,19 +2061,19 @@ commands_i18n:
             id: Format audio keluaran.
     download_video:
       description:
-        en: Downloads a video and shares it via file.io.
-        ja: 動画をダウンロードし、file.io経由で共有します。
-        ko: 동영상을 다운로드해 file.io로 공유합니다.
-        vi: Tải video và chia sẻ qua file.io.
-        zh-CN: 下载视频并通过 file.io 分享。
-        zh-TW: 下載影片並透過 file.io 分享。
-        es: Descarga un vídeo y lo comparte por file.io.
-        fr: Télécharge une vidéo et la partage via file.io.
-        de: Lädt ein Video herunter und teilt es per file.io.
-        pt-BR: Baixa um vídeo e compartilha via file.io.
-        ru: Скачивает видео и делится через file.io.
-        th: ดาวน์โหลดวิดีโอและแชร์ผ่าน file.io
-        id: Unduh video dan bagikan via file.io.
+        en: Downloads a video and shares it via a temporary Tunnel link.
+        ja: 動画をダウンロードし、一時Tunnelリンクで共有します。
+        ko: 동영상을 다운로드해 Tunnel 임시 링크로 공유합니다.
+        vi: Tải video và chia sẻ qua liên kết Tunnel tạm thời.
+        zh-CN: 下载视频并通过临时 Tunnel 链接分享。
+        zh-TW: 下載影片並透過臨時 Tunnel 連結分享。
+        es: Descarga un vídeo y lo comparte por un enlace Tunnel temporal.
+        fr: Télécharge une vidéo et la partage via un lien Tunnel temporaire.
+        de: Lädt ein Video herunter und teilt es per temporärem Tunnel-Link.
+        pt-BR: Baixa um vídeo e compartilha via link Tunnel temporário.
+        ru: Скачивает видео и делится временной Tunnel-ссылкой.
+        th: ดาวน์โหลดวิดีโอและแชร์ผ่านลิงก์ Tunnel ชั่วคราว
+        id: Unduh video dan bagikan via tautan Tunnel sementara.
       messages:
         unsupported_site:
           en: Downloads from this site are not supported. Please use a URL from an allowed video site.

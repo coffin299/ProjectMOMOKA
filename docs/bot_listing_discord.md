@@ -99,7 +99,7 @@ Play audio in voice channels with queue, loop, shuffle, and more.
 
 ## Media Downloader
 
-Fetch video or audio and share via file.io (links expire after about 10 minutes).
+Fetch video or audio and share via a Cloudflare Tunnel temporary link (about 10 minutes).
 
 - `/download_video` — URL or search; pick a format (Components V2), then share
 - `/download_audio` — audio only (mp3 / m4a / opus / flac / wav)
@@ -158,7 +158,7 @@ Fetch video or audio and share via file.io (links expire after about 10 minutes)
 
 ## メディアダウンローダー
 
-動画・音声を取得し、file.io 経由で共有します（リンクは約 10 分で失効）。
+動画・音声を取得し、Cloudflare Tunnel 一時リンクで共有します（約 10 分で失効）。
 
 - `/download_video` — URL または検索語。フォーマット選択（Components V2）後に共有
 - `/download_audio` — 音声のみ（mp3 / m4a / opus / flac / wav）
