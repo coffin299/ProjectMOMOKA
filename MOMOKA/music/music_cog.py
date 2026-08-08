@@ -1357,6 +1357,15 @@ class MusicCog(commands.Cog, name="music_cog"):
                     getattr(finished_source, "http_forbidden_failure", False),
                     getattr(finished_source, "stream_retryable_failure", False),
                 )
+                # 空になった終了済みミキサーは捨てる（次曲と同じ再 play スキップ防止）
+                if state.mixer is not None and not state.mixer.has_sources():
+                    spent_mixer = state.mixer
+                    state.mixer = None
+                    spent_mixer.on_source_removed_callback = None
+                    try:
+                        spent_mixer.stop()
+                    except Exception:
+                        pass
                 # 同一曲をフォールバック client で再再生する
                 await self._play_next_song(
                     guild_id,
@@ -1413,6 +1422,22 @@ class MusicCog(commands.Cog, name="music_cog"):
                 and not is_no_audio_fail
             ):
                 await state.put_queue_track(finished_track)
+
+            # 音楽ソース終了後にミキサーが空なら破棄する。
+            # Discord 側 AudioPlayer は既に after 済みのため、同一 mixer を再利用すると
+            # voice_client.play() がスキップされ次曲が無音のまま cleanup される。
+            if state.mixer is not None and not state.mixer.has_sources():
+                # 終了済みミキサー参照を退避する
+                spent_mixer = state.mixer
+                # 次曲側で新規ミキサーを作らせる
+                state.mixer = None
+                # 二重の on_source_removed を防ぐ
+                spent_mixer.on_source_removed_callback = None
+                # 停止済みでもリソースを解放する
+                try:
+                    spent_mixer.stop()
+                except Exception:
+                    pass
 
             # 次の曲を再生（キューが空の場合はミキサーの停止も行う）
             await self._play_next_song(guild_id)
@@ -1721,19 +1746,34 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # 処理を正常終了する
                 return
 
-            if state.voice_client.source is not current_mixer:
-                # 旧AudioPlayerが残留している場合（_cleanup_idle_mixer後のレース等）は
-                # 明示的に停止して新しいミキサーで再生開始
-                if state.voice_client.is_playing():
-                    logger.info(f"Guild {guild_id}: Stopping stale AudioPlayer before starting new mixer")
+            # Discord AudioPlayer が止まっている、または別ミキサーのときは play し直す。
+            # 前曲終了後に同一 mixer 参照が残っていると source is current_mixer でも
+            # is_playing()==False になり、従来条件だと play() がスキップされていた。
+            needs_new_player = (
+                state.voice_client.source is not current_mixer
+                or not state.voice_client.is_playing()
+            )
+            if needs_new_player:
+                # 別ソースを再生中なら先に止める（同一停止済み mixer の再 play は stop 不要）
+                if (
+                    state.voice_client.is_playing()
+                    and state.voice_client.source is not current_mixer
+                ):
+                    logger.info(
+                        f"Guild {guild_id}: Stopping stale AudioPlayer before starting new mixer"
+                    )
                     state.voice_client.stop()
                 # lambdaにミキサー参照をキャプチャし、mixer_finished_callbackで照合する
                 # これにより旧ミキサーのコールバックが新ミキサーのstateを破壊するのを防止
                 state.voice_client.play(
                     current_mixer,
-                    after=lambda e, m=current_mixer: self.mixer_finished_callback(e, guild_id, m)
+                    after=lambda e, m=current_mixer: self.mixer_finished_callback(
+                        e, guild_id, m
+                    ),
                 )
-                logger.info(f"Guild {guild_id}: Started new AudioPlayer with mixer {id(current_mixer)}")
+                logger.info(
+                    f"Guild {guild_id}: Started new AudioPlayer with mixer {id(current_mixer)}"
+                )
 
             # 旧ミキサーのコールバックでstateが破壊された場合の復元処理
             # （mixer_finished_callbackのミキサーID照合で防止されるが、念のため）
