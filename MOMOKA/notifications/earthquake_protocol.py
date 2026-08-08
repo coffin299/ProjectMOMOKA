@@ -116,6 +116,63 @@ class EarthquakeProtocolMixin:
         # 地震、津波、EEW 以外のコードを無視する
         if data.get("code", 0) not in (551, 552, 556):
             return
+        # 起動中は欠報防止のためバッファへ退避する
+        if not getattr(self, "_ws_accepting", True):
+            # ロックで同時追記を直列化する
+            async with self._ws_pending_lock:
+                # 生メッセージを保持する
+                self._ws_pending.append(data)
+            # 本処理は flush 時に行う
+            return
+        # 本処理へ委譲する
+        await self._dispatch_earthquake_payload(data)
+
+    async def flush_ws_pending(self) -> None:
+        """起動バッファに溜めた WS メッセージを順に処理する。"""
+        # バッファを原子的に取り出す
+        async with self._ws_pending_lock:
+            # 退避リストを移す
+            pending = list(self._ws_pending)
+            # バッファを空にする
+            self._ws_pending.clear()
+        # 受信順に配信処理する
+        for payload in pending:
+            # 各メッセージを通常経路で処理する
+            await self._dispatch_earthquake_payload(payload)
+
+    async def reconcile_missed_history(self) -> None:
+        """起動直後の history 再取得で WS ギャップを HTTP 側から補完する。"""
+        # API コードと内部種別の対応
+        sources = (
+            (551, InfoType.QUAKE, "地震情報"),
+            (552, InfoType.TSUNAMI, "津波情報"),
+            (556, InfoType.EEW, "緊急地震速報"),
+        )
+        for code, info_type, label in sources:
+            try:
+                # 直近履歴を再取得する
+                data = await self.safe_api_request(
+                    f"{self.api_base_url}/history?codes={code}&limit=20",
+                )
+                # 配列以外は無視する
+                if not isinstance(data, list):
+                    continue
+                # API は新しい順のため古い順へ反転して配信する
+                for item in reversed(data):
+                    # 対象コードのみ処理する
+                    if isinstance(item, dict) and item.get("code") == code:
+                        # 未処理なら通知経路へ渡す
+                        await self._dispatch_earthquake_payload(item)
+            except (APIError, DataParsingError) as error:
+                logger.error("%sの履歴補完に失敗: %s", label, error)
+            except Exception as error:  # noqa: BLE001
+                self.exception_handler.log_generic_error(
+                    error,
+                    f"{label}の履歴補完",
+                )
+
+    async def _dispatch_earthquake_payload(self, data: Dict[str, Any]) -> None:
+        """1件の地震/津波ペイロードを配信し、成功時のみ処理済みにする。"""
         # 重複排除に使う ID を安全に取り出す
         info_id = self.extract_id_safe(data)
         if not info_id:
@@ -129,22 +186,37 @@ class EarthquakeProtocolMixin:
         # 同種別で処理済みなら通知を繰り返さない
         if info_id in self.processed_ids[info_type.value]:
             return
-        # 種別に対応した既存の通知処理を呼び出す
+        # 配信結果（True=完了扱い / False=再試行余地あり）
+        delivered = False
+        # 種別に対応した通知処理を呼び出す
         if info_type == InfoType.EEW:
-            await self.send_eew_notification(data)
-            self.processing_stats["eew_processed"] += 1
+            delivered = await self.send_eew_notification(data)
+            if delivered:
+                self.processing_stats["eew_processed"] += 1
         elif info_type == InfoType.QUAKE:
-            await self.send_quake_notification(data)
-            self.processing_stats["quake_processed"] += 1
+            delivered = await self.send_quake_notification(data)
+            if delivered:
+                self.processing_stats["quake_processed"] += 1
         else:
             tsunami_info = self.get_tsunami_info(data)
             if not tsunami_info.get("has_tsunami", False):
+                # 津波なしは完了扱い（再通知不要）
+                self.add_processed_id(info_type.value, info_id)
+                self.last_ids[info_type.value] = info_id
                 return
-            await self.send_tsunami_notification(data, tsunami_info)
-            self.processing_stats["tsunami_processed"] += 1
-        # 正常に通知処理へ渡した ID を記録する
-        self.add_processed_id(info_type.value, info_id)
-        self.last_ids[info_type.value] = info_id
+            delivered = await self.send_tsunami_notification(data, tsunami_info)
+            if delivered:
+                self.processing_stats["tsunami_processed"] += 1
+        # 1件以上配信成功、または対象チャンネル無しのときだけ処理済みにする
+        if delivered:
+            self.add_processed_id(info_type.value, info_id)
+            self.last_ids[info_type.value] = info_id
+        else:
+            logger.warning(
+                "地震通知の配信に失敗したため未処理のまま残します: type=%s id=%s",
+                info_type.value,
+                info_id,
+            )
 
     async def recreate_http_session(self) -> None:
         """地震 API 用 HTTP セッションを再生成する。"""

@@ -550,40 +550,46 @@ class MusicCog(commands.Cog, name="music_cog"):
         if self._vc_sessions_restored:
             # 既に実施済み
             return
-        # フラグを先に立てて再入を防ぐ
-        self._vc_sessions_restored = True
         # bot 識別子
         bot_id = self._bot_id_key()
         try:
             # DB からセッション一覧を読む
             sessions = self._vc_session_store.load_for_bot(bot_id)
         except Exception as e:
-            # 読込失敗なら何もしない
+            # 読込失敗ならフラグを立てず再試行可能にする
             logger.warning("%s: failed to load VC restart sessions: %s", bot_id, e)
-            # 終了
+            # 終了（_vc_sessions_restored は False のまま）
             return
-        # 復元対象が無ければ終了
+        # 復元対象が無ければ完了扱い
         if not sessions:
+            # 次回 on_ready での再走査を止める
+            self._vc_sessions_restored = True
             # 早期リターン
             return
         # 件数をログする
         logger.info("%s: restoring %s VC playback session(s)", bot_id, len(sessions))
+        # 一時失敗が残れば False のままにし再試行する
+        all_resolved = True
         # セッションごとに復元する
         for session in sessions:
             # ギルド ID
             guild_id = int(session["guild_id"])
             try:
-                # 1 ギルド分を復元する
-                await self._restore_one_vc_session(session)
+                # True=完了（成功または恒久破棄）、False=後で再試行
+                resolved = await self._restore_one_vc_session(session)
+                # 未解決なら全体完了にしない
+                if not resolved:
+                    # 再試行待ちを記録する
+                    all_resolved = False
             except Exception as e:
-                # 失敗時は行を捨てて通知する
+                # 予期せぬ失敗でも行は消さず再試行可能にする
                 logger.warning(
                     "Guild %s: VC session restore failed: %s",
                     guild_id,
                     e,
                 )
-                # 壊れた行を削除する
-                self._delete_vc_restart_session(guild_id)
+                # 全体完了にしない
+                all_resolved = False
                 # テキストへ短い失敗通知を試みる
                 text_id = session.get("text_channel_id")
                 # チャンネルがあれば送る
@@ -601,37 +607,55 @@ class MusicCog(commands.Cog, name="music_cog"):
                     except Exception:
                         # 通知失敗は無視する
                         pass
+        # すべて解決したときだけ完了フラグを立てる
+        if all_resolved:
+            # 再入を防ぐ
+            self._vc_sessions_restored = True
 
-    async def _restore_one_vc_session(self, session: dict) -> None:
-        """1 ギルド分の VC セッションを復元する。"""
+    async def _restore_one_vc_session(self, session: dict) -> bool:
+        """1 ギルド分の VC セッションを復元する。
+
+        Returns:
+            True: 成功または恒久的に破棄済み（再試行不要）
+            False: 一時失敗のため DB 行を残して再試行する
+        """
         # ギルド ID
         guild_id = int(session["guild_id"])
         # ギルドを取得する
         guild = self.bot.get_guild(guild_id)
-        # ギルドが無ければ行削除して終了
+        # キャッシュ未到達の一時欠落では行を消さない
         if guild is None:
-            # ゴミ行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
+            # 再試行待ちをログする
+            logger.info(
+                "Guild %s: VC restore deferred (guild not in cache yet)",
+                guild_id,
+            )
+            # 未解決
+            return False
         # VC チャンネルを取得する
         voice_channel = guild.get_channel(int(session["voice_channel_id"]))
-        # チャンネルが無ければ削除して終了
+        # チャンネル欠落も一時的なことがあるため削除しない
         if voice_channel is None or not isinstance(
             voice_channel, (discord.VoiceChannel, discord.StageChannel)
         ):
-            # ゴミ行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
+            # 再試行待ちをログする
+            logger.info(
+                "Guild %s: VC restore deferred (voice channel unavailable)",
+                guild_id,
+            )
+            # 未解決
+            return False
         # 状態を用意する
         state = self._get_guild_state(guild_id)
-        # 上限で作れなければ削除して終了
+        # 上限で作れなければ後で再試行する
         if not state:
-            # 行を消す
-            self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
+            # 再試行待ちをログする
+            logger.info(
+                "Guild %s: VC restore deferred (guild state unavailable)",
+                guild_id,
+            )
+            # 未解決
+            return False
         # テキストチャンネルを復元する
         if session.get("text_channel_id"):
             # last_text_channel を戻す
@@ -646,7 +670,27 @@ class MusicCog(commands.Cog, name="music_cog"):
         except KeyError:
             # 不明値は OFF
             state.loop_mode = LoopMode.OFF
-        # キューを復元する
+        # 接続前にキューを積まない（失敗時のメモリ汚染を防ぐ）
+        vc = await self._connect_voice_channel(guild_id, voice_channel)
+        # 接続失敗は一時扱い（相方ブロック・タイムアウト等）
+        if vc is None:
+            # 万一キューが残っていればメモリだけ掃除して DB は残す
+            await state.clear_queue()
+            # 現在曲参照も落とす
+            state.current_track = None
+            # 再生中フラグを下ろす
+            state.is_playing = False
+            # テキストへ通知する
+            if state.last_text_channel_id:
+                # 失敗通知
+                await self._send_background_message(
+                    state.last_text_channel_id,
+                    "error_playing",
+                    error="Failed to restore voice connection after restart.",
+                )
+            # DB 行は残して再試行する
+            return False
+        # 接続成功後にキューを復元する
         for item in session.get("queue") or []:
             # Track を再構築する
             track = self._track_from_persist_dict(item)
@@ -656,28 +700,12 @@ class MusicCog(commands.Cog, name="music_cog"):
                 await state.queue.put(track)
         # 現在曲を復元する
         current = self._track_from_persist_dict(session.get("current_track") or {})
-        # 現在曲もキューも無ければ削除して終了
+        # 現在曲もキューも無ければ恒久破棄して終了
         if current is None and state.queue.empty():
-            # 行を消す
+            # 壊れた／空の行を消す
             self._delete_vc_restart_session(guild_id)
-            # 終了
-            return
-        # VC へ接続する
-        vc = await self._connect_voice_channel(guild_id, voice_channel)
-        # 接続失敗なら削除して終了
-        if vc is None:
-            # 行を消す
-            self._delete_vc_restart_session(guild_id)
-            # テキストへ通知する
-            if state.last_text_channel_id:
-                # 失敗通知
-                await self._send_background_message(
-                    state.last_text_channel_id,
-                    "error_playing",
-                    error="Failed to restore voice connection after restart.",
-                )
-            # 終了
-            return
+            # 解決済み
+            return True
         # シーク位置
         position = max(0, int(session.get("position_sec") or 0))
         # 一時停止だったかを覚える
@@ -701,6 +729,8 @@ class MusicCog(commands.Cog, name="music_cog"):
         else:
             # 現在曲が無くキューだけなら通常の次曲再生
             await self._play_next_song(guild_id)
+        # 復元処理完了（行削除は再生開始成功側）
+        return True
 
     @tasks.loop(minutes=5)
     async def cleanup_task_loop(self):
@@ -1014,9 +1044,14 @@ class MusicCog(commands.Cog, name="music_cog"):
                 elif vc.channel == user_voice.channel:
                     return vc
                 else:
-                    await state.cleanup_voice_client()
-                    await asyncio.sleep(0.5)
-                    vc = None
+                    # 別 VC にいる場合は切断せず、同一チャンネル参加を要求する
+                    await self._send_response(
+                        ctx,
+                        "must_be_in_same_voice_channel",
+                        ephemeral=True,
+                    )
+                    # 接続を維持したまま拒否する
+                    return None
 
             for voice_client in list(self.bot.voice_clients):
                 if voice_client.guild.id == ctx.guild.id and voice_client != state.voice_client:
@@ -1120,6 +1155,33 @@ class MusicCog(commands.Cog, name="music_cog"):
             logger.info(f"Guild {guild_id}: Mixer callback ignored (already cleaned up)")
             return
 
+        # 通常の music 終了は _on_music_source_removed が次曲/リトライ/NO-audio UI を担当する
+        if state._music_source_removed:
+            # mixer_finished 側では _playing_next を奪わず遷移しない
+            logger.info(
+                f"Guild {guild_id}: Mixer callback skipped next-song "
+                "(owned by on_source_removed)"
+            )
+            # エラー通知だけは残す（ソース削除経路では error を持たないため）
+            if error:
+                # ギルドを解決する
+                guild = self.bot.get_guild(guild_id)
+                # ユーザー向けエラー文言を組み立てる
+                error_message = self.exception_handler.handle_error(error, guild)
+                # 通知先があれば送る
+                if state.last_text_channel_id:
+                    # バックグラウンドでエラーを投稿する
+                    asyncio.run_coroutine_threadsafe(
+                        self._send_background_message(
+                            state.last_text_channel_id,
+                            "error_message_wrapper",
+                            error=error_message,
+                        ),
+                        self.bot.loop,
+                    )
+            # 次曲パスには進まない
+            return
+
         state._playing_next = True
 
         # 終了時のトラック情報を保存
@@ -1145,14 +1207,15 @@ class MusicCog(commands.Cog, name="music_cog"):
                     self.bot.loop
                 )
 
-        # LoopMode.ALLの場合はキューに再追加
-        if finished_track and state.loop_mode == LoopMode.ALL:
-            asyncio.run_coroutine_threadsafe(state.queue.put(finished_track), self.bot.loop)
-
-        # 次の曲を再生（非同期タスクとしてスケジュール）
+        # 次の曲を再生（Loop ALL は put 完了を待ってから再生する）
         def play_next_and_reset_flag():
             async def _play():
                 try:
+                    # LoopMode.ALL なら終了曲を先にキューへ戻す
+                    if finished_track and state.loop_mode == LoopMode.ALL:
+                        # 次曲取得より前に再投入を完了させる
+                        await state.queue.put(finished_track)
+                    # 次曲（またはキュー終了処理）へ進む
                     await self._play_next_song(guild_id)
                 finally:
                     if state:
@@ -1166,11 +1229,16 @@ class MusicCog(commands.Cog, name="music_cog"):
         音楽ソースがミキサーから削除されたときに呼ばれる。
         ループモードやキューを考慮して次の曲を再生する。
         AudioMixerのon_source_removed_callbackから各ソース削除ごとに発火される。
+        次曲・リトライ・NO-audio UI の唯一の所有者。
         """
         # 音源削除コールバックでは削除済み状態を復活させない
         state = self.get_existing_guild_state(guild_id)
         # シーク中や既に次曲処理中の場合はスキップ
         if not state or state.stopping or state.is_seeking or state._playing_next:
+            # mixer_finished が待ち続けないようフラグを戻す
+            if state is not None:
+                # ソース削除所有フラグを解除する
+                state._music_source_removed = False
             return
 
         state._playing_next = True
@@ -1267,7 +1335,10 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 次の曲を再生（キューが空の場合はミキサーの停止も行う）
             await self._play_next_song(guild_id)
         finally:
+            # 次曲所有フラグを解除する
             state._playing_next = False
+            # mixer_finished 向けのソース削除所有フラグも解除する
+            state._music_source_removed = False
 
     async def _cleanup_idle_mixer(self, state: GuildState):
         """
@@ -1480,6 +1551,13 @@ class MusicCog(commands.Cog, name="music_cog"):
                 def on_source_removed(name: str, removed_source=None):
                     """ソースが削除されたときのコールバック"""
                     if name == 'music':
+                        # 削除済みギルド状態は復活させない
+                        removed_state = self.get_existing_guild_state(guild_id)
+                        # 状態があれば同期的に所有フラグを立てる（mixer_finished より先に必須）
+                        if removed_state is not None:
+                            # 次曲遷移の所有者を on_source_removed 側にする
+                            removed_state._music_source_removed = True
+                        # 次曲・リトライ・NO-audio UI を非同期で処理する
                         asyncio.run_coroutine_threadsafe(
                             self._on_music_source_removed(guild_id, removed_source),
                             self.bot.loop,
@@ -1503,8 +1581,37 @@ class MusicCog(commands.Cog, name="music_cog"):
                 state.current_track = None
                 # 再生時間追跡情報を初期化する
                 state.reset_playback_tracking()
-                # アイドルミキサーをクリーンアップする
-                await self._cleanup_idle_mixer(state)
+                # 次曲コールバックが走らないようソース削除通知を無効化する
+                current_mixer.on_source_removed_callback = None
+                try:
+                    # add_source 済みの FFmpeg を強制解放する
+                    await current_mixer.remove_source('music')
+                except Exception as abort_err:
+                    # 除去失敗時はミキサー全体を止めてリソースを捨てる
+                    logger.warning(
+                        "Guild %s: remove_source on abort failed: %s; tearing down mixer",
+                        guild_id,
+                        abort_err,
+                    )
+                    # 状態からミキサー参照を切る
+                    if state.mixer is current_mixer:
+                        # 参照をクリアする
+                        state.mixer = None
+                    # 全ソースをクリーンアップする
+                    current_mixer.stop()
+                else:
+                    # music 除去後に他ソースが無ければミキサーを解体する
+                    if not current_mixer.has_sources():
+                        # 状態参照を先に切る
+                        if state.mixer is current_mixer:
+                            # アイドル終了として参照を消す
+                            state.mixer = None
+                        # プレイヤー終了とリソース解放
+                        current_mixer.stop()
+                    # 残ソースがあれば idle クリーンアップに任せる
+                    else:
+                        # TTS 等が残る場合の共通処理
+                        await self._cleanup_idle_mixer(state)
                 # 再生中メッセージのUIを最新化する（停止状態に更新する）
                 await self._update_now_playing_message_ui(guild_id)
                 # 切断時はプログレスバー更新も停止する

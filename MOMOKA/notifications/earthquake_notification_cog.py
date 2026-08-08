@@ -78,6 +78,14 @@ class EarthquakeTsunamiCog(
         self.ws_reconnect_delay = 5
         self.ws_max_reconnect_delay = 300
         self.ws_running = False
+        # WebSocket リスナー Task（unload 時に cancel/await する）
+        self._ws_task: Optional[asyncio.Task] = None
+        # history 初期化中は WS 受信をバッファし、起動ギャップ欠報を防ぐ
+        self._ws_accepting = False
+        # 起動中に受信した生メッセージを一時保持する
+        self._ws_pending: list = []
+        # バッファ操作の競合を防ぐ
+        self._ws_pending_lock = asyncio.Lock()
 
         self.http_session = None
         self.jst = timezone(timedelta(hours=+9), 'JST')
@@ -97,15 +105,28 @@ class EarthquakeTsunamiCog(
     async def cog_load(self):
         logger.info("🔄 EarthquakeTsunamiCog セットアップ開始...")
         try:
+            # HTTP セッションを先に用意する（history / reconcile 用）
             await self.recreate_http_session()
+            # history 完了まで WS はバッファのみ（欠報防止）
+            self._ws_accepting = False
+            # リスナーを起動する（history より先に接続してギャップを縮める）
+            self.ws_running = True
+            # 既存 Task があれば捨てないよう参照を保持する
+            self._ws_task = asyncio.create_task(
+                self.websocket_listener(),
+                name="earthquake_websocket_listener",
+            )
+            # 起動前履歴を処理済みとして記録する
             logger.info("🔄 最新情報のIDを初期化中...")
             await self.initialize_processed_ids()
-
-            self.ws_running = True
-            asyncio.create_task(self.websocket_listener())
-
+            # バッファ中に取りこぼした履歴差分を HTTP で補完する
+            await self.reconcile_missed_history()
+            # バッファ済み WS メッセージを処理してから本受信へ切替える
+            await self.flush_ws_pending()
+            # 以降はリアルタイム処理する
+            self._ws_accepting = True
+            # 統計出力ループを開始する
             self.output_stats_task.start()
-
             logger.info("✅ EarthquakeTsunamiCog セットアップ完了")
         except Exception as e:
             self.exception_handler.log_generic_error(e, "Cogのセットアップ")
@@ -113,19 +134,39 @@ class EarthquakeTsunamiCog(
 
     async def cog_unload(self):
         logger.info("🔄 EarthquakeTsunamiCog アンロード中...")
-
+        # 再接続ループを止める
         self.ws_running = False
+        # 本受信も止める
+        self._ws_accepting = False
+        # 開いている WS を閉じて listener を起床させる
         if self.ws_connection and not self.ws_connection.closed:
-            await self.ws_connection.close()
+            try:
+                await self.ws_connection.close()
+            except Exception as error:  # noqa: BLE001
+                logger.warning("WebSocketクローズ失敗: %s", error)
+        # リスナー Task をキャンセルし完了を待つ
+        ws_task = self._ws_task
+        self._ws_task = None
+        if ws_task is not None and not ws_task.done():
+            # ループ脱出を促す
+            ws_task.cancel()
+            try:
+                # ハング防止のため上限付きで完了を待つ
+                await asyncio.wait_for(ws_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                # キャンセル完了またはタイムアウトは想定内
+                pass
+            except Exception as error:  # noqa: BLE001
+                logger.warning("WebSocketタスク終了待ちエラー: %s", error)
+        # WS 用 ClientSession を閉じる
         if self.ws_session and not self.ws_session.closed:
             await self.ws_session.close()
-
+        # HTTP セッションを閉じる
         if self.http_session and not self.http_session.closed:
             await self.http_session.close()
-
+        # 統計タスクを止める
         if hasattr(self, 'output_stats_task'):
             self.output_stats_task.cancel()
-
         logger.info("✅ EarthquakeTsunamiCog アンロード完了")
 
     def load_config(self) -> Dict[str, Any]:
@@ -301,12 +342,13 @@ class EarthquakeTsunamiCog(
         # ラベル連結
         return "、".join(NOTIFY_SCALE_LABELS.get(s, str(s)) for s in scales)
 
-    async def send_eew_notification(self, data: Dict[str, Any]) -> None:
-        """code 556 の EEW スキーマを専用 embed として配信する。"""
+    async def send_eew_notification(self, data: Dict[str, Any]) -> bool:
+        """code 556 の EEW スキーマを専用 embed として配信する。完了扱いなら True。"""
         # API のテスト情報は本番通知チャンネルへ送信しない
         if data.get("test") is True:
             logger.info("EEW テスト情報を本番チャンネルへ送信せずスキップしました")
-            return
+            # 再試行不要のため完了扱い
+            return True
         # 取消フラグを取得する
         cancelled = data.get("cancelled") is True
         # 取消情報では earthquake が欠落し得るため、安全な辞書だけを使う
@@ -423,14 +465,15 @@ class EarthquakeTsunamiCog(
         # P2Pquake のロゴを表示する
         embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
         # 取消は震度フィルタに関わらず、設定済み EEW チャンネルへ通知する
-        await self.send_embed_to_channels(
+        return await self.send_embed_to_channels(
             embed,
             InfoType.EEW.value,
             max_scale=max_scale,
             apply_scale_filter=not cancelled,
         )
 
-    async def send_tsunami_notification(self, data, tsunami_info):
+    async def send_tsunami_notification(self, data, tsunami_info) -> bool:
+        """津波通知を配信する。完了扱いなら True。"""
         try:
             warning_level = tsunami_info.get('warning_level', '津波予報')
             emoji_map = {"大津波警報": "🔴", "津波警報": "🟠", "津波注意報": "🟡"}
@@ -469,7 +512,7 @@ class EarthquakeTsunamiCog(
 
             embed.set_footer(text=notification_embed_footer())
             embed.set_thumbnail(url="https://www.p2pquake.net/images/QuakeLogo_100x100.png")
-            await self.send_embed_to_channels(embed, InfoType.TSUNAMI.value)
+            return await self.send_embed_to_channels(embed, InfoType.TSUNAMI.value)
         except Exception as e:
             raise NotificationError(f"津波通知処理エラー: {e}")
 
@@ -1125,20 +1168,15 @@ class EarthquakeTsunamiCog(
             await interaction.response.defer(ephemeral=False)
 
             guild_id = str(interaction.guild.id)
+            # 現在ギルドの設定のみ参照する（全ギルド dump はしない）
+            guild_config = self.config.get(guild_id)
             embed = discord.Embed(
                 title="🔍 通知設定診断",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(self.jst)
             )
 
-            embed.add_field(
-                name="📁 設定ファイル",
-                value=f"```json\n{json.dumps(self.config, indent=2, ensure_ascii=False)[:500]}```",
-                inline=False
-            )
-
-            if guild_id in self.config:
-                guild_config = self.config[guild_id]
+            if isinstance(guild_config, dict):
                 config_text = ""
                 type_map = {
                     InfoType.EEW.value: '緊急地震速報',
@@ -1174,7 +1212,6 @@ class EarthquakeTsunamiCog(
             embed.add_field(
                 name="🤖 Bot状態",
                 value=(
-                    f"ギルド数: {len(self.bot.guilds)}\n"
                     f"WebSocket: {ws_info}\n"
                     f"HTTPセッション: {'✅' if self.http_session and not self.http_session.closed else '❌'}\n"
                     f"WS切断回数: {self.error_stats['ws_disconnects']}"

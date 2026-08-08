@@ -34,10 +34,10 @@
 
 - 🤖 **マルチモデルAI対話** - OpenAI、Google Gemini、NVIDIA NIM、OpenRouter、KoboldCPP など
 - 🧭 **Agent ルーター** - 会話 / コーディング / コマンドへ自動振り分け
-- 🎵 **音楽再生** - YouTube、Spotify、Google Drive など（両ボット）
+- 🎵 **音楽再生** - YouTube、Spotify、ニコニコ動画 など（両ボット）
 - 🎨 **画像生成 / TTS / 通知 / tracker** - **PLANA 専用**
 - 🔗 **Link Fix** - 公式 SNS embed を抑制し Fix URL で引用置換（`/linkfix`・**PLANA 専用**）
-- 🎲 **ユーティリティ** - `/help`（🇯🇵/🇺🇸・ページング・app→guild→en）・`/invite`（Components V2）・`/updates`（Components V2・5件ページング）、タイマー、メディアダウンロード（`/download_video` / `/download_audio`・Components V2）など
+- 🎲 **ユーティリティ** - `/help`（🇯🇵/🇺🇸・ページング・app→guild→en）・`/invite`（Components V2）・`/updates`（Components V2・5件ページング）、`/ping`・`/latex`、メディアダウンロード（`/download_video` / `/download_audio`・Components V2）など
 
 ---
 
@@ -72,7 +72,7 @@ PCM ミキサー（`AudioMixer`）は NumPy でフレーム加算・クリップ
 
 #### 対応ソース
 
-- YouTube / Spotify / Google Drive / ニコニコ動画 / その他 yt-dlp 対応メディア
+- YouTube / Spotify / ニコニコ動画 / その他 yt-dlp 対応メディア
 
 ### 3. 画像生成機能（PLANA 専用）
 
@@ -114,7 +114,7 @@ Rainbow Six Siege / VALORANT の統計表示。
 
 #### メディアダウンロード（Components V2）
 
-yt-dlp で取得したメディアを Google Drive 経由で共有します（リンクは一定時間後に失効）。
+yt-dlp で取得したメディアを file.io 経由で共有します（リンクは約 10 分で失効）。
 
 | コマンド | 説明 |
 |---------|------|
@@ -124,7 +124,8 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 - 動画フォーマット一覧に「映像のみ」などの注記は出しません（選択後に音声を結合するため）
 - フォーマット選択では拡張子を先頭表示し、同一解像度では mp4 を webm より優先します
 - 対応外 URL やフォーマット取得不可などのエラーは原因別に案内します（タグ／一覧ページは不可）
-- Google Drive API 用の `client_secrets.json` / `token.json` と、Cog 内のフォルダ ID 設定が必要です（**リポジトリにコミットしない**。`.gitignore` 済み）
+- **許可リスト**: `configs/media_downloader_allowlist.default.json`（初回起動で `media_downloader_allowlist.json` にコピー）。成人向け IE・プライベート IP は拒否。`/play` には適用しない
+- 共有リンクは file.io（expires≈10 分・autoDelete・ダウンロード回数無制限）。ローカル一時ファイルは約 600 秒後に削除されます
 - YouTube 向けには Deno（推奨）または Node.js 22+ と `yt-dlp[default]` を推奨（音楽機能と同じ EJS 対策）
 
 ---
@@ -150,7 +151,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 2. **設定ファイル**
    - 初回起動時、`configs/<category>_config.yaml` が無いカテゴリだけ `*_config.default.yaml` から自動コピーされます（`commands_i18n` は除く。default を直接読みます）
-   - **Public リポジトリ注意**: 実行時の `configs/*_config.yaml`（トークン・API キー）、`client_secrets.json` / `token.json`、`.env`、`data/*.db` は **絶対にコミットしない**（`.gitignore` 済み）。default には `YOUR_*` プレースホルダのみを置く
+   - **Public リポジトリ注意**: 実行時の `configs/*_config.yaml`（トークン・API キー）、`configs/media_downloader_allowlist.json`（ランタイムコピー）、`.env`、`data/*.db`、資格情報ファイルは **絶対にコミットしない**（`.gitignore` 済み）。default には `YOUR_*` プレースホルダのみを置く
    - 手動でコピーする場合の例:
      ```bash
      copy configs\bots_config.default.yaml configs\bots_config.yaml   # Windows
@@ -202,7 +203,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 ## 設定
 
-設定は `configs/` 配下のカテゴリ別 YAML です。詳細なキーは各 `*_config.default.yaml` を参照してください。
+設定は `configs/` 配下のカテゴリ別 YAML です。各キーの意味は `*_config.default.yaml` 内の日本語コメントを参照してください（実行時は同名の `*_config.yaml`）。
 
 | ファイル | 内容 |
 |---------|------|
@@ -217,7 +218,7 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 | `link_fix_config.yaml` | Link Fix（SNS embed 抑制＋引用置換・PLANA） |
 | `count_config.yaml` | 掲載サイト向けサーバー数投稿（top.gg / Void Bots / DEL 等・PLANA） |
 | `utilities_config.yaml` | ユーティリティ |
-| `core_config.yaml` | コア共通設定 |
+| `core_config.yaml` | コア共通設定（`presence.activity_type` / `presence.status` / `presence.status_rotation`。文言は `{guild_count}` `{version}` `{build_date}` `{status_version}` を置換） |
 | `commands_i18n_config.default.yaml` | スラッシュコマンド説明の多言語カタログ（コピーせず直接読み込み） |
 
 ### ランタイムデータ（SQLite）
@@ -226,11 +227,13 @@ yt-dlp で取得したメディアを Google Drive 経由で共有します（�
 
 主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions` など。版は `schema_meta.version`（現行 3）。
 
+TTS / 読み上げ設定のロードに失敗した場合、Cog unload 時の空データ保存は行いません（DB 全消し防止）。読み上げ設定・辞書のギルド単位更新は `SettingsDB.save_guild()` を優先します。`tts_channel_settings` の全体保存は dict 以外を拒否し、DELETE 前に検証します。
+
 #### ホスト設定とギルド設定の境界
 
 Web ダッシュボードが変更できるのはギルド管理 namespace（地震、Twitch、Link Fix、読み上げ設定、読み上げ辞書）だけです。ダッシュボード実装は `SettingsDB.save_guild()` / `save_guild_async()` を使用し、対象ギルド以外の行を変更してはいけません。
 
-`logging_channels`、`log_viewer_config`、`gdrive_deletion_schedule`、`response_times` はホスト専用 namespace であり、ギルド管理画面から読み書きしてはいけません。チャンネル単位の LLM・画像モデル・TTS 設定もギルド管理ダッシュボードの対象外です。
+`logging_channels`、`log_viewer_config`、`fileio_deletion_schedule`、`response_times` はホスト専用 namespace であり、ギルド管理画面から読み書きしてはいけません。チャンネル単位の LLM・画像モデル・TTS 設定もギルド管理ダッシュボードの対象外です。
 
 #### 認可マトリクス（Discord / 将来ダッシュボード）
 
@@ -244,6 +247,8 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 #### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
+- Host GUI の WebSocket ログは **クエリ token を使わない**（`Sec-WebSocket-Protocol: bearer.<token>` または接続直後の認証メッセージ）
+- LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証）
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない
 
 #### 将来 Web ダッシュボード設計メモ（未実装）
@@ -338,7 +343,7 @@ music:
 | `/play` `/pause` `/resume` `/stop` `/skip` | 再生制御 |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | キュー・音量など |
 
-Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
+Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。
 プレイリスト取得上限は `music.max_playlist_items`（既定 10000）。
 保持するギルド再生状態の上限は `music.max_guilds`（既定 50）。上限到達時は非再生の最古状態を削除し、削除完了後に新規状態を受け付けます。
 音楽メッセージは既定で `@silent`（通知抑制）送信。
@@ -384,7 +389,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | `/help` | ヘルプ（Components V2・app→guild→en 初期言語・🇯🇵/🇺🇸 切替・ページング） |
 | `/invite` | PLANA / ARONA 招待（Components V2・app→guild→en） |
 | `/updates` | GitHub コミット履歴（Components V2・全件取得・5件ページング・先頭/前/次/末尾） |
-| `/download_video` `/download_audio` | メディアダウンロード（Components V2・Google Drive 共有） |
+| `/download_video` `/download_audio` | メディアダウンロード（Components V2・file.io 共有・約 10 分で失効） |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | 情報系（`/ping` は Gateway + Voice WebSocket） |
 | `/latex <expression>` | LaTeX風数式をPNG化（matplotlib mathtext。フルLaTeXではない） |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | その他 |
@@ -407,7 +412,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 キュー最大 10,000 曲、ループ（OFF/ONE/ALL）、音量 0–200%、キュー終了時の VC 自動退出、VC 空室時の自動退出に対応。再生中は VC ステータスを `NowPlaying - 曲名` 形式で自動更新（ユーザーが手動編集した場合は以降 Bot は書き換えない。`Set Voice Channel Status` 権限が必要。権限不足時は INFO を1回だけ出し、以降は更新をサプレッション）。
 **同一 VC 同居禁止:** PLANA と ARONA は同じボイスチャンネルに同時接続できません。既に同居している場合は ARONA のみ切断します。
 
-**グレースフル再起動耐性:** `/shutdown`・GUI・Ctrl+C による終了時、接続中 VC の再生位置・キューを `data/momoka.db` の `vc_playback_sessions` に保存し、起動後に再 join してシーク再生を再開します（再生開始成功で行削除）。強制終了／クラッシュは対象外。LLM 応答は自動再開せず、生成中メッセージを再起動案内に差し替えたうえで再メンションを待ちます。サポート誘導 URL は `utilities_config.yaml` の `support.discord_invite_url` / `developer_user_id` 等。
+**グレースフル再起動耐性:** `/shutdown`・GUI・Ctrl+C による終了時、接続中 VC の再生位置・キューを `data/momoka.db` の `vc_playback_sessions` に保存し、起動後に再 join してシーク再生を再開します（再生開始成功で行削除）。ギルド／チャンネル未キャッシュや接続タイムアウトなどの一時失敗では行を残し、復元完了フラグを立てずに再試行します。強制終了／クラッシュは対象外。LLM 応答は自動再開せず、生成中メッセージを再起動案内に差し替えたうえで再メンションを待ちます。サポート誘導 URL は `utilities_config.yaml` の `support.discord_invite_url` / `developer_user_id` 等。
 
 ### 画像生成（PLANA）
 

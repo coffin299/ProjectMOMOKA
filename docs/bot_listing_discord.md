@@ -19,7 +19,7 @@ Also see: [bot_listing_topgg.md](bot_listing_topgg.md) (top.gg / image-friendly 
 ## Official links
 
 - Website: https://momoka-project.com/
-- Invite: https://discord.com/oauth2/authorize?client_id=1031673203774464160
+- Invite: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands
 - Support Discord: https://discord.gg/H79HKKqx3s
 - Commands: https://momoka-project.com/commands.html
 - FAQ: https://momoka-project.com/faq.html
@@ -93,13 +93,13 @@ Mention `@PLANA` to start a conversation, then keep chatting with replies.
 
 Play audio in voice channels with queue, loop, shuffle, and more.
 
-- YouTube, Spotify, Google Drive, NicoNico, and other yt-dlp sources
+- YouTube, Spotify, NicoNico, and other yt-dlp sources
 
 ---
 
 ## Media Downloader
 
-Fetch video or audio and share via Google Drive.
+Fetch video or audio and share via file.io (links expire after about 10 minutes).
 
 - `/download_video` — URL or search; pick a format (Components V2), then share
 - `/download_audio` — audio only (mp3 / m4a / opus / flac / wav)
@@ -118,7 +118,7 @@ Fetch video or audio and share via Google Drive.
 
 ## Get started
 
-1. [Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
+1. [Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands)
 2. Run `/help` in your server, or see the [command list](https://momoka-project.com/commands.html)
 
 **Website:** [momoka-project.com](https://momoka-project.com/)  
@@ -152,13 +152,13 @@ Fetch video or audio and share via Google Drive.
 
 ボイスチャンネルで再生（キュー・ループ・シャッフルなど）。
 
-- YouTube / Spotify / Google Drive / ニコニコ動画 / その他 yt-dlp 対応ソース
+- YouTube / Spotify / ニコニコ動画 / その他 yt-dlp 対応ソース
 
 ---
 
 ## メディアダウンローダー
 
-動画・音声を取得し、Google Drive 経由で共有します。
+動画・音声を取得し、file.io 経由で共有します（リンクは約 10 分で失効）。
 
 - `/download_video` — URL または検索語。フォーマット選択（Components V2）後に共有
 - `/download_audio` — 音声のみ（mp3 / m4a / opus / flac / wav）
@@ -171,13 +171,13 @@ Fetch video or audio and share via Google Drive.
 - SNS 向け Link Fix
 - 地震速報 / Twitch 通知
 - ゲーム統計（VALORANT、Rainbow Six Siege）
-- ユーティリティ: `/help`、`/invite`、`/support`、タイマーなど
+- ユーティリティ: `/help`、`/invite`、`/support`、`/ping`、`/latex` など
 
 ---
 
 ## はじめに
 
-1. [PLANA を招待](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
+1. [PLANA を招待](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands)
 2. サーバーで `/help`、または [コマンド一覧](https://momoka-project.com/commands.html)
 
 **公式サイト:** [momoka-project.com](https://momoka-project.com/)  

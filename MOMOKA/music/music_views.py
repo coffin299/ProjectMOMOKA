@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import random
 import time
 from typing import Optional
 
@@ -145,12 +147,21 @@ class MusicControllerView(discord.ui.LayoutView):
             action_row.add_item(discord.ui.Button(label="⏭️ Skip", style=discord.ButtonStyle.secondary, disabled=True))
             # 停止ボタンを無効状態で追加する
             action_row.add_item(discord.ui.Button(label="⏹️ Stop", style=discord.ButtonStyle.secondary, disabled=True))
-            # 曲ループボタンを無効状態で追加する
-            action_row.add_item(discord.ui.Button(label="🔂 Loop", style=discord.ButtonStyle.secondary, disabled=True))
-            # キューループボタンを無効状態で追加する
-            action_row.add_item(discord.ui.Button(label="🔁 QLoop", style=discord.ButtonStyle.secondary, disabled=True))
             # コンテナにアクション行を追加する
             container.add_item(action_row)
+
+            # ループ系は2行目にまとめる（再生中レイアウトと揃える）
+            loop_row = discord.ui.ActionRow()
+            # 曲ループボタンを無効状態で追加する
+            loop_row.add_item(discord.ui.Button(label="🔂 Loop", style=discord.ButtonStyle.secondary, disabled=True))
+            # キューループボタンを無効状態で追加する
+            loop_row.add_item(discord.ui.Button(label="🔁 QLoop", style=discord.ButtonStyle.secondary, disabled=True))
+            # キューシャッフルボタンを無効状態で追加する
+            loop_row.add_item(
+                discord.ui.Button(label="🔀 QShuffle", style=discord.ButtonStyle.secondary, disabled=True)
+            )
+            # コンテナにループ行を追加する
+            container.add_item(loop_row)
 
             # ビュー自体にコンテナを追加して完了する
             self.add_item(container)
@@ -301,7 +312,19 @@ class MusicControllerView(discord.ui.LayoutView):
         # コールバックを紐付ける
         self.queue_loop_btn.callback = self.loop_all_callback
 
-        # 再生コントロール用アクション行を作成する（最大5ボタン）
+        # キューに1曲以上あるときだけ QShuffle を有効化する
+        can_shuffle = state.queue.qsize() >= 1
+        # キューシャッフルボタンを初期化する
+        self.queue_shuffle_btn = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            label="🔀 QShuffle",
+            custom_id=f"music_queue_shuffle_{self.guild_id}",
+            disabled=not can_shuffle,
+        )
+        # コールバックを紐付ける
+        self.queue_shuffle_btn.callback = self.queue_shuffle_callback
+
+        # Row1: Pause/Resume, Skip, Stop
         action_row = discord.ui.ActionRow()
         # Pause/Resume を追加する
         action_row.add_item(self.pause_resume_btn)
@@ -309,12 +332,19 @@ class MusicControllerView(discord.ui.LayoutView):
         action_row.add_item(self.skip_btn)
         # Stop を追加する
         action_row.add_item(self.stop_btn)
-        # Loop (ONE) を追加する
-        action_row.add_item(self.loop_btn)
-        # QueueLoop (ALL) を追加する
-        action_row.add_item(self.queue_loop_btn)
         # コンテナにコントロール行を追加する
         container.add_item(action_row)
+
+        # Row2: Loop, QLoop, QShuffle
+        loop_row = discord.ui.ActionRow()
+        # Loop (ONE) を追加する
+        loop_row.add_item(self.loop_btn)
+        # QueueLoop (ALL) を追加する
+        loop_row.add_item(self.queue_loop_btn)
+        # QShuffle を追加する
+        loop_row.add_item(self.queue_shuffle_btn)
+        # コンテナにループ行を追加する
+        container.add_item(loop_row)
 
         # 控えめな寄付リンク（enabled 時のみ）を別行に載せる
         donation_btn = make_subtle_link_button(donation_from_bot(self.cog.bot))
@@ -712,6 +742,42 @@ class MusicControllerView(discord.ui.LayoutView):
         state.update_activity()
         # 変更ログを残す
         logger.info(f"Guild {self.guild_id}: loop mode set to {state.loop_mode.name} via QLoop button")
+        # UIを再構築する
+        self.rebuild_ui()
+        # メッセージを編集する
+        await self._edit_after_interaction(interaction, state)
+
+    async def queue_shuffle_callback(self, interaction: discord.Interaction):
+        # インタラクションへの遅延応答を開始する
+        await interaction.response.defer()
+        # ギルドの再生状態オブジェクトを取得する
+        state = self.cog.get_existing_guild_state(self.guild_id)
+        # 状態が無ければ終了する
+        if not state:
+            # 処理終了
+            return
+        # キューが空なら何もしない（ボタンは通常 disabled）
+        if state.queue.qsize() < 1:
+            # UI だけ最新化する
+            self.rebuild_ui()
+            # メッセージを編集する
+            await self._edit_after_interaction(interaction, state)
+            # 終了する
+            return
+        # 既存 /shuffle と同じくキュー内容をリスト化して並べ替える
+        queue_list = list(state.queue._queue)
+        # シャッフルする
+        random.shuffle(queue_list)
+        # 新しい Queue に差し替える
+        state.queue = asyncio.Queue()
+        # 並べ替えた曲を順に戻す
+        for item in queue_list:
+            # キューへ投入する
+            await state.queue.put(item)
+        # 操作時刻を更新する
+        state.update_activity()
+        # 変更ログを残す
+        logger.info(f"Guild {self.guild_id}: queue shuffled via QShuffle button")
         # UIを再構築する
         self.rebuild_ui()
         # メッセージを編集する

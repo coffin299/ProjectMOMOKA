@@ -50,9 +50,19 @@ export function useLogStream(maxLines = 10000) {
 
     const connect = () => {
       if (closed) return;
-      const ws = new WebSocket(cfg.wsLogsUrl);
+      // トークンはクエリに載せず Sec-WebSocket-Protocol で渡す
+      const protocols = cfg.token ? [`bearer.${cfg.token}`] : undefined;
+      const ws = protocols
+        ? new WebSocket(cfg.wsLogsUrl, protocols)
+        : new WebSocket(cfg.wsLogsUrl);
       wsRef.current = ws;
-      ws.onopen = () => setConnected(true);
+      ws.onopen = () => {
+        setConnected(true);
+        // subprotocol 非対応環境向けフォールバック（初回メッセージ認証）
+        if (cfg.token && !protocols) {
+          ws.send(JSON.stringify({ type: "auth", token: cfg.token }));
+        }
+      };
       ws.onclose = () => {
         setConnected(false);
         if (!closed) {

@@ -1,5 +1,14 @@
+# =============================================================================
+# LLM 設定のデフォルト雛形（llm_config.default.yaml）
+# -----------------------------------------------------------------------------
+# 実行時に実際に読み込まれるのは configs/llm_config.yaml です。
+# 本ファイルはリポジトリ同梱のデフォルト／雛形です。運用変更は llm_config.yaml へ。
+# 値・モデル ID・プロンプト本文・YAML 構造は変更せず、コメントのみを整備しています。
+# =============================================================================
 llm:
+  # 既定のメイン LLM モデル ID（provider/model 形式。チャンネル上書きが無い場合に使用）
   model: google/gemini-3.5-flash
+  # UI / 切替候補として列挙する利用可能モデル一覧（実際の既定モデルは上記 model）
   available_models:
   - openai/gpt-4o
   - openai/gpt-4-turbo
@@ -15,7 +24,7 @@ llm:
   - mistral/mistral-medium-latest
   # OpenRouter Free Models Router（API モデル ID: openrouter/free）
   - openrouter/free
-  # メインモデルの全APIキー失敗時に上から順に試すフォールバックモデル
+  # メインモデルの全 API キー失敗時に、上から順に試すフォールバックモデル一覧
   fallback_models:
   - nvidia_nim/mistralai/mistral-medium-3.5-128b
   - nvidia_nim/minimaxai/minimax-m3
@@ -23,12 +32,15 @@ llm:
   - openrouter/free
   # Agent ルーター（メンション / reply / /chat の前段分類）
   router:
+    # ルーター分類を有効にするか（false の場合は分類をスキップし conversation 等へ）
     enabled: true
+    # ルーター分類に使うモデル ID
     model: google/gemma-4-26b-a4b-it
-    # 失敗時は上から順に試行（キー回転後に次モデルへ）。全失敗時は conversation へフォールスルー
+    # ルーター失敗時は上から順に試行（キー回転後に次モデルへ）。全失敗時は conversation へフォールスルー
     fallback_models:
     - nvidia_nim/deepseek-ai/deepseek-v4-flash
     - nvidia_nim/google/gemma-4-31b-it
+    # ルーターへの分類指示（mode / lang / reason の JSON 出力ルール）
     classify_prompt: |
       You are a router LLM. Classify the user's request into exactly one of the following modes,
       then hand off to the corresponding downstream mode.
@@ -98,29 +110,42 @@ llm:
         "lang": "ja|en|ko|vi|zh-CN|zh-TW",
         "reason": "A short reason (~20-40 characters)"
       }
-  # モード別モデル（チャンネル /switch-models 上書きは conversation のみ）
+  # モード別モデル設定（チャンネル /switch-models 上書きは conversation のみ）
   modes:
+    # 通常会話モード（Q&A・調査・画像生成など）
     conversation:
+      # conversation モードで使うモデル ID
       model: mistral/mistral-medium-latest
+      # conversation モデル失敗時のフォールバック（上から順）
       fallback_models:
       - nvidia_nim/mistralai/mistral-medium-3.5-128b
       - nvidia_nim/minimaxai/minimax-m3
       - nvidia_nim/z-ai/glm-5.2
       - openrouter/free
+    # コーディングモード（実装・修正・パッチ生成など）
     coding:
+      # coding モードで使うモデル ID
       model: nvidia_nim/z-ai/glm-5.2
+      # coding モデル失敗時のフォールバック（上から順）
       fallback_models:
       - nvidia_nim/minimaxai/minimax-m3
       - nvidia_nim/minimaxai/minimax-m2.7
       - nvidia_nim/mistralai/mistral-medium-3.5-128b
-      # coding: plain 本文 + article.md + 言語別コードファイル
+      # true: コードフェンスがあれば必ずファイル添付する（plain 本文 + article.md + 言語別コードファイル）
       always_attach_if_code_fence: true
+      # true: ストリーミング途中プレビューを出さず、完成後にまとめて返す
       skip_stream_preview: true
+      # Discord にそのまま出す plain 本文の最大文字数（超過分はファイル側へ）
       plain_text_max_chars: 1000
+      # 説明文（Markdown）を添付するときのファイル名
       article_filename: article.md
+      # この文字数を超えた本文はファイル添付扱いにする閾値
       attach_as_file_threshold: 1800
+      # 閾値超過時、ユーザーに添付してよいか確認するか
       ask_attach_if_over: true
+      # 添付テキスト（article / コードファイル等）の合計上限文字数
       max_attached_text_chars: 50000
+      # coding モード専用の出力形式指示（本文・コードフェンス・添付の分け方）
       output_prompt: |
         [Coding output format]
         - Line 1–2: a brief conversational opener only (e.g. "了解しました。以下がコードです。").
@@ -130,104 +155,161 @@ llm:
         - Put EVERY code sample inside fenced code blocks with a language tag (```python, ```js, ...).
         - Do not put runnable code outside fences. The bot attaches explanation as article.md and each
           code block as a language-specific file.
+    # コマンドモード（既存 Discord ボットコマンドの実行・説明）
     command:
+      # command モードで使うモデル ID
       model: nvidia_nim/minimaxai/minimax-m3
+      # command モデル失敗時のフォールバック（上から順）
       fallback_models:
       - openrouter/free
       - google/gemini-3.5-flash-lite
       - google/gemini-3.1-flash-lite
+      # true: コマンド実行をバトンパス（LLM からコマンド実行フローへ引き継ぐ）
       baton_pass: true
+      # true: commands_i18n のコマンド説明データをプロンプトに供給する
       feed_commands_i18n: true
+  # LLM プロバイダ別接続設定（モデル ID の provider プレフィックスと対応）
   providers:
+    # OpenAI 公式 API
     openai:
+      # OpenAI 互換 API のベース URL
       base_url: https://api.openai.com/v1
+      # API キー（プレースホルダ。実運用は llm_config.yaml または環境変数側で設定）
       api_key1: YOUR_OPENAI_API_KEY
-    nvidia_nim:
+    # NVIDIA NIM（OpenAI 互換）
+    nvidia_nim: null
+      # NVIDIA NIM API のベース URL
       base_url: https://integrate.api.nvidia.com/v1
+      # API キー（プレースホルダ）
       api_key1: YOUR_NVIDIA_NIM_API_KEY
+    # Google Gemini / Gemma（router 含む）OpenAI 互換エンドポイント
     google:
-      # Gemini / Gemma（router 含む）OpenAI 互換エンドポイント
+      # Gemini / Gemma OpenAI 互換エンドポイントのベース URL
       base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+      # API キー枠 1（null = 未設定。複数枠でキーローテーション可能）
       api_key1: null
+      # API キー枠 2
       api_key2: null
+      # API キー枠 3
       api_key3: null
+      # API キー枠 4
       api_key4: null
+      # API キー枠 5
       api_key5: null
+    # Mistral API
     mistral:
+      # Mistral API のベース URL
       base_url: https://api.mistral.ai/v1
+      # API キー（プレースホルダ）
       api_key1: YOUR_MISTRAL_API_KEY
+    # Groq（OpenAI 互換）
     groq:
+      # Groq OpenAI 互換 API のベース URL
       base_url: https://api.groq.com/openai/v1
+      # API キー（プレースホルダ）
       api_key1: YOUR_GROQ_API_KEY
-    # OpenRouter（OpenAI 互換）。キーは https://openrouter.ai/keys
+    # OpenRouter（OpenAI 互換）。キー発行: https://openrouter.ai/keys
     openrouter:
+      # OpenRouter API のベース URL
       base_url: https://openrouter.ai/api/v1
+      # API キー（プレースホルダ）
       api_key1: YOUR_OPENROUTER_API_KEY
-      # ランキング用（任意）。未設定時は下記デフォルトを送る
+      # OpenRouter ランキング用 HTTP-Referer（任意）。未設定時は下記デフォルトを送る
       http_referer: https://momoka-project.com
+      # OpenRouter ランキング用 X-Title（アプリ表示名）
       x_title: Project MOMOKA
+    # ローカル KoboldCPP（OpenAI 互換）
     koboldcpp:
+      # ローカル KoboldCPP のベース URL
       base_url: http://localhost:5001/v1
+      # ダミー API キー（ローカル接続用。実キー不要な場合のプレースホルダ）
       api_key1: koboldcpp-dummy-key
+      # リクエストタイムアウト（秒）。ローカル生成は長めに設定
       timeout: 300.0
+      # true: ツール呼び出し（function calling）に対応するプロバイダとして扱う
       supports_tools: true
+  # 各プロバイダ共通で付与する追加 API パラメータ（max_tokens / temperature など）
   extra_api_parameters:
     max_tokens: 4096
     temperature: 0.4
+  # 会話コンテキストに保持する過去メッセージ数の上限
   max_messages: 10
+  # 1 会話あたり処理できる画像枚数の上限（ユーザー向けエラー表示にも使用）
   max_images: 5
+  # 1 リクエストに載せる画像枚数の上限
   max_images_per_request: 8
-  # URL/添付画像の1枚あたり最大バイト数（超過時は DL 前またはストリーム中に拒否。既定 20 MiB）
+  # URL/添付画像の 1 枚あたり最大バイト数（超過時は DL 前またはストリーム中に拒否。既定 20 MiB）
   max_image_bytes: 20971520
+  # 応答言語をユーザー最新メッセージに合わせる絶対ルール（キャラ設定より優先）
   language_prompt: "<language_instructions>\n  <rule priority=\"CRITICAL_AND_ABSOLUTE\">\n    You MUST respond in the exact same language as the user's most recent message.\n    This rule overrides ALL other instructions, including character settings and examples.\n    If the user writes in Japanese, reply in Japanese. If in English, reply in English.\n    Keep your character tone and speech style while matching the language.\n  </rule>\n</language_instructions>\n"
+  # PLANA（メイン）で有効なツール名の一覧
   active_tools:
   - search
   - image_generator
   - feedback
-  # ツール往復の上限。超過時はツールなしで最終回答を1回生成する
+  # ツール往復（tool call ↔ 結果）の上限回数。超過時はツールなしで最終回答を 1 回生成する
   max_tool_iterations: 5
+  # 同時実行（インフライト）制御
   concurrency:
+    # ボット全体で同時処理できるチャット数の上限
     max_inflight_chat: 64
+    # チャンネルあたり同時処理できるチャット数の上限
     max_inflight_per_channel: 1
   # Web 検索（SearchAgent）。旧キー名 agent からリネーム
   search:
+    # 検索結果の最大件数
     max_results: 10
+    # 検索リクエストのタイムアウト（秒）
     timeout: 30.0
+    # 検索バックエンド（auto = 利用可能な実装を自動選択）
     backend: auto
+  # ユーザー向けエラー／空入力メッセージ（日英併記など。プレースホルダは実行時置換）
   error_msg:
+    # メンションのみで本文が空のときの案内
     empty_mention_reply: 'はい、ご用件は何でしょうか?
 
       Yes, how can I help you?'
+    # 返信先はあるが本文が空のときの案内
     empty_reply: '何かお話しください。
 
       Please say something.'
+    # 画像枚数上限超過時の警告（{max_images} を置換）
     msg_max_image_size: '⚠️ 一度に処理できる画像は {max_images} 枚までです。
 
       ⚠️ You can process up to {max_images} images at once.'
+    # プロバイダ側レート制限・混雑時
     ratelimit_error: '⚠️ AIが現在大変混雑しています。しばらく経ってからもう一度お試しください。
 
       ⚠️ The AI is currently very busy. Please try again in a little while.'
+    # API 通信切断・ネットワーク障害時
     connection_error: '⚠️ AIサービスとの通信が切断されました。しばらくしてからもう一度お試しください。
 
       ⚠️ Connection to the AI service was interrupted. Check your network or try again shortly.'
+    # ボット側の同時リクエスト過多・ビジー時
     busy_error: '⚠️ 現在リクエストが集中しています。しばらくしてからもう一度お試しください。
 
       ⚠️ The bot is busy with many requests. Please try again shortly.'
+    # API が HTTP ステータスエラーを返したとき（{status_code} を置換）
     api_status_error: '⚠️ AIとの通信でエラーが発生しました。(Code: {status_code})
 
       ⚠️ An error occurred while communicating with the AI. (Code: {status_code})'
+    # 上記以外の予期しない例外時
     general_error: '⚠️ 予期しないエラーが発生しました。もう一度お試しください。
 
       ⚠️ An unexpected error occurred. Please try again.'
+    # ツールループが複雑すぎて応答生成できなかったとき
     tool_loop_timeout: '⚠️ ツールの処理が複雑すぎたため、応答を生成できませんでした。
 
       ⚠️ Tool processing was too complex to generate a response.'
+    # プロバイダのコンテンツフィルターで応答がブロックされたとき
     content_filter_error: 'AIの応答がコンテンツフィルターによってブロックされました。不適切な内容が含まれている可能性があります。
 
       The response was blocked by the content filter, likely due to inappropriate content.'
+    # API から空応答が返ってきたとき
     empty_response_error: 'AIから応答がありませんでした。表現を変えるか、少し待ってからもう一度お試しください。
 
       There was no response from the AI. Please try rephrasing your message or wait a moment and try again.'
+  # PLANA 向けツール利用指示（search / image_generator / feedback と能力の正直さ）
   tools_prompt: '# Available Tools
 
     Actively call tools when they help the user. Do not announce tool names in character unless asked.
@@ -250,6 +332,7 @@ llm:
     external accounts, or disabled features). Say clearly that you cannot do it.
 
     '
+  # ARONA（コンパニオン）向けツール利用指示（PLANA 専用機能への誘導を含む）
   tools_prompt_arona: '# Available Tools
 
     Actively call tools when they help the user. Do not announce tool names in character unless asked.
@@ -269,8 +352,11 @@ llm:
     (or tell them to invite PLANA). Stay in ARONA character while redirecting.
 
     '
+  # キャラクター（ペルソナ）別システムプロンプト
   personas:
+    # PLANA（メイン OS）のペルソナ
     plana:
+      # PLANA の system prompt（口調・設定・対話例。本文は変更禁止）
       system_prompt: 'Your name is PLANA (プラナ). You are a character from Blue Archive.
 
         Stay in character at all times while assisting the user on Discord.
@@ -351,7 +437,9 @@ llm:
         - 「了解、その方針で問題ありません。」「否定。その前提は誤りです。」
 
         '
+    # ARONA（コンパニオン OS）のペルソナ
     arona:
+      # ARONA の system prompt（口調・設定・対話例。本文は変更禁止）
       system_prompt: 'Your name is ARONA (アロナ). You are a character from Blue Archive.
 
         Stay in character at all times while assisting the user on Discord.
@@ -432,6 +520,7 @@ llm:
         - 「プラナちゃん、一緒に先生をお手伝いしましょう！」
 
         '
+  # ARONA（コンパニオン）で有効なツール名の一覧（image_generator 等は含めない）
   active_tools_companion:
   - search
   - feedback

@@ -1,63 +1,117 @@
+# 音楽再生（Music Cog）設定
+# 実行時は configs/music_config.yaml を編集する
+# /download_* の file.io キーもここに置く（music セクション配下）
+
 music:
-  default_volume: 20
+  # ギルド新規接続時の既定音量（0–100、%）
+  default_volume: 40
+  # 1 ギルドあたりのキュー最大曲数
   max_queue_size: 10000
-  # メモリに保持するギルド再生状態の上限。上限到達時は非再生の最古状態を削除してから新規受付する。
-  max_guilds: 50
+  # メモリに保持するギルド再生状態の上限。超過時は非再生の最古を捨ててから新規受付
+  max_guilds: 5000
+  # VC が空になってから自動切断するまでの分数
   auto_leave_timeout: 3
+  # プレイリスト URL から一度に取り込む最大曲数
   max_playlist_items: 10000
+  # 再生もキューもないまま放置したときの切断までの分数
   inactive_timeout_minutes: 3
+  # FFmpeg 入力前オプション（再接続など）。スペース区切り文字列
   ffmpeg_before_options: -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5
+  # FFmpeg 出力オプション（-vn = 映像捨てて音声のみ）
   ffmpeg_options: -vn
+  # YouTube 用 cookies.txt のパス（年齢制限・ログイン必須動画向け。無ければ空運用可）
   youtube_cookie_file: youtube_cookies.txt
-  gdrive_folder_id: YOUR_GDRIVE_FOLDER_ID_HERE
+  # file.io の API キー（任意）。空なら匿名 POST。設定時は Bearer 付き
+  file_io_api_key: ''
+  # ニコニコ動画ログイン（任意。プレミアム／制限コンテンツ用）
   niconico:
+    # ニコニコのメールアドレス
     email: ''
+    # ニコニコのパスワード（コミット禁止）
     password: ''
+  # ユーザー向けメッセージ（英語ベース。必要に応じ上書き）
   messages:
+    # VC 未参加で再生操作したとき
     join_voice_channel_first: ❌ Please join a voice channel first.
+    # Bot がどの VC にもいないとき
     bot_not_in_voice_channel: ❌ The bot is not connected to a voice channel.
+    # Bot が別 VC にいるとき（切断して移動せず、同一 VC を要求）
+    must_be_in_same_voice_channel: ❌ You must be in the same voice channel as the bot.
+    # 既に同じ VC に接続済み
     already_connected: ✅ Already connected to a voice channel.
+    # /leave 等で退出したとき
     leaving_voice_channel: 👋 Left the voice channel.
+    # チャンネルが空になり自動退出したとき
     auto_left_empty_channel: 👋 Auto-left the voice channel as it became empty.
-    # PLANA / ARONA cannot share the same VC (load control). Refuse join when the partner is already there.
+    # 相方 Bot が既に同一 VC にいるため参加拒否（{partner_name}）
     partner_already_in_voice: ❌ **{partner_name}** is already connected to this voice channel. PLANA and ARONA cannot join the same VC at once — use the other bot, or pick a different channel.
-    # Companion (ARONA) left after detecting coexistence with primary.
+    # 同居検知で companion が退出したとき（{partner_name}）
     partner_coexist_left: 👋 Left this voice channel because **{partner_name}** was already here. Only PLANA may stay when both would share the same VC.
+    # 再生開始／Now Playing 本文（{title} {duration} {requester_display_name}）
     now_playing: '🎵 **Now Playing:** {title}
 
       ⏱️ **Duration:** {duration}
 
       👤 **Requested by:** {requester_display_name}'
+    # 再生中の曲が無いとき
     now_playing_nothing: ❌ Nothing is currently playing.
+    # 1 曲をキュー末尾に追加（同上プレースホルダ）
     added_to_queue: '➕ **Added to queue:** {title}
 
       ⏱️ **Duration:** {duration}
 
       👤 **Requested by:** {requester_display_name}'
+    # プレイリスト一括追加（{count}）
     added_playlist_to_queue: ➕ Added **{count} songs** from playlist to queue.
+    # 一時停止
     playback_paused: ⏸️ Playback paused.
+    # 再開
     playback_resumed: ▶️ Playback resumed.
+    # 停止＋キュー全クリア
     stopped_playback: ⏹️ Stopped playback and cleared queue.
+    # スキップ成功（{title}）
     skipped_song: ⏭️ Skipped **{title}**.
+    # スキップ対象が無い
     nothing_to_skip: ❌ Nothing to skip.
+    # 音量変更（{volume}）
     volume_set: 🔊 Volume set to **{volume}%**.
+    # 検索中表示（{query}）
     searching_for_song: 🚀 searching **{query}** ...
+    # seek 成功（{position}）
     seeked_to_position: ⏩ Seeked to **{position}**.
+    # seek 時刻形式が不正
     invalid_time_format: '❌ Invalid time format. Example: `1:30` or `90`'
+    # seek が曲長を超えた（{duration}）
     seek_beyond_duration: ❌ The specified time exceeds the song duration (**{duration}**).
+    # キュー見出し（{count}）
     queue_title: 📜 **Queue** ({count} songs)
+    # キューが空
     queue_empty: 📭 The queue is empty.
+    # キュー消化完了で切断
     queue_ended: 📭 Queue finished. Disconnecting from voice channel.
+    # シャッフル完了
     queue_shuffled: 🔀 Queue shuffled.
+    # キュー全削除
     queue_cleared: 🗑️ Queue cleared.
+    # 指定曲をキューから削除（{title}）
     song_removed: ➖ Removed **{title}** from queue.
+    # キュー番号が範囲外
     invalid_queue_number: ❌ Invalid queue number.
+    # キュー上限到達（{max_size}）
     max_queue_size_reached: ❌ Queue limit reached ({max_size} songs).
+    # ループ OFF
     loop_off: '🔁 Loop mode: OFF'
+    # 1 曲ループ
     loop_one: '🔂 Loop mode: ONE (current song)'
+    # キュー全体ループ
     loop_all: '🔁 Loop mode: ALL (entire queue)'
+    # 再生中の一般エラー（{error}）
     error_playing: '❌ An error occurred: {error}'
+    # 曲情報取得失敗（{error}）
     error_fetching_song: '❌ Error fetching song: {error}'
+    # DRM / 非対応サイト
     error_drm_protected: ❌ この URL は DRM 保護または非対応サイトのため再生できません。YouTube / ニコニコ動画の URL、または曲名で検索してください。
+    # 検索ゼロ件（{query}）
     search_no_results: 🔍 No results found for **{query}**.
+    # その他エラーのラップ（{error}）
     error_message_wrapper: ❌ {error}

@@ -1,3 +1,9 @@
+# 通知系 API 資格情報（Twitch ライブ通知など）
+# 実行時は configs/notifications_config.yaml を編集する
+
+# Twitch Helix API（Client Credentials）
 twitch:
+  # Twitch Developer Console の Client ID
   client_id: YOUR_TWITCH_CLIENT_ID
+  # 同上 Client Secret（コミット禁止！！！！）
   client_secret: YOUR_TWITCH_CLIENT_SECRET

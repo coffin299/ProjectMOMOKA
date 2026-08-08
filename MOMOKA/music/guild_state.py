@@ -52,6 +52,8 @@ class GuildState:
         self.stopping: bool = False
         self.mixer: Optional[AudioMixer] = None
         self._playing_next: bool = False  # 次の曲を再生中かどうかのフラグ
+        # music ソース削除が on_source_removed 経由で処理中か（mixer_finished との二重遷移防止）
+        self._music_source_removed: bool = False
         # パイプ 403 による同一曲リトライ回数（最大 1）
         self.stream_403_retries: int = 0
         self.last_now_playing_message: Optional[discord.Message] = None

@@ -81,10 +81,14 @@ class CustomFixDomainModal(discord.ui.Modal):
             )
             return
         # 保存する
-        ok = await self.parent.store.set_fix_domain(
-            self.parent.guild_id, self.parent.site_id, normalized
-        )
-        # 失敗時
+        try:
+            ok = await self.parent.store.set_fix_domain(
+                self.parent.guild_id, self.parent.site_id, normalized
+            )
+        except Exception:
+            await self.parent._notify_save_failed(interaction)
+            return
+        # 失敗時（正規化拒否など）
         if not ok:
             await interaction.response.send_message(
                 pick_str(
@@ -150,9 +154,13 @@ class EditMatchDomainsModal(discord.ui.Modal):
             await interaction.response.send_message(err, ephemeral=True)
             return
         # 保存する
-        ok = await self.parent.store.set_match_domains(
-            self.parent.guild_id, self.parent.site_id, parsed
-        )
+        try:
+            ok = await self.parent.store.set_match_domains(
+                self.parent.guild_id, self.parent.site_id, parsed
+            )
+        except Exception:
+            await self.parent._notify_save_failed(interaction)
+            return
         # 失敗
         if not ok:
             await interaction.response.send_message(
@@ -523,7 +531,11 @@ class LinkFixSettingsView(discord.ui.LayoutView):
                 return
             # 反転する
             current = self.store.is_site_enabled(self.guild_id, site_id)
-            await self.store.set_site_enabled(self.guild_id, site_id, not current)
+            try:
+                await self.store.set_site_enabled(self.guild_id, site_id, not current)
+            except Exception:
+                await self._notify_save_failed(interaction)
+                return
             # 再描画
             self._rebuild()
             await interaction.response.edit_message(view=self)
@@ -543,6 +555,23 @@ class LinkFixSettingsView(discord.ui.LayoutView):
             await interaction.response.edit_message(view=self)
 
         return _cb
+
+    async def _notify_save_failed(self, interaction: discord.Interaction) -> None:
+        """設定保存失敗を ephemeral で通知する。"""
+        # 押した人の locale を優先する
+        msg_lang = resolve_interaction_lang(interaction)
+        # 日英の汎用保存失敗メッセージ
+        message = pick_str(
+            msg_lang,
+            ja="設定の保存に失敗しました。しばらくしてから再試行してください。",
+            en="Failed to save settings. Please try again later.",
+        )
+        # 既に応答済みなら followup を使う
+        if interaction.response.is_done():
+            await interaction.followup.send(message, ephemeral=True)
+            return
+        # 未応答なら通常応答する
+        await interaction.response.send_message(message, ephemeral=True)
 
     async def _ensure_manage(self, interaction: discord.Interaction) -> bool:
         """Manage Guild が無ければ ephemeral で拒否。"""
@@ -570,7 +599,11 @@ class LinkFixSettingsView(discord.ui.LayoutView):
             return
         # 反転
         current = self.store.is_feature_enabled(self.guild_id)
-        await self.store.set_feature_enabled(self.guild_id, not current)
+        try:
+            await self.store.set_feature_enabled(self.guild_id, not current)
+        except Exception:
+            await self._notify_save_failed(interaction)
+            return
         self._rebuild()
         await interaction.response.edit_message(view=self)
 
@@ -579,8 +612,12 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # 権限チェック
         if not await self._ensure_manage(interaction):
             return
-        # 全サイトを ON にする
-        await self.store.set_all_sites_enabled(self.guild_id, True)
+        try:
+            # 全サイトを ON にする
+            await self.store.set_all_sites_enabled(self.guild_id, True)
+        except Exception:
+            await self._notify_save_failed(interaction)
+            return
         # 再描画する
         self._rebuild()
         await interaction.response.edit_message(view=self)
@@ -590,8 +627,12 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         # 権限チェック
         if not await self._ensure_manage(interaction):
             return
-        # 全サイトを OFF にする
-        await self.store.set_all_sites_enabled(self.guild_id, False)
+        try:
+            # 全サイトを OFF にする
+            await self.store.set_all_sites_enabled(self.guild_id, False)
+        except Exception:
+            await self._notify_save_failed(interaction)
+            return
         # 再描画する
         self._rebuild()
         await interaction.response.edit_message(view=self)
@@ -600,7 +641,11 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         """ギルド設定リセット。"""
         if not await self._ensure_manage(interaction):
             return
-        await self.store.reset_guild(self.guild_id)
+        try:
+            await self.store.reset_guild(self.guild_id)
+        except Exception:
+            await self._notify_save_failed(interaction)
+            return
         self.page = _Page.OVERVIEW
         self.site_id = None
         self._rebuild()
@@ -657,9 +702,13 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if value.startswith("preset:"):
             domain = value.split(":", 1)[1]
             if self.site_id:
-                await self.store.set_fix_domain(
-                    self.guild_id, self.site_id, domain
-                )
+                try:
+                    await self.store.set_fix_domain(
+                        self.guild_id, self.site_id, domain
+                    )
+                except Exception:
+                    await self._notify_save_failed(interaction)
+                    return
             self._rebuild()
             await interaction.response.edit_message(view=self)
             return
@@ -689,6 +738,10 @@ class LinkFixSettingsView(discord.ui.LayoutView):
         if not await self._ensure_manage(interaction):
             return
         if self.site_id:
-            await self.store.clear_match_domains(self.guild_id, self.site_id)
+            try:
+                await self.store.clear_match_domains(self.guild_id, self.site_id)
+            except Exception:
+                await self._notify_save_failed(interaction)
+                return
         self._rebuild()
         await interaction.response.edit_message(view=self)

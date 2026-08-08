@@ -1,24 +1,28 @@
 # 掲載サイト向けサーバー数（count）投稿設定
-# guild 数を定期 POST する（サイトごとに enabled + token）
+# guild 数を定期 POST する。実行時は configs/count_config.yaml を編集する
+
 count:
   # 全体スイッチ（false ならどのサイトにも送らない）
   enabled: true
-  # 投稿間隔（分）
+  # 全サイト共通の投稿間隔（分）。サイト個別の min_interval_minutes があればそちら優先
   interval_minutes: 30
-  # 掲載サイト（同じ形で追加する）
+  # 掲載サイト一覧（同じ形で追加可能）
+  # 各サイト共通キー:
+  #   enabled  … このサイトへ投稿するか
+  #   token    … サイト発行の API トークン（コミット禁止！！！）
+  #   bot_id   … 空文字なら投稿する Bot 自身の user.id を使う
   sites:
     # https://top.gg/
     topgg:
       enabled: false
       token: YOUR_TOPGG_TOKEN
-      # 空文字なら投稿する Bot 自身の user.id を使う
       bot_id: ""
     # https://discordbotlist.com/
     discordbotlist:
       enabled: false
       token: YOUR_DISCORDBOTLIST_TOKEN
       bot_id: ""
-      # スラッシュコマンド一覧も POST する（bot ページに表示）
+      # true ならスラッシュコマンド一覧も POST（bot ページ表示用）
       # https://docs.discordbotlist.com/commands-list
       post_commands: true
     # https://discord.bots.gg/
@@ -32,14 +36,14 @@ count:
       enabled: false
       token: YOUR_VOIDBOTS_TOKEN
       bot_id: ""
-      # 任意: このサイトだけの最短間隔（分）。未指定時も voidbots は 3 分
+      # 任意: このサイトだけの最短間隔（分）。未指定時も voidbots は 3 分扱い
       # min_interval_minutes: 3
     # https://discordextremelist.xyz/
     discordextremelist:
       enabled: false
       token: YOUR_DISCORDEXTREMELIST_TOKEN
       bot_id: ""
-    # https://nightly.dsc.bot/ （公開 stats API 未確認・有効化しても投稿失敗）
+    # https://nightly.dsc.bot/ （公開 stats API 未確認・有効化しても投稿失敗しうる）
     dscbot:
       enabled: false
       token: YOUR_DSCBOT_TOKEN

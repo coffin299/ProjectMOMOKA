@@ -1,3 +1,10 @@
+# ゲーム戦績トラッカー用 API キー
+# 実行時は configs/tracker_config.yaml を編集する
+
+# Tracker Network（TRN）API キー
 trn_api_key: YOUR_TRN_API_KEY_HERE
+
+# VALORANT 戦績取得用
 valorant:
+  # VALORANT / 関連 API キー（プロバイダに合わせた値）
   api_key: YOUR_API_KEY_HERE

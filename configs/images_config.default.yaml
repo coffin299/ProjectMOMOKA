@@ -1,2 +1,6 @@
+# 画像系スラッシュコマンド（猫画像など）の外部 API
+# 実行時は configs/images_config.yaml を編集する
+
 image_commands:
+  # TheCatAPI（https://thecatapi.com/）の API キー。未設定でも可(limitあり)
   thecatapi_api_key: YOUR_THECATAPI_KEY_HERE

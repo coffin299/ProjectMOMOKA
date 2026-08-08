@@ -285,7 +285,7 @@ class HelpLayoutView(discord.ui.LayoutView):
                     "2. **Music** — `/play` 再生 ＋ `/download_*` 取得\n"
                     "3. **Link Fix** — SNS の Embed を Fix URL で置換\n"
                     "4. **Twitch** — 配信開始の Discord 通知\n\n"
-                    "ほか: TTS / 画像検索 / 地震通知 / タイマー など"
+                    "ほか: TTS / 画像検索 / 地震通知 など"
                 )
             # 表紙を返す
             return (
@@ -392,10 +392,10 @@ class HelpLayoutView(discord.ui.LayoutView):
                 "`/queue` `/nowplaying` `/shuffle` `/clear` `/remove` `/loop`\n\n"
                 "**ボイス**\n"
                 "`/join` `/leave` — VC 接続・切断\n\n"
-                "Now Playing: Pause / Skip / Stop（確認）/ Loop / QLoop。"
+                "Now Playing: Pause / Skip / Stop（確認）/ Loop / QLoop / QShuffle。"
                 "次曲があるときだけキュー表示（最大5曲＋ページング）。\n\n"
                 "**ダウンロード（PLANA）**\n"
-                "• `/download_video <query>` — 動画取得 → Google Drive 共有\n"
+                "• `/download_video <query>` — 動画取得 → file.io 共有（約 10 分で失効）\n"
                 "• `/download_audio <query> <format>` — 音声抽出"
                 "（mp3 / m4a / opus / flac / wav）"
             )
@@ -411,10 +411,10 @@ class HelpLayoutView(discord.ui.LayoutView):
             "`/queue` `/nowplaying` `/shuffle` `/clear` `/remove` `/loop`\n\n"
             "**Voice**\n"
             "`/join` `/leave` — join or leave VC\n\n"
-            "Now Playing: Pause / Skip / Stop (confirm) / Loop / QLoop. "
+            "Now Playing: Pause / Skip / Stop (confirm) / Loop / QLoop / QShuffle. "
             "Queue (up to 5 + paging) only when upcoming tracks exist.\n\n"
             "**Download (PLANA)**\n"
-            "• `/download_video <query>` — fetch video → Google Drive share\n"
+            "• `/download_video <query>` — fetch video → file.io share (~10 min expiry)\n"
             "• `/download_audio <query> <format>` — extract audio "
             "(mp3 / m4a / opus / flac / wav)"
         )

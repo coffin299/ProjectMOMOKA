@@ -19,6 +19,7 @@ from MOMOKA.notifications.error.twitch_errors import (ConfigError, DataParsingEr
                                   NotificationError, TwitchAPIError,
                                   TwitchExceptionHandler)
 from MOMOKA.storage import NS_TWITCH_SETTINGS, resolve_settings_db
+from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 
 # ロガーの設定
 logger = logging.getLogger(__name__)
@@ -43,7 +44,12 @@ class TwitchNotification(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.handler = TwitchExceptionHandler(self)
-        self.session: aiohttp.ClientSession = aiohttp.ClientSession()
+        # Helix / OAuth のハングを防ぐ共通タイムアウト
+        self._http_timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        # タイムアウト付き HTTP セッション
+        self.session: aiohttp.ClientSession = aiohttp.ClientSession(
+            timeout=self._http_timeout,
+        )
         # 設定ファイルの同時保存を直列化する
         self._settings_lock = asyncio.Lock()
         # SettingsDB
@@ -103,7 +109,7 @@ class TwitchNotification(commands.Cog):
             return {}
 
     async def _save_settings(self) -> None:
-        """設定を SettingsDB へ排他的に保存する。"""
+        """設定を SettingsDB へ排他的に保存する。失敗時は例外を送出する。"""
         # 同時実行されるコマンドと定期チェックの保存競合を防ぐ
         async with self._settings_lock:
             try:
@@ -112,9 +118,12 @@ class TwitchNotification(commands.Cog):
                 await self.settings_db.save_async(NS_TWITCH_SETTINGS, payload)
             except Exception as e:  # noqa: BLE001
                 logger.error("Twitch設定の保存に失敗しました: %s", e)
+                # 呼び出し側がユーザーへ失敗を伝播できるようにする
+                raise ConfigError(
+                    "Twitch設定の保存に失敗しました。しばらくしてから再試行してください。"
+                ) from e
 
     # --- Twitch API 関連 ---
-    # (このセクションのコードは変更ありません)
     async def _get_twitch_access_token(self):
         """Twitch APIのアプリアクセストークンを取得・更新する"""
         if self.access_token and time.time() < self.token_expires_at:
@@ -140,8 +149,14 @@ class TwitchNotification(commands.Cog):
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             raise self.handler.handle_api_error(e, "アクセストークン取得")
 
-    async def _api_request(self, endpoint: str, params: Optional[Dict] = None) -> Dict:
-        """Twitch APIへのリクエストを共通化する"""
+    async def _api_request(
+        self,
+        endpoint: str,
+        params: Any = None,
+        *,
+        _retried: bool = False,
+    ) -> Dict:
+        """Twitch APIへのリクエストを共通化する（401 は1回だけ再取得リトライ）。"""
         await self._get_twitch_access_token()
         headers = {
             "Client-ID": self.client_id,
@@ -154,7 +169,17 @@ class TwitchNotification(commands.Cog):
                 if resp.status == 200:
                     return await resp.json()
                 if resp.status == 401:
+                    # 失効トークンを捨てる
                     self.access_token = None
+                    self.token_expires_at = 0
+                    # 同一リクエストを1回だけ再試行する
+                    if not _retried:
+                        await self._get_twitch_access_token()
+                        return await self._api_request(
+                            endpoint,
+                            params,
+                            _retried=True,
+                        )
                 text = await resp.text()
                 raise self.handler.handle_api_response_error(resp.status, url, text)
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
@@ -241,7 +266,11 @@ class TwitchNotification(commands.Cog):
 
             # 変更があった場合のみファイルに保存する
             if settings_changed:
-                await self._save_settings()
+                try:
+                    await self._save_settings()
+                except ConfigError as e:
+                    # 定期タスクではユーザーへ出せないためログに残す
+                    logger.error("配信状態の保存に失敗しました: %s", e)
 
         except TwitchAPIError as e:
             logger.warning(f"配信チェック中にAPIエラーが発生しました: {e}")
@@ -351,7 +380,15 @@ class TwitchNotification(commands.Cog):
                 new_setting["message"] = message
 
             self.settings[guild_id][user_data["id"]] = new_setting
-            await self._save_settings()
+            try:
+                # 永続化成功後にだけ成功 UI を出す
+                await self._save_settings()
+            except ConfigError:
+                # メモリを保存失敗前へ戻す
+                self.settings[guild_id].pop(user_data["id"], None)
+                if not self.settings.get(guild_id):
+                    self.settings.pop(guild_id, None)
+                raise
 
             embed = discord.Embed(
                 title="✅ Twitch通知設定完了",
@@ -363,6 +400,16 @@ class TwitchNotification(commands.Cog):
 
             await interaction.followup.send(embed=embed)
 
+        except ConfigError:
+            # 保存失敗は言語別の汎用メッセージを返す
+            lang = resolve_interaction_lang(interaction)
+            await interaction.followup.send(
+                pick_str(
+                    lang,
+                    ja="❌ Twitch設定の保存に失敗しました。しばらくしてから再試行してください。",
+                    en="❌ Failed to save Twitch settings. Please try again later.",
+                )
+            )
         except Exception as e:
             message = self.handler.get_user_friendly_message(e)
             await interaction.followup.send(message)
@@ -380,15 +427,34 @@ class TwitchNotification(commands.Cog):
 
         if guild_id in self.settings and twitch_channel in self.settings[guild_id]:
             removed_channel_name = self.settings[guild_id][twitch_channel].get("twitch_display_name", twitch_channel)
-
+            # ロールバック用に削除前の設定を退避する
+            removed_config = self.settings[guild_id][twitch_channel]
             # 設定を削除
             del self.settings[guild_id][twitch_channel]
 
             # もしサーバーの設定が空になったら、サーバー自体のキーも削除
+            guild_was_removed = False
             if not self.settings[guild_id]:
                 del self.settings[guild_id]
+                guild_was_removed = True
 
-            await self._save_settings()
+            try:
+                await self._save_settings()
+            except ConfigError:
+                # メモリを保存失敗前へ戻す
+                if guild_was_removed:
+                    self.settings[guild_id] = {}
+                self.settings[guild_id][twitch_channel] = removed_config
+                lang = resolve_interaction_lang(interaction)
+                await interaction.response.send_message(
+                    pick_str(
+                        lang,
+                        ja="❌ Twitch設定の保存に失敗しました。しばらくしてから再試行してください。",
+                        en="❌ Failed to save Twitch settings. Please try again later.",
+                    )
+                )
+                return
+
             await interaction.response.send_message(
                 f"✅ **{removed_channel_name}** のTwitch配信通知の設定を解除しました。")
         else:

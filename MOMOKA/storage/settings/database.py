@@ -14,6 +14,7 @@ from MOMOKA.storage.settings.constants import (
     NS_CHANNEL_IMAGE_MODELS,
     NS_CHANNEL_LLM_MODELS,
     NS_EARTHQUAKE_CONFIG,
+    NS_FILEIO_DELETION_SCHEDULE,
     NS_GDRIVE_DELETION_SCHEDULE,
     NS_LINK_FIX_SETTINGS,
     NS_LOG_VIEWER_CONFIG,
@@ -159,6 +160,9 @@ class SettingsDB:
                 level_llm TEXT NOT NULL, level_tts TEXT NOT NULL,
                 level_error TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS fileio_deletion_schedule (
+                file_key TEXT PRIMARY KEY, delete_at REAL NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS gdrive_deletion_schedule (
                 file_id TEXT PRIMARY KEY, delete_at REAL NOT NULL
             );
@@ -270,7 +274,8 @@ class SettingsDB:
             NS_LOGGING_CHANNELS: self._load_logging_channels,
             NS_RESPONSE_TIMES: self._load_response_times,
             NS_LOG_VIEWER_CONFIG: self._load_log_viewer,
-            NS_GDRIVE_DELETION_SCHEDULE: self._load_gdrive,
+            NS_FILEIO_DELETION_SCHEDULE: self._load_fileio,
+            NS_GDRIVE_DELETION_SCHEDULE: self._load_fileio,
         }
         # 未知 namespace は従来どおり None とログで扱う。
         loader = loaders.get(namespace)
@@ -297,7 +302,8 @@ class SettingsDB:
             NS_LOGGING_CHANNELS: self._save_logging_channels,
             NS_RESPONSE_TIMES: self._save_response_times,
             NS_LOG_VIEWER_CONFIG: self._save_log_viewer,
-            NS_GDRIVE_DELETION_SCHEDULE: self._save_gdrive,
+            NS_FILEIO_DELETION_SCHEDULE: self._save_fileio,
+            NS_GDRIVE_DELETION_SCHEDULE: self._save_fileio,
         }
         # 未知 namespace は保存前に例外にする。
         saver = savers.get(namespace)
@@ -565,9 +571,14 @@ class SettingsDB:
     @staticmethod
     def _save_tts(conn: sqlite3.Connection, data: Any) -> None:
         """tts_channel_settings を全置換する。"""
-        conn.execute("DELETE FROM tts_channel_settings")
+        # 非 dict のまま DELETE するとテーブルが空になるため先に拒否する
         if not isinstance(data, dict):
-            return
+            # 呼び出し元へ不正入力を明示する
+            raise TypeError(
+                f"tts_channel_settings save expects dict, got {type(data).__name__}"
+            )
+        # 形状検証後にだけ全削除する
+        conn.execute("DELETE FROM tts_channel_settings")
         for channel_id, settings in data.items():
             if not isinstance(settings, dict) or "model_id" not in settings:
                 continue
@@ -1084,25 +1095,43 @@ class SettingsDB:
                 conn.close()
 
     @staticmethod
-    def _load_gdrive(conn: sqlite3.Connection) -> Optional[Dict[str, float]]:
-        """file_id → delete_at を返す。"""
+    def _load_fileio(conn: sqlite3.Connection) -> Optional[Dict[str, float]]:
+        """file_key → delete_at を返す（旧 gdrive テーブルも読む）。"""
+        # 新テーブルを優先する
         rows = conn.execute(
-            "SELECT file_id, delete_at FROM gdrive_deletion_schedule"
+            "SELECT file_key, delete_at FROM fileio_deletion_schedule"
         ).fetchall()
-        return {str(file_id): float(delete_at) for file_id, delete_at in rows} or None
+        result = {
+            str(file_key): float(delete_at) for file_key, delete_at in rows
+        }
+        # 旧テーブルがあればマージする
+        try:
+            old_rows = conn.execute(
+                "SELECT file_id, delete_at FROM gdrive_deletion_schedule"
+            ).fetchall()
+            for file_id, delete_at in old_rows:
+                result.setdefault(str(file_id), float(delete_at))
+        except sqlite3.Error:
+            pass
+        return result or None
 
     @staticmethod
-    def _save_gdrive(conn: sqlite3.Connection, data: Any) -> None:
-        """gdrive_deletion_schedule を全置換する。"""
-        conn.execute("DELETE FROM gdrive_deletion_schedule")
+    def _save_fileio(conn: sqlite3.Connection, data: Any) -> None:
+        """fileio_deletion_schedule を全置換する。"""
+        conn.execute("DELETE FROM fileio_deletion_schedule")
+        # 旧テーブルも空にして移行完了扱いにする
+        try:
+            conn.execute("DELETE FROM gdrive_deletion_schedule")
+        except sqlite3.Error:
+            pass
         if not isinstance(data, dict):
             return
-        for file_id, delete_at in data.items():
+        for file_key, delete_at in data.items():
             try:
                 conn.execute(
-                    "INSERT INTO gdrive_deletion_schedule (file_id, delete_at) "
+                    "INSERT INTO fileio_deletion_schedule (file_key, delete_at) "
                     "VALUES (?, ?)",
-                    (str(file_id), float(delete_at)),
+                    (str(file_key), float(delete_at)),
                 )
             except (TypeError, ValueError):
                 continue

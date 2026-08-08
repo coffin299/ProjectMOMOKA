@@ -1,40 +1,77 @@
-# LLM 画像生成（Forge / ローカル diffusers）設定。
-# llm_config から分離。bot.config["image_generator"] として読まれる。
+# LLM 画像生成（Forge / ローカル diffusers）設定
+# llm_config から分離。bot.config["image_generator"] として読まれる
+# 実行時は configs/image_generator_config.yaml を編集する
+
 image_generator:
+  # false なら画像生成ツール・コマンドを無効化
   enabled: true
+  # 生成画像をディスクに残すか
   save_images: true
+  # 保存先ディレクトリ（リポジトリ相対可）
   save_directory: data/image
+  # メモリ上に保持する生成結果キャッシュ上限（枚数イメージ）
   max_cache_size: 1
+  # この GB を超える VRAM 使用が見込まれる／達したら生成を抑止・警告する閾値
   vram_usage_threshold_gb: 5.0
+  # ローカル diffusers 向けメモリ節約
   memory_optimization:
+    # モデルを必要時だけ GPU に載せる（VRAM 節約・速度低下）
     enable_cpu_offload: true
+    # VAE をスライス処理（VRAM 節約）
     enable_vae_slicing: true
+    # VAE をタイル処理（大解像度向け・さらに遅い）
     enable_vae_tiling: false
+    # attention slicing（max = 最大節約）
     attention_slicing: max
+  # 既定の生成サイズ（幅x高さ）
   default_size: 1024x1024
+  # ユーザー指定できる最大幅（px）
   max_width: 2048
+  # ユーザー指定できる最大高さ（px）
   max_height: 2048
+  # 最小幅（px）
   min_width: 256
+  # 最小高さ（px）
   min_height: 256
+  # 使うモデル ID / パス。null なら環境・Forge 側の既定に従う
   model: null
+  # ローカル／共通の既定生成パラメータ
   default_params:
+    # サンプリングステップ数
     steps: 20
+    # CFG（プロンプト追従の強さ）
     cfg_scale: 7.0
+    # サンプラー名
     sampler_name: DPM++ 2M Karras
+    # 乱数シード（-1 = 毎回ランダム）
     seed: -1
+    # ネガティブプロンプト既定文
     negative_prompt: lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry
+  # Stable Diffusion WebUI Forge（HTTP API）連携
   forge:
+    # Forge API のベース URL
     base_url: http://127.0.0.1:7861
+    # txt2img エンドポイントパス
     txt2img_path: /sdapi/v1/txt2img
+    # 1 回の生成リクエストタイムアウト（秒）
     timeout: 180.0
+    # Forge プロセス起動完了待ちの上限（秒）
     startup_timeout: 240.0
+    # API の override_settings を生成後に元へ戻すか
     override_settings_restore_afterwards: true
+    # Bot 起動時に Forge を自動起動するか
     auto_start: false
+    # auto_start 時に実行する起動スクリプト
     start_script: lib/stable-diffusion-webui-forge/start-api.bat
+    # 起動時 pip install をスキップするか（既に環境構築済み向け）
     skip_pip_install: true
+    # Forge が listen するポート（base_url と揃える）
     api_port: 7861
+    # 追加のコマンドライン引数（文字列または null）
     commandline_args: null
+    # 起動時に渡す環境変数辞書
     env: {}
+    # Forge API 向け既定パラメータ（default_params と併用／上書き）
     default_params:
       sampler_name: DPM++ 2M Karras
       steps: 20

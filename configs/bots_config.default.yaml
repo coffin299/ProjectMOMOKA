@@ -1,21 +1,39 @@
+# デュアル Bot（PLANA / ARONA）の起動・招待・ペルソナ設定
+# 実行時は configs/bots_config.yaml を編集する（本ファイルは雛形）
+
+# 起動する Bot 定義（キー名 = bot_id。main がここを読んでプロセスを起こす）
 bots:
+  # プライマリ Bot（フル機能）
   plana:
+    # primary | companion。primary は全 Cog、companion は機能制限あり
     role: primary
+    # Discord 上・ログ・メッセージで使う表示名
     display_name: PLANA
+    # Discord Application ID（Developer Portal）
     application_id: 1031673203774464160
+    # OAuth / 招待で使う Client ID（通常は application_id と同じ）
     client_id: 1031673203774464160
+    # Bot Token（絶対にコミットしない！！！！！）
     token: YOUR_PLANA_BOT_TOKEN
-    invite_url: https://discord.com/oauth2/authorize?client_id=1031673203774464160
+    # /invite 等で出す招待 URL（scope に bot + applications.commands を含める）
+    invite_url: YOUR_PLANA_BOT_INVITE_URL
+    # llm.personas のキー（plana / arona）。system_prompt 選択に使う
     persona: plana
+  # コンパニオン Bot（一部機能は PLANA へ誘導）
   arona:
+    # companion = 同居制限・機能リダイレクト対象
     role: companion
     display_name: ARONA
     application_id: 1364917551024308255
     client_id: 1364917551024308255
     token: YOUR_ARONA_BOT_TOKEN
-    invite_url: https://discord.com/oauth2/authorize?client_id=1364917551024308255&permissions=6516795221339600&scope=bot
+    invite_url: YOUR_ARONA_BOT_INVITE_URL
     persona: arona
+
+# ディベート等で相手にする companion の bot_id（bots 配下のキー）
 debate_partner: arona
+
+# companion が未対応機能を触られたときの誘導文（ギルド locale で選択）
 redirect_to_plana:
   ja: その機能は PLANA 側で使えます。サーバーに PLANA を追加して、そちらでお試しください。
   en: That feature is available on PLANA. Please invite PLANA to this server and try there.

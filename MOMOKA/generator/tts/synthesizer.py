@@ -233,7 +233,7 @@ class StyleBertVITS2Synthesizer:
         # Load style_vectors.npy (optional)
         if self._style_vectors_path and np is not None:
             try:
-                self._style_vectors = np.load(str(self._style_vectors_path), allow_pickle=True)
+                self._style_vectors = np.load(str(self._style_vectors_path), allow_pickle=False)
             except Exception as e:
                 self._style_vectors = None
                 logging.getLogger(__name__).debug(f"Style vectors not loaded: {e}")

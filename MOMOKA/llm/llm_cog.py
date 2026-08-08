@@ -60,6 +60,7 @@ from MOMOKA.llm.router.mode_runner import (
 )
 from MOMOKA.llm.router.json_extract import extract_completion_text
 from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
+from MOMOKA.utilities.url_safety import UnsafeURLError, get_with_ssrf_protection
 from MOMOKA.storage import NS_CHANNEL_LLM_MODELS, resolve_settings_db
 from MOMOKA.utilities.feedback import (
     create_support_report_view,
@@ -1170,6 +1171,30 @@ class LLMCog(commands.Cog, name="llm"):
 
         return definitions or None
 
+    def _is_reply_to_tracked_llm_response(self, message: discord.Message) -> bool:
+        """親が conversation_threads / message_to_thread で追跡された LLM 応答のときだけ True。"""
+        # リプライ参照が無ければ対象外
+        if not message.reference or not message.reference.message_id:
+            # リプライではない
+            return False
+        # DM は guild_id=0、ギルドは実 ID
+        guild_id = message.guild.id if message.guild else 0
+        # 親メッセージ ID を取得する
+        parent_id = message.reference.message_id
+        # ギルド単位の追跡表を取る
+        thread_map = self.message_to_thread.get(guild_id)
+        # 追跡に無ければ Link Fix 等の非 LLM 投稿
+        if not thread_map or parent_id not in thread_map:
+            # LLM 応答ではない
+            return False
+        # 解決済み親が必須（未解決時はユーザー投稿への誤検知を避ける）
+        parent = message.reference.resolved
+        if not isinstance(parent, discord.Message):
+            # メンション経路は別途有効なまま
+            return False
+        # Bot の追跡済み応答へのリプライのみ真
+        return parent.author == self.bot.user
+
     async def _get_conversation_thread_id(self, message: discord.Message) -> int:
         guild_id = message.guild.id if message.guild else 0  # DMの場合は0
         
@@ -1278,7 +1303,20 @@ class LLMCog(commands.Cog, name="llm"):
         # 画像バイト上限（未設定時は従来どおり 20 MiB）
         max_image_bytes = int(self.llm_config.get('max_image_bytes', 20 * 1024 * 1024))
         try:
-            async with self.http_session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            # SSRF 対策付き GET（リダイレクト先も都度 DNS / プライベート IP 再検証）
+            try:
+                # タイムアウトは従来どおり 10 秒
+                response = await get_with_ssrf_protection(
+                    self.http_session,
+                    url,
+                    timeout=aiohttp.ClientTimeout(total=10),
+                )
+            except UnsafeURLError as unsafe_exc:
+                # SSRF 拒否は想定内のため WARNING
+                logger.warning("Rejected unsafe image URL %s: %s", url, unsafe_exc)
+                return None
+            # レスポンス本文を上限付きで読む
+            try:
                 if response.status != 200:
                     logger.warning(f"Failed to download image from {url} (Status: {response.status})")
                     return None
@@ -1376,6 +1414,10 @@ class LLMCog(commands.Cog, name="llm"):
                     f"🖼️ [IMAGE] Successfully processed image: {url[:100]}... (MIME: {mime_type}, Size: {len(image_bytes)} bytes)")
                 return {"type": "image_url",
                         "image_url": {"url": f"data:{mime_type};base64,{encoded_image}", "detail": "auto"}}
+            finally:
+                # SSRF ガード付き GET は手動取得のため必ず閉じる
+                if not response.closed:
+                    response.close()
         except asyncio.TimeoutError:
             # 外部画像の一時的な取得失敗は想定内のため WARNING にする
             logger.warning(f"Timeout while downloading image: {url}")
@@ -1569,9 +1611,8 @@ class LLMCog(commands.Cog, name="llm"):
         # スレッド内ではBotのメッセージへのリプライのみに反応
         is_thread = isinstance(message.channel, discord.Thread)
         is_mentioned = self.bot.user.mentioned_in(message) and not message.mention_everyone
-        is_reply_to_bot = (message.reference and message.reference.resolved and 
-                           isinstance(message.reference.resolved, discord.Message) and 
-                           message.reference.resolved.author == self.bot.user)
+        # Link Fix 等の一般 Bot 投稿ではなく、追跡済み LLM 応答へのリプライのみ真
+        is_reply_to_bot = self._is_reply_to_tracked_llm_response(message)
         
         # DM 以外: スレッドはリプライのみ、通常チャンネルはメンション・リプライが必要
         if not is_dm:

@@ -14,7 +14,7 @@ youtube_cookie.txt
 youtube_cookies.txt
 nico_cookies.txt
 
-# Google OAuth / 資格情報（リポジトリへコミットしない）
+# 資格情報・シークレット（リポジトリへコミットしない）
 client_secrets.json
 token.json
 **/credentials*.json
@@ -50,4 +50,7 @@ data/*.db-shm
 /config.yaml
 configs/*_config.yaml
 !configs/*_config.default.yaml
+# メディアダウンローダー allowlist（ランタイムコピー。*.default.json はコミット可）
+configs/media_downloader_allowlist.json
+!configs/media_downloader_allowlist.default.json
 /models/image-models/modelA/

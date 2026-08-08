@@ -1,19 +1,64 @@
+# ホスト共通のコア設定（管理者・プレゼンス・外部サービス）
+# 実行時は configs/core_config.yaml を編集する
+
+# Bot オーナー／管理者の Discord User ID 一覧（管理コマンド・特権操作の許可判定）
 admin_user_ids:
-- 270446628622696449
-- 283551714966241281
-- 463985410473721856
-- 603714693193793558
+  - 111111111111111111
+  - 222222222222222222
+
+# Discord プレゼンス（サイドバーに出るオンライン状態＋アクティビティ）
 presence:
+  # アクティビティ種別（ローテーション文言の前に付く表示形式）
+  #   playing   … 「〜をプレイ中」
+  #   streaming … 「〜を配信中」（下の streaming_url が必要。未設定時は既定 Twitch URL）
+  #   listening … 「〜を再生中」
+  #   watching  … 「〜を視聴中」
+  #   competing … 「〜に参戦中」
+  #   none      … アクティビティなし（文言ローテは動かず、Activity を消す）
+  activity_type: streaming
+  # オンライン状態（アイコン色）
+  #   online    … オンライン（緑）
+  #   idle      … 離席中（黄）
+  #   dnd       … 取り込み中（赤）。do_not_disturb も可
+  #   invisible … オフライン表示。offline も可
+  status: online
+  # activity_type が streaming のときだけ使う配信 URL（Twitch / YouTube 等）
   streaming_url: https://www.twitch.tv/coffinnoob299
+  # 15 秒ごとに切り替える表示文言（上から順にローテ）
+  # 使えるプレースホルダ:
+  #   {guild_count}     … 参加サーバー数
+  #   {version}         … セマンティックバージョン（例: 1.0.0）
+  #   {build_date}      … 最終 git コミット日（YYYY-MM-DD）
+  #   {status_version}  … 「prjMOMOKA Ver.YYYY-MM-DD」全文（version.py 既定）
+  # 空リスト / 未設定だと文言ローテなし
+  status_rotation:
+    - "operating on {guild_count} servers"
+    - "ProjectMOMOKA ver {build_date}"
+
+# 空配列 = 全チャンネル許可。ID を列挙するとそのチャンネルだけ応答する制限モード
 allowed_channel_ids: []
+
+# 音楽 Cog のテキストプレフィックスコマンド接頭辞（空 = プレフィックス無効、スラッシュのみ）
 music_cog_prefix: ''
+
+# LLM Cog のテキストプレフィックスコマンド接頭辞（空 = 無効）
 llm_cog_prefix: ''
+
+# Bot 起動時に立ち上げる外部プロセス／サービス
 external_services:
+  # YouTube PO Token 用 bgutil（yt-dlp の再生・取得安定化）
   bgutil:
+    # false なら起動しない
     enabled: true
+    # true だと起動失敗時に Bot 全体を止める／警告を厳格化
     required: true
+    # サーバ実行ランタイム（node 想定）
     runtime: node
+    # bgutil HTTP サーバの作業ディレクトリ（リポジトリ相対）
     server_dir: third_party/bgutil-ytdlp-pot-provider/server
+    # yt-dlp が叩くローカル API のベース URL
     base_url: http://127.0.0.1:4416
+    # 上記サーバの待受ポート
     port: 4416
+    # 起動完了待ちの上限秒数
     startup_timeout_seconds: 20

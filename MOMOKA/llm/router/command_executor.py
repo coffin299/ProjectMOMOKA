@@ -14,6 +14,8 @@ from MOMOKA.llm.router.commands_catalog import (
 )
 from MOMOKA.llm.router.json_extract import extract_completion_text, parse_llm_json_object
 from MOMOKA.music.music_cog import MusicCog
+from MOMOKA.services.log_sanitize import sanitize_log_message
+from MOMOKA.utilities.locale import pick_str
 
 if TYPE_CHECKING:
     from MOMOKA.llm.llm_cog import LLMCog
@@ -140,11 +142,17 @@ async def _invoke_music(
             else f"Unsupported music command: {name}"
         )
     except Exception as e:
-        logger.error("command_executor music %s failed: %s", name, e, exc_info=True)
-        return (
-            f"コマンド実行中にエラーが発生しました: {e}"
-            if lang.startswith("ja")
-            else f"Error while running the command: {e}"
+        # 例外本文はユーザーへ出さず、サニタイズしてログのみ残す
+        logger.error(
+            "command_executor music %s failed: %s",
+            name,
+            sanitize_log_message(str(e)),
+            exc_info=True,
+        )
+        return pick_str(
+            lang,
+            ja="コマンド実行中にエラーが発生しました。しばらくしてから再試行してください。",
+            en="An error occurred while running the command. Please try again later.",
         )
 
 

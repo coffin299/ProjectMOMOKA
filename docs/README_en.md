@@ -34,10 +34,10 @@
 
 - 🤖 **Multi-model AI chat** — OpenAI, Google Gemini, NVIDIA NIM, OpenRouter, KoboldCPP, and more
 - 🧭 **Agent router** — Auto-dispatch to conversation / coding / command
-- 🎵 **Music playback** — YouTube, Spotify, Google Drive, and more (both bots)
+- 🎵 **Music playback** — YouTube, Spotify, NicoNico, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
 - 🔗 **Link Fix** — Suppress original social embeds and quote-replace via fixer proxies (`/linkfix`, **PLANA only**)
-- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en), `/invite` (Components V2), `/updates` (Components V2, 5 per page), media download (`/download_video` / `/download_audio`, Components V2), and more
+- 🎲 **Utilities** — `/help` (🇯🇵/🇺🇸 + paging; app→guild→en), `/invite` (Components V2), `/updates` (Components V2, 5 per page), `/ping`, `/latex`, media download (`/download_video` / `/download_audio`, Components V2), and more
 
 ---
 
@@ -72,7 +72,7 @@ The PCM mixer (`AudioMixer`) uses NumPy vectorized add/clip so music and TTS can
 
 #### Sources
 
-- YouTube / Spotify / Google Drive / NicoNico / other yt-dlp media
+- YouTube / Spotify / NicoNico / other yt-dlp media
 
 ### 3. Image Generation (PLANA only)
 
@@ -114,7 +114,7 @@ Dice, server/user info, gacha, `/latex` (math PNG via matplotlib mathtext), etc.
 
 #### Media download (Components V2)
 
-Fetches media with yt-dlp and shares it via Google Drive (links expire after a delay).
+Fetches media with yt-dlp and shares it via file.io (links expire in ~10 minutes).
 
 | Command | Description |
 |---------|-------------|
@@ -124,7 +124,8 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 - Format labels do **not** show “video only” notes (audio is merged after selection)
 - The format picker shows the extension first and prefers mp4 over webm at the same resolution
 - Unsupported URLs and unavailable formats get cause-specific guidance (tag/listing pages are not allowed)
-- Requires Google Drive API `client_secrets.json` / `token.json` and the folder ID configured in the cog (**never commit** these; already in `.gitignore`)
+- **Allowlist**: `configs/media_downloader_allowlist.default.json` (copied to `media_downloader_allowlist.json` on first start). Adult IEs and private IPs are rejected. Not applied to `/play`
+- Share links use file.io (expires≈10m, autoDelete, unlimited downloads). Local temp files are deleted after ~600 seconds
 - For YouTube, Deno (recommended) or Node.js 22+ plus `yt-dlp[default]` is advised (same EJS guidance as music)
 
 ---
@@ -150,7 +151,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 
 2. **Configuration**
    - On first run, each missing `configs/<category>_config.yaml` is copied from the matching `*_config.default.yaml` (except `commands_i18n`, which is loaded directly from the default file)
-   - **Public repo:** never commit runtime `configs/*_config.yaml` (tokens/API keys), `client_secrets.json` / `token.json`, `.env`, or `data/*.db` (gitignored). Defaults must keep `YOUR_*` placeholders only
+   - **Public repo:** never commit runtime `configs/*_config.yaml` (tokens/API keys), `configs/media_downloader_allowlist.json` (runtime copy), `.env`, `data/*.db`, or credential files (gitignored). Defaults must keep `YOUR_*` placeholders only
    - Manual copy example:
      ```bash
      copy configs\bots_config.default.yaml configs\bots_config.yaml   # Windows
@@ -200,7 +201,7 @@ Fetches media with yt-dlp and shares it via Google Drive (links expire after a d
 
 ## Configuration
 
-Settings live under `configs/` as category YAML files. See each `*_config.default.yaml` for full keys.
+Settings live under `configs/` as category YAML files. Each key is documented with Japanese comments in the matching `*_config.default.yaml` (runtime files are `*_config.yaml`).
 
 | File | Purpose |
 |------|---------|
@@ -215,7 +216,7 @@ Settings live under `configs/` as category YAML files. See each `*_config.defaul
 | `link_fix_config.yaml` | Link Fix (suppress + quote-replace social embeds, PLANA) |
 | `count_config.yaml` | Server-count posting to bot lists (top.gg, Void Bots, DEL, etc., PLANA) |
 | `utilities_config.yaml` | Utilities |
-| `core_config.yaml` | Shared core settings |
+| `core_config.yaml` | Shared core settings (`presence.activity_type` / `presence.status` / `presence.status_rotation`; placeholders `{guild_count}` `{version}` `{build_date}` `{status_version}`) |
 | `commands_i18n_config.default.yaml` | Slash command description i18n catalog (loaded directly; no runtime copy) |
 
 ### Runtime data (SQLite)
@@ -224,11 +225,13 @@ Per-guild / per-channel overrides are stored in `data/momoka.db` as **normalized
 
 Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions`. Schema version lives in `schema_meta.version` (currently 3).
 
+If TTS / speech settings fail to load, empty in-memory state is not written back on cog unload (avoids wiping the DB). Per-guild speech settings and dictionary updates prefer `SettingsDB.save_guild()`. Full `tts_channel_settings` replaces reject non-dict input before DELETE.
+
 #### Host vs. guild settings boundary
 
 The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Link Fix, speech settings, and the speech dictionary. Dashboard code must use `SettingsDB.save_guild()` or `save_guild_async()` and must never modify another guild's rows.
 
-`logging_channels`, `log_viewer_config`, `gdrive_deletion_schedule`, and `response_times` are host-only namespaces and must not be read or written through guild administration pages. Channel-scoped LLM, image-model, and TTS settings are also outside the guild-admin dashboard scope.
+`logging_channels`, `log_viewer_config`, `fileio_deletion_schedule`, and `response_times` are host-only namespaces and must not be read or written through guild administration pages. Channel-scoped LLM, image-model, and TTS settings are also outside the guild-admin dashboard scope.
 
 #### Authorization matrix (Discord / future dashboard)
 
@@ -242,6 +245,8 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 #### Host ops GUI (Electron) vs future guild dashboard
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
+- Host GUI WebSocket logs do **not** use a query-string token (`Sec-WebSocket-Protocol: bearer.<token>` or a first-message auth payload)
+- LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 
 #### Future web dashboard notes (not implemented yet)
@@ -316,7 +321,7 @@ llm:
 | `/play` `/pause` `/resume` `/stop` `/skip` | Playback |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | Queue & volume |
 
-Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop. Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
+Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle. Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel.
 Playlist fetch limit is `music.max_playlist_items` (default 10000).
 The maximum number of retained guild playback states is `music.max_guilds` (default 50). When full, the oldest inactive state is evicted before a new state can be accepted.
 Music messages are sent `@silent` (suppress notifications) by default.
@@ -362,7 +367,7 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | `/help` | Help (Components V2; app→guild→en initial language; 🇯🇵/🇺🇸 toggle + paging) |
 | `/invite` | PLANA / ARONA invites (Components V2; app→guild→en) |
 | `/updates` | GitHub commit history (Components V2; fetch all; 5 per page; first/prev/next/last) |
-| `/download_video` `/download_audio` | Media download (Components V2, Google Drive share) |
+| `/download_video` `/download_audio` | Media download (Components V2, file.io share, ~10 min expiry) |
 | `/ping` `/serverinfo` `/userinfo` `/avatar` | Info (`/ping` shows Gateway + Voice WebSocket) |
 | `/latex <expression>` | Render LaTeX-like math as PNG (matplotlib mathtext; not full LaTeX) |
 | `/roll` `/diceroll` `/check` `/gacha` `/meow` `/support` `/feedback` | Misc |
@@ -385,7 +390,7 @@ Set `api_key1`, `api_key2`, … per provider in `llm_config.yaml`. On rate limit
 Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the queue finishes, auto-leave when the VC is empty. While playing, the voice channel status is synced as `NowPlaying - track title` (if a user edits it manually, the bot stops updating; requires **Set Voice Channel Status** permission; missing permission logs once at INFO then suppresses further updates).
 **No shared VC:** PLANA and ARONA cannot connect to the same voice channel at once. If they already coexist, ARONA disconnects and PLANA stays.
 
-**Graceful restart resilience:** On `/shutdown`, GUI shutdown, or Ctrl+C, active VC playback (position + queue) is saved to `vc_playback_sessions` in `data/momoka.db`, then restored after startup (re-join + seek). The row is deleted once playback starts successfully. Hard kills/crashes are out of scope. LLM replies are not auto-resumed; in-flight messages are overwritten with a restart notice and users should re-mention. Support links come from `utilities_config.yaml` (`support.discord_invite_url`, `developer_user_id`, etc.).
+**Graceful restart resilience:** On `/shutdown`, GUI shutdown, or Ctrl+C, active VC playback (position + queue) is saved to `vc_playback_sessions` in `data/momoka.db`, then restored after startup (re-join + seek). The row is deleted once playback starts successfully. Transient misses (guild/channel not cached yet, connect timeout) keep the row and leave the restore flag unset for retry. Hard kills/crashes are out of scope. LLM replies are not auto-resumed; in-flight messages are overwritten with a restart notice and users should re-mention. Support links come from `utilities_config.yaml` (`support.discord_invite_url`, `developer_user_id`, etc.).
 
 ### Image generation (PLANA)
 

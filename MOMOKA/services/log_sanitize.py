@@ -62,6 +62,12 @@ def sanitize_log_message(
         "********",
         message,
     )
+    # キー名無しの長いトークン断片（英数字混在・40文字以上）を伏せる
+    message = re.sub(
+        r"\b(?=[A-Za-z0-9_-]*[A-Za-z])(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{40,}\b",
+        "********",
+        message,
+    )
     # 長すぎる場合は切り詰める
     if len(message) > max_length:
         message = message[:max_length] + " ...[truncated]"

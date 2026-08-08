@@ -666,12 +666,14 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         finally:
             # yt-dlp パイププロセスを停止する
             if self._ytdlp_proc is not None:
+                # 終了処理用にローカルへ退避する
+                ytdlp_proc = self._ytdlp_proc
                 try:
                     # まだ生きていれば強制終了する
-                    if self._ytdlp_proc.poll() is None:
-                        self._ytdlp_proc.kill()
+                    if ytdlp_proc.poll() is None:
+                        ytdlp_proc.kill()
                     # 終了を短時間待つ
-                    self._ytdlp_proc.wait(timeout=2)
+                    ytdlp_proc.wait(timeout=2)
                 except Exception:
                     # 終了待ち失敗は無視する
                     pass
@@ -682,6 +684,22 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                         self._ytdlp_stderr_pump.stop()
                         # 再利用されないよう参照を消す。
                         self._ytdlp_stderr_pump = None
+                    try:
+                        # 失敗経路と同様に親側 stdout FD を閉じる
+                        if ytdlp_proc.stdout is not None:
+                            # ハンドルを解放する
+                            ytdlp_proc.stdout.close()
+                    except Exception:
+                        # 既に閉じていても stderr 解放を続行する
+                        pass
+                    try:
+                        # 失敗経路と同様に親側 stderr FD を閉じる
+                        if ytdlp_proc.stderr is not None:
+                            # ハンドルを解放する
+                            ytdlp_proc.stderr.close()
+                    except Exception:
+                        # 既に閉じていても一時ファイル解放を続行する
+                        pass
                     # 参照をクリアする
                     self._ytdlp_proc = None
             # 一時ファイルをクローズ（自動削除される）

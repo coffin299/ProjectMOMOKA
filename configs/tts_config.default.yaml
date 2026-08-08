@@ -1,18 +1,38 @@
+# Style-Bert-VITS2 読み上げ（TTS）設定
+# 実行時は configs/tts_config.yaml を編集する
+
 tts:
+  # false なら TTS Cog の合成機能を無効化
   enabled: true
+  # モデル一式を置くルートディレクトリ（リポジトリ相対可）
   model_root: models/tts-models
+  # 既定で使うモデルサブディレクトリ名。null なら自動選択／初回設定に従う
   default_model_dir: null
+  # OpenJTalk 辞書ディレクトリ。null ならパッケージ既定
   pyopenjtalk_dict_dir: null
+  # 出力サンプルレート（Discord 音声は通常 48000）
   sample_rate: 48000
+  # 合成ノイズ（大きいほど抑揚・ゆらぎが増える）
   noise_scale: 0.667
+  # 音素長ゆらぎ
   noise_w: 0.8
+  # 発話速度スケール（モデル内部。ユーザー速度とは別）
   length_scale: 1.0
+  # 複数話者モデル内の話者 ID 既定値
   default_model_id: 0
+  # 既定スタイル名（モデルの style 定義に合わせる）
   default_style: Neutral
+  # スタイル強度（大きいほどそのスタイルに寄せる）
   default_style_weight: 5.0
+  # ユーザー向け既定再生速度倍率
   default_speed: 1.0
+  # ユーザー向け既定音量倍率（1.0 = 100%）
   default_volume: 1.0
+  # /say など単発読み上げコマンドを有効にするか
   enable_say_command: true
+  # VC 入退室を自動で読み上げるか
   enable_join_leave_notice: true
+  # 入室読み上げ文。{member_name} が参加者名に置換される
   join_message_template: '{member_name}さんが参加しました。'
+  # 退室読み上げ文
   leave_message_template: '{member_name}さんが退出しました。'

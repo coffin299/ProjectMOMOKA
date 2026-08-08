@@ -79,8 +79,8 @@
 **JA:** ボイスチャンネルで再生（キュー・ループ・シャッフルなど）。両ボット対応（同一 VC への同時接続は不可）。PCM ミキサーは NumPy で音楽+TTS を合成。  
 **EN:** Play audio in voice channels with queue, loop, shuffle, and more. Both bots (same VC at once is not allowed). PCM mixer uses NumPy for music+TTS mix.
 
-- YouTube / Spotify / Google Drive / ニコニコ動画 / その他 yt-dlp 対応ソース  
-  **EN:** YouTube, Spotify, Google Drive, NicoNico, and other yt-dlp sources
+- YouTube / Spotify / ニコニコ動画 / その他 yt-dlp 対応ソース  
+  **EN:** YouTube, Spotify, NicoNico, and other yt-dlp sources
 
 ![Music Playback](https://momoka-project.com/assets/images/playmusic.png)
 
@@ -91,15 +91,15 @@
 
 ## Media Downloader / メディアダウンローダー
 
-**JA:** 動画・音声を取得し、Google Drive 経由で共有します。  
-**EN:** Fetch video or audio and share via Google Drive.
+**JA:** 動画・音声を取得し、file.io 経由で共有します（リンクは約 10 分で失効）。  
+**EN:** Fetch video or audio and share via file.io (links expire in ~10 minutes).
 
 - `/download_video` — **JA:** URL または検索語。フォーマット選択（Components V2）後に共有 · **EN:** URL or search; pick a format (Components V2), then share
 - `/download_audio` — **JA:** 音声のみ（mp3 / m4a / opus / flac / wav） · **EN:** audio only (mp3 / m4a / opus / flac / wav)
 
 ![Media Downloader](https://momoka-project.com/assets/images/media_downloader.png)
 
-*`/download_video` / `/download_audio` — JA: フォーマット選択後、Google Drive 経由で共有。 / EN: format picker, then share via Google Drive.*
+*`/download_video` / `/download_audio` — JA: フォーマット選択後、file.io 経由で共有（約 10 分で失効）。 / EN: format picker, then share via file.io (~10 min expiry).*
 
 ---
 
@@ -109,7 +109,7 @@
 - **Link Fix** — **JA:** SNS 向け公式 embed を抑制し Fix URL で引用置換（`/linkfix`、デフォルト無効） · **EN:** suppress original social embeds and quote-replace via fixers (`/linkfix`, disabled by default)
 - **JA:** 地震速報 / Twitch 通知 · **EN:** Earthquake / Twitch notifications
 - **JA:** ゲーム統計（VALORANT、Rainbow Six Siege） · **EN:** Game trackers (VALORANT, Rainbow Six Siege)
-- **Utilities** — `/help` · `/invite` · `/updates` · `/support` · `/feedback` · タイマー など
+- **Utilities** — `/help` · `/invite` · `/updates` · `/support` · `/feedback` · `/ping` · `/latex` など
 
 ---
 

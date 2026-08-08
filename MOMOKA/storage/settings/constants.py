@@ -28,8 +28,10 @@ NS_LOGGING_CHANNELS = "logging_channels"
 NS_RESPONSE_TIMES = "response_times"
 # ホスト全体のログビューア設定 namespace を定義する。
 NS_LOG_VIEWER_CONFIG = "log_viewer_config"
-# ホスト全体の Google Drive 削除予定 namespace を定義する。
-NS_GDRIVE_DELETION_SCHEDULE = "gdrive_deletion_schedule"
+# ホスト全体の file.io 削除予定 namespace を定義する。
+NS_FILEIO_DELETION_SCHEDULE = "fileio_deletion_schedule"
+# 後方互換エイリアス（旧名）
+NS_GDRIVE_DELETION_SCHEDULE = NS_FILEIO_DELETION_SCHEDULE
 
 # Web ダッシュボードからギルド単位で変更可能な namespace を集約する。
 GUILD_ADMIN_NAMESPACES = frozenset(
@@ -47,7 +49,7 @@ HOST_ONLY_NAMESPACES = frozenset(
     {
         NS_LOGGING_CHANNELS,
         NS_LOG_VIEWER_CONFIG,
-        NS_GDRIVE_DELETION_SCHEDULE,
+        NS_FILEIO_DELETION_SCHEDULE,
         NS_RESPONSE_TIMES,
     }
 )

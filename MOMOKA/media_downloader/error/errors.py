@@ -5,7 +5,6 @@ import logging
 import re
 
 import yt_dlp
-from googleapiclient.errors import HttpError
 
 from MOMOKA.utilities.locale import pick_str
 
@@ -77,15 +76,12 @@ def _is_expected_ytdlp_error(e: Exception) -> bool:
     # DownloadError は大半が URL / 権限 / コンテンツ制限由来
     if isinstance(e, yt_dlp.utils.DownloadError):
         return True
-    # Google Drive API の 4xx もユーザー設定起因が多い
-    if isinstance(e, HttpError) and e.resp.status < 500:
-        return True
     # それ以外は想定外
     return False
 
 
 class YTDLPExceptionHandler:
-    """yt-dlpとGoogle Drive関連のエラーを処理し、ユーザー向けのメッセージを生成するクラス。"""
+    """yt-dlpとfile.io関連のエラーを処理し、ユーザー向けのメッセージを生成するクラス。"""
 
     def handle_exception(self, e: Exception, *, lang: str = "en") -> str:
         """
@@ -100,9 +96,11 @@ class YTDLPExceptionHandler:
         """
         # 想定内（URL / コンテンツ制限）は WARNING、それ以外は ERROR + traceback
         if _is_expected_ytdlp_error(e):
-            logger.warning("YTDLP/GDrive expected error: %s", e)
+            logger.warning("YTDLP/file.io expected error: %s", e)
         else:
-            logger.error(f"An error occurred in YTDLP/GDrive process: {e}", exc_info=True)
+            logger.error(
+                "An error occurred in YTDLP/file.io process: %s", e, exc_info=True
+            )
 
         if isinstance(e, yt_dlp.utils.DownloadError):
             # yt-dlp の長い詳細を Discord の表示上限内へ収める
@@ -167,20 +165,6 @@ class YTDLPExceptionHandler:
                     f"Please check the query or URL.\n```{error_detail}```"
                 ),
             )
-        elif isinstance(e, HttpError):
-            # Google Drive API の長い詳細を Discord の表示上限内へ収める
-            error_detail = _truncate_ytdlp_error_detail(e)
-            return pick_str(
-                lang,
-                ja=(
-                    f"Google Drive APIでエラーが発生しました。"
-                    f"認証情報やフォルダID、APIの割り当てを確認してください。\n```{error_detail}```"
-                ),
-                en=(
-                    f"An error occurred with the Google Drive API. "
-                    f"Please check credentials, folder ID, and API quota.\n```{error_detail}```"
-                ),
-            )
         else:
             # 例外名を含む長い詳細を Discord の表示上限内へ収める
             error_detail = _truncate_ytdlp_error_detail(
@@ -198,14 +182,6 @@ class YTDLPExceptionHandler:
                 ),
             )
 
-    def get_gdrive_init_error(self, *, lang: str = "en") -> str:
-        """Google Drive APIが初期化されていない場合のエラーメッセージを返す。"""
-        return pick_str(
-            lang,
-            ja="エラー: Google Drive APIが初期化されていません。コンソールを確認してください。",
-            en="Error: Google Drive API is not initialized. Please check the console.",
-        )
-
     def get_merge_error(self, *, lang: str = "en") -> str:
         """動画と音声の結合に失敗した場合のエラーメッセージを返す。"""
         return pick_str(
@@ -215,11 +191,11 @@ class YTDLPExceptionHandler:
         )
 
     def get_upload_error(self, *, lang: str = "en") -> str:
-        """Google Driveへのアップロードに失敗した場合のエラーメッセージを返す。"""
+        """file.io へのアップロードに失敗した場合のエラーメッセージを返す。"""
         return pick_str(
             lang,
-            ja="エラー: Google Driveへのアップロードに失敗しました。",
-            en="Error: Failed to upload to Google Drive.",
+            ja="エラー: file.io へのアップロードに失敗しました。",
+            en="Error: Failed to upload to file.io.",
         )
 
     def get_conversion_error(self, *, lang: str = "en") -> str:
@@ -229,3 +205,55 @@ class YTDLPExceptionHandler:
             ja="エラー: ファイル変換に失敗しました。FFmpegがインストールされていますか？",
             en="Error: File conversion failed. Is FFmpeg installed?",
         )
+
+    def get_unsupported_site_error(self, *, lang: str = "en") -> str:
+        """許可リスト外サイトを拒否したときのメッセージ。"""
+        return pick_str(
+            lang,
+            ja=(
+                "このサイトからのダウンロードには対応していません。"
+                "許可された動画サイトの URL を指定してください。"
+            ),
+            en=(
+                "Downloads from this site are not supported. "
+                "Please use a URL from an allowed video site."
+            ),
+        )
+
+    def get_forbidden_site_error(self, *, lang: str = "en") -> str:
+        """成人向けなど禁止エクストラクターを拒否したときのメッセージ。"""
+        return pick_str(
+            lang,
+            ja="このサイトからのダウンロードは禁止されています。",
+            en="Downloads from this site are forbidden.",
+        )
+
+    def get_unsafe_url_error(self, *, lang: str = "en") -> str:
+        """プライベート IP / SSRF 対象 URL を拒否したときのメッセージ。"""
+        return pick_str(
+            lang,
+            ja=(
+                "この URL は安全上の理由でダウンロードできません。"
+                "（ローカル／プライベートアドレスは不可）"
+            ),
+            en=(
+                "This URL cannot be downloaded for security reasons "
+                "(local/private addresses are not allowed)."
+            ),
+        )
+
+    def get_allowlist_reject_message(
+        self,
+        reason_code: str,
+        *,
+        lang: str = "en",
+    ) -> str:
+        """allowlist / URL 安全性の reason_code からユーザー向け文言を返す。"""
+        # 成人・禁止サイト
+        if reason_code == "forbidden_site":
+            return self.get_forbidden_site_error(lang=lang)
+        # プライベート IP 等
+        if reason_code == "unsafe_url":
+            return self.get_unsafe_url_error(lang=lang)
+        # 未対応・Generic・リスト外・IE 無し
+        return self.get_unsupported_site_error(lang=lang)

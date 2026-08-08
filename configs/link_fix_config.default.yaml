@@ -1,31 +1,53 @@
-# Link Fix（SNS embed の抑制＋Fix URL 引用置換）設定
+# =============================================================================
+# Link Fix 設定（デフォルト）
+# -----------------------------------------------------------------------------
+# SNS / メディア URL の公式 embed を抑制し、Fix 系ドメインへ書き換えて
+# Discord 上で正しくプレビューさせる機能の既定値です。
+#
+# ランタイムで実際に読み込まれるのは同ディレクトリの link_fix_config.yaml です。
+# 本ファイル（*.default.yaml）は配布用テンプレート／フォールバックとして保持します。
+# =============================================================================
+
 link_fix:
-  # 機能全体のデフォルト（ギルド未設定時）。必要なら /linkfix で有効化
+  # 機能全体の既定オン/オフ（ギルド未設定時）。通常は /linkfix でギルド単位に有効化する
   enabled: false
-  # 返信は常に @silent
+  # Fix 後のボット返信を @silent で送るか（通知なし・チャンネル履歴には残る）
   silent: true
-  # 元メッセージの公式 embed 待ち秒数（抑制前）
+  # 元メッセージの公式 embed が付くまで待つ秒数（その後に抑制・書き換えを行う）
   embed_wait_seconds: 5.0
-  # Fix 側 embed 待ち秒数（無ければ返信削除＋元復元）
+  # 書き換え後 URL の Fix 側 embed 待ち秒数。時間内に付かない場合は返信削除し元メッセージを復元
   fixed_embed_wait_seconds: 6.0
-  # 本文に含まれていればスキップ
+  # メッセージ本文にこの文字列が含まれる場合は Link Fix をスキップするキーワード
   ignore_keyword: fxignore
-  # 返信末尾の小さな注記（-# 行）。ギルド preferred_locale で言語選択
-  # 旧キー footnote はコード側でフォールバック用に残してもよい
+  # 返信末尾に付ける小さな注記（-# 行）。ギルドの preferred_locale が ja のときに使用
   footnote_ja: "設定は `/linkfix`"
+  # 同上の英語版（preferred_locale が en など ja 以外のとき）
   footnote_en: "Manage via `/linkfix`"
-  # 互換用（未設定の footnote_ja/en がある環境向け）
+  # 旧互換キー。footnote_ja / footnote_en 未設定環境向けフォールバック（コード側でも参照可）
   footnote: "Manage via `/linkfix`"
-  # Twitter 翻訳ボタンのタイムアウト（秒）
+  # Twitter / Bluesky などの翻訳ボタン付き View の有効期限（秒）
   translation_view_timeout: 3600
 
-  # サイト別定義（UI・書き換えが同じ定義を参照）
+  # ---------------------------------------------------------------------------
+  # sites: サイト別のマッチ・書き換え定義（UI の選択肢と実際の書き換えが同じ定義を参照）
+  #
+  # 各サイトで共通する主なキー:
+  #   label               … ダッシュボード / コマンド UI に表示する名称
+  #   enabled             … このサイトを処理対象にするか（既定オン）
+  #   default_fix_domain  … 未指定時に使う Fix 先ドメイン
+  #   match_domains       … 検知対象の元ドメイン一覧（サブドメイン含む想定）
+  #   path_patterns       … 対象にするパスのテンプレート（{id} 等はプレースホルダ）
+  #   fixer_presets       … ユーザーが選べる Fix 先ドメインの候補リスト
+  #   translation_domains … （任意）言語サフィックス翻訳に対応する Fix 先ドメイン
+  #   rewrite_mode        … （任意）書き換え方式。省略時は通常のドメイン差し替え
+  # ---------------------------------------------------------------------------
   sites:
+    # Twitter / X — 投稿ステータス URL を FxTwitter 系へ
     twitter:
       label: Twitter / X
       enabled: true
       default_fix_domain: fxtwitter.com
-      # 言語サフィックス翻訳に対応する Fix 先
+      # 言語サフィックス付き翻訳 URL を生成できる Fix 先
       translation_domains:
         - fxtwitter.com
         - fixupx.com
@@ -40,7 +62,7 @@ link_fix:
         - lightbrd.com
         - nitter.space
         - nitter.tiekoetter.com
-      # status ID 付きパスのみ対象
+      # status ID 付きパスのみ対象（プロフィール等は除外）
       path_patterns:
         - "/i/status/{id}"
         - "/{username}/status/{id}"
@@ -51,6 +73,7 @@ link_fix:
         - vxtwitter.com
         - twitterez.com
 
+    # Instagram — 投稿 / リール / 共有リンク
     instagram:
       label: Instagram
       enabled: true
@@ -72,6 +95,7 @@ link_fix:
         - kkinstagram.com
         - vxinstagram.com
 
+    # TikTok — 動画 / 写真 / 短縮・埋め込みリンク
     tiktok:
       label: TikTok
       enabled: true
@@ -89,6 +113,7 @@ link_fix:
         - tiktokez.com
         - fixtiktok.com
 
+    # Reddit — 投稿・共有・ユーザーコメントスレッド
     reddit:
       label: Reddit
       enabled: true
@@ -107,6 +132,7 @@ link_fix:
         - rxddit.com
         - redditez.com
 
+    # Threads — Meta Threads の投稿 URL
     threads:
       label: Threads
       enabled: true
@@ -120,10 +146,12 @@ link_fix:
         - fixthreads.net
         - threadsez.net
 
+    # Bluesky — bsky.app の投稿（翻訳サフィックス対応）
     bluesky:
       label: Bluesky
       enabled: true
       default_fix_domain: fxbsky.app
+      # 言語サフィックス付き翻訳 URL を生成できる Fix 先
       translation_domains:
         - fxbsky.app
         - bskx.app
@@ -136,6 +164,7 @@ link_fix:
         - bskx.app
         - bsyy.app
 
+    # Facebook — 投稿 / 動画 / リール / 共有 / watch
     facebook:
       label: Facebook
       enabled: true
@@ -154,6 +183,7 @@ link_fix:
         - facebed.com
         - facebookez.com
 
+    # Pixiv — イラスト作品ページ（言語プレフィックス付きパス含む）
     pixiv:
       label: Pixiv
       enabled: true
@@ -166,6 +196,7 @@ link_fix:
       fixer_presets:
         - phixiv.net
 
+    # Twitch — クリップ URL のみ（配信ページ等は対象外）
     twitch:
       label: Twitch Clips
       enabled: true
@@ -177,6 +208,7 @@ link_fix:
       fixer_presets:
         - fxtwitch.seria.moe
 
+    # Spotify — トラック URL（言語プレフィックス付きパス含む）
     spotify:
       label: Spotify
       enabled: true
@@ -189,6 +221,7 @@ link_fix:
       fixer_presets:
         - fxspotify.com
 
+    # DeviantArt — アート / ジャーナル作品ページ
     deviantart:
       label: DeviantArt
       enabled: true
@@ -201,6 +234,7 @@ link_fix:
       fixer_presets:
         - fixdeviantart.com
 
+    # Tumblr — 投稿 URL（ユーザー名付き・スラッグ付き含む）
     tumblr:
       label: Tumblr
       enabled: true
@@ -214,10 +248,11 @@ link_fix:
       fixer_presets:
         - tpmblr.com
 
+    # BiliBili — 動画 URL（短縮ドメイン b23.tv / b22.top 含む）。vx プレフィックス方式
     bilibili:
       label: BiliBili
       enabled: true
-      # bilibili は vx + 元ドメイン形式（特殊）
+      # bilibili は「vx + 元ドメイン」形式（通常のドメイン差し替えではない）
       default_fix_domain: vxbilibili.com
       match_domains:
         - bilibili.com
@@ -228,9 +263,10 @@ link_fix:
         - "/{id}"
       fixer_presets:
         - vxbilibili.com
-      # ドメイン差し替えではなく vx プレフィックス方式
+      # ドメイン差し替えではなく、ホスト先頭に vx を付ける方式
       rewrite_mode: vx_prefix
 
+    # YouTube — watch / Shorts / youtu.be 短縮
     youtube:
       label: YouTube
       enabled: true
@@ -245,6 +281,7 @@ link_fix:
       fixer_presets:
         - koutube.com
 
+    # Mastodon — 主要インスタンスのステータス URL
     mastodon:
       label: Mastodon
       enabled: true
@@ -265,6 +302,7 @@ link_fix:
       fixer_presets:
         - fx.zillanlabs.tech
 
+    # Fur Affinity — 作品ビューページ
     furaffinity:
       label: Fur Affinity
       enabled: true
@@ -276,6 +314,7 @@ link_fix:
       fixer_presets:
         - xfuraffinity.net
 
+    # Newgrounds — アート作品ビューページ
     newgrounds:
       label: Newgrounds
       enabled: true

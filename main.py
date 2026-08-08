@@ -13,7 +13,7 @@ from MOMOKA.GUI import attach_gui_logging, run_log_viewer_thread, set_bot_ref, s
 from MOMOKA.storage import NS_LOGGING_CHANNELS, get_default_settings_db
 from MOMOKA.utilities.command_i18n import CommandDescriptionTranslator
 from MOMOKA.utilities.restart_notice import shutdown_allowed_user_id
-from MOMOKA.version import status_version_string
+from MOMOKA.version import VERSION, get_build_date, status_version_string
 
 # Python 3.11 未満では依存パッケージ（discord.py 2.7 / torch 等）の動作保証外のため起動を拒否する
 if sys.version_info < (3, 11):
@@ -262,11 +262,29 @@ class Momoka(commands.Bot):
         # self.config は __init__ で渡されているため、ファイル読み込みは不要
         logging.info("%s マージ済み設定を使用して起動します。", self.display_name)
 
-        # ステータスローテーションの設定を取得する（日付は最終 git コミット日）
-        self.status_templates = self.config.get('status_rotation', [
-            "operating on {guild_count} servers",
-            status_version_string(),
-        ])
+        # プレゼンス文言は YAML（presence.status_rotation）のみ。コード内ハードコードは使わない
+        presence_cfg = self.config.get("presence") or {}
+        # presence.status_rotation を優先する
+        status_templates = presence_cfg.get("status_rotation")
+        # 無ければ旧トップレベル status_rotation（互換）
+        if not isinstance(status_templates, list) or not status_templates:
+            status_templates = self.config.get("status_rotation")
+        # リスト以外・空はローテ無し（activity_type=none 以外なら文言なしのまま）
+        if not isinstance(status_templates, list):
+            status_templates = []
+        # 文字列要素だけ残す
+        status_templates = [
+            str(item) for item in status_templates if str(item).strip()
+        ]
+        # 未設定なら案内ログを出す
+        if not status_templates:
+            logging.info(
+                "%s presence.status_rotation が空です。"
+                "表示文言は configs/core_config.yaml の presence.status_rotation で設定してください。",
+                self.display_name,
+            )
+        # テンプレートを保持する
+        self.status_templates = status_templates
         # ステータスローテーションタスクを開始する
         self.rotate_status.start()
 
@@ -428,38 +446,129 @@ class Momoka(commands.Bot):
         # エラーハンドラを設定する
         self.tree.on_error = self.on_app_command_error
 
-    @tasks.loop(seconds=15)
-    async def rotate_status(self):
-        """ボットのステータスを定期的に変更する"""
-        if not self.status_templates:
-            return
+    def _resolve_discord_status(self, raw: object) -> discord.Status:
+        """core_config.presence.status 文字列を discord.Status に変換する。"""
+        # 未設定はオンライン扱い
+        key = str(raw or "online").strip().lower()
+        # エイリアスを正規名へ寄せる
+        if key in ("do_not_disturb", "do-not-disturb", "busy"):
+            key = "dnd"
+        if key in ("offline",):
+            key = "invisible"
+        # 許容値マップ
+        mapping = {
+            "online": discord.Status.online,
+            "idle": discord.Status.idle,
+            "dnd": discord.Status.dnd,
+            "invisible": discord.Status.invisible,
+        }
+        # 不明値は警告して online にフォールバック
+        if key not in mapping:
+            logging.warning(
+                "%s Unknown presence.status=%r; falling back to online",
+                self.display_name,
+                raw,
+            )
+            return discord.Status.online
+        return mapping[key]
 
-        # 次のステータスを選択
-        status_template = self.status_templates[self.status_index]
-        self.status_index = (self.status_index + 1) % len(self.status_templates)
-
-        # プレースホルダーを置換
-        try:
-            status_text = status_template.format(guild_count=len(self.guilds))
-        except KeyError:
-            status_text = status_template  # プレースホルダーがない場合はそのまま使用
-
-        # 配信 URL の設定を取得し、未設定時は公式の既定 URL を使う
-        presence_config = self.config.get("presence", {})
+    def _build_presence_activity(
+        self,
+        status_text: str,
+        presence_config: dict,
+    ):
+        """core_config.presence.activity_type に応じた Activity を組み立てる。"""
+        # 種別文字列を正規化する
+        activity_type = str(
+            presence_config.get("activity_type") or "streaming"
+        ).strip().lower()
+        # アクティビティ無し
+        if activity_type in ("none", "off", "clear"):
+            return None
+        # streaming 用 URL（未設定時は既定 Twitch）
         streaming_url = presence_config.get(
             "streaming_url",
             "https://www.twitch.tv/coffinnoob299",
         )
-
-        # 配信中ステータスを更新
-        try:
-            await self.change_presence(
-                activity=discord.Streaming(name=status_text, url=streaming_url)
+        # 空 URL でも Streaming は作れるが Discord が弾くことがあるため補完する
+        if not streaming_url:
+            streaming_url = "https://www.twitch.tv/coffinnoob299"
+        # 種別に応じて Activity を返す
+        if activity_type == "streaming":
+            return discord.Streaming(name=status_text, url=str(streaming_url))
+        if activity_type == "listening":
+            return discord.Activity(
+                type=discord.ActivityType.listening,
+                name=status_text,
             )
+        if activity_type == "watching":
+            return discord.Activity(
+                type=discord.ActivityType.watching,
+                name=status_text,
+            )
+        if activity_type == "competing":
+            return discord.Activity(
+                type=discord.ActivityType.competing,
+                name=status_text,
+            )
+        if activity_type == "playing":
+            return discord.Game(name=status_text)
+        # 未知の種別は警告して従来どおり streaming に倒す
+        logging.warning(
+            "%s Unknown presence.activity_type=%r; falling back to streaming",
+            self.display_name,
+            activity_type,
+        )
+        return discord.Streaming(name=status_text, url=str(streaming_url))
+
+    @tasks.loop(seconds=15)
+    async def rotate_status(self):
+        """ボットのプレゼンス（状態・アクティビティ）を定期的に更新する。"""
+        # プレゼンス設定を読む
+        presence_config = self.config.get("presence") or {}
+        if not isinstance(presence_config, dict):
+            presence_config = {}
+        # オンライン状態を解決する
+        discord_status = self._resolve_discord_status(
+            presence_config.get("status")
+        )
+        # アクティビティ種別（none なら文言ローテ不要）
+        activity_type = str(
+            presence_config.get("activity_type") or "streaming"
+        ).strip().lower()
+        # 文言テンプレートが無く、かつ none 以外なら更新しない
+        if not self.status_templates and activity_type not in ("none", "off", "clear"):
+            return
+        # 表示文言を決める（none のときは空でよい）
+        status_text = ""
+        if self.status_templates and activity_type not in ("none", "off", "clear"):
+            # 次のテンプレートを選ぶ
+            status_template = self.status_templates[self.status_index]
+            # インデックスを進める
+            self.status_index = (self.status_index + 1) % len(self.status_templates)
+            # プレースホルダを置換する
+            try:
+                status_text = status_template.format(
+                    guild_count=len(self.guilds),
+                    # セマンティックバージョン（例: 1.0.0）
+                    version=VERSION,
+                    # 最終 git コミット日 YYYY-MM-DD
+                    build_date=get_build_date(),
+                    # 旧既定と同じ「prjMOMOKA Ver.YYYY-MM-DD」全文
+                    status_version=status_version_string(),
+                )
+            except (KeyError, ValueError, IndexError):
+                # プレースホルダ不正時はそのまま使う
+                status_text = str(status_template)
+        # Activity を組み立てる
+        activity = self._build_presence_activity(status_text, presence_config)
+        # Discord へ反映する
+        try:
+            await self.change_presence(status=discord_status, activity=activity)
         except (aiohttp.client_exceptions.ClientConnectionResetError, ConnectionResetError) as e:
-            logging.warning(f"Failed to rotate status due to connection reset: {e}")
+            logging.warning("Failed to rotate status due to connection reset: %s", e)
         except Exception as e:
-            logging.error(f"Failed to rotate status: {e}")
+            logging.error("Failed to rotate status: %s", e)
 
     @rotate_status.before_loop
     async def before_rotate_status(self):
@@ -729,71 +838,6 @@ if __name__ == "__main__":
         )
         # レジストリの全ボットをクローズする（再起動通知を含む）
         await registry.close_all()
-
-    @plana_bot.tree.command(name="reload_plana", description="Reload PLANA cogs (admin only).")
-    async def reload_plana_cog(interaction: discord.Interaction, cog_name: str = None):
-        # 管理者でなければ拒否する
-        if not plana_bot.is_admin(interaction.user.id):
-            await interaction.response.send_message("❌ このコマンドは管理者のみ実行できます。", ephemeral=False)
-            return
-
-        # リロード処理を開始する
-        await interaction.response.defer(ephemeral=False)
-
-        if cog_name:
-            # 特定の Cog をリロードする
-            if not cog_name.startswith('MOMOKA.'):
-                # プレフィックスを補完する
-                cog_name = f'MOMOKA.{cog_name}'
-
-            try:
-                # Cog をリロードする
-                await plana_bot.reload_extension(cog_name)
-                await interaction.followup.send(f"✅ Cog `{cog_name}` をリロードしました。", ephemeral=False)
-                logging.info(f"Cog '{cog_name}' がユーザー {interaction.user} によってリロードされました。")
-            except commands.ExtensionNotLoaded:
-                # 未ロードの場合は新規ロードする
-                try:
-                    await plana_bot.load_extension(cog_name)
-                    await interaction.followup.send(f"✅ Cog `{cog_name}` をロードしました（未ロードでした）。",
-                                                    ephemeral=False)
-                    logging.info(f"Cog '{cog_name}' がユーザー {interaction.user} によってロードされました。")
-                except Exception as e:
-                    await interaction.followup.send(f"❌ Cog `{cog_name}` のロードに失敗しました: {e}", ephemeral=False)
-                    logging.error(f"Cog '{cog_name}' のロードに失敗しました: {e}")
-            except Exception as e:
-                await interaction.followup.send(f"❌ Cog `{cog_name}` のリロードに失敗しました: {e}", ephemeral=False)
-                logging.error(f"Cog '{cog_name}' のリロードに失敗しました: {e}")
-        else:
-            # 全 Cog をリロードする
-            reloaded = []
-            failed = []
-
-            # Cog リストをループする
-            for module_path in plana_bot.cogs_to_load:
-                try:
-                    # Cog をリロードする
-                    await plana_bot.reload_extension(module_path)
-                    reloaded.append(module_path)
-                except commands.ExtensionNotLoaded:
-                    # 未ロードの場合は新規ロードする
-                    try:
-                        await plana_bot.load_extension(module_path)
-                        reloaded.append(f"{module_path} (新規ロード)")
-                    except Exception as e:
-                        failed.append(f"{module_path}: {e}")
-                except Exception as e:
-                    failed.append(f"{module_path}: {e}")
-
-            # 結果メッセージを作成する
-            result_msg = f"✅ {len(reloaded)}個のCogをリロード/ロードしました。"
-            if failed:
-                result_msg += f"\n❌ {len(failed)}個のCogでエラーが発生しました。"
-
-            await interaction.followup.send(result_msg, ephemeral=False)
-            logging.info(
-                f"全Cogリロードがユーザー {interaction.user} によって実行されました。成功: {len(reloaded)}, 失敗: {len(failed)}"
-            )
 
     @plana_bot.tree.command(name="list_plana_cogs", description="List loaded PLANA cogs.")
     async def list_plana_cogs(interaction: discord.Interaction):

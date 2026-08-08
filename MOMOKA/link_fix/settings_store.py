@@ -60,13 +60,15 @@ class LinkFixSettingsStore:
             await self._save_locked()
 
     async def _save_locked(self) -> None:
-        """ロック取得済みの状態を DB へ保存する。"""
+        """ロック取得済みの状態を DB へ保存する。失敗時は例外を送出する。"""
         try:
             # メモリ上の全設定を namespace に書く
             await self.settings_db.save_async(NS_LINK_FIX_SETTINGS, self._data)
         except Exception as exc:  # noqa: BLE001
             # 失敗をログする
             logger.error("Failed to save link_fix settings: %s", exc)
+            # 呼び出し側がユーザーへ失敗を伝播できるようにする
+            raise RuntimeError("link_fix_settings_save_failed") from exc
 
     def _guild_key(self, guild_id: int) -> str:
         """ギルド id を辞書キーにする。"""

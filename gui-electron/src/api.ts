@@ -25,7 +25,7 @@ export function getHostConfig(): HostConfig {
     token,
     host,
     apiBase: `http://${host}:${port}/host-gui/api`,
-    wsLogsUrl: `ws://${host}:${port}/host-gui/api/logs?token=`,
+    wsLogsUrl: `ws://${host}:${port}/host-gui/api/logs`,
   };
 }
 

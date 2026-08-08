@@ -1,9 +1,15 @@
+# ユーティリティ（更新案内・フィードバック・サポート・寄付）
+# 実行時は configs/utilities_config.yaml を編集する
+
+# スラッシュコマンド関連のメタ情報
 slash_commands:
+  # /updates 等で案内する GitHub リポジトリ URL
   updates_repository_url: https://github.com/coffin299/ProjectMOMOKA
 
-# バグ報告・機能リクエストの配信先（複数可）。空なら投稿不可メッセージを返す。
-# サポート鯖に Bot を招待し、投稿先チャンネル ID を列挙する。
+# バグ報告・機能リクエストの配信先（複数可）。空なら投稿不可メッセージを返す
+# サポート鯖に Bot を招待し、投稿先チャンネル ID を列挙する
 feedback:
+  # Discord チャンネル ID の配列（空 = フィードバック投稿不可）
   channel_ids: []
   # 例:
   # channel_ids:
@@ -12,19 +18,30 @@ feedback:
 
 # サポート誘導（再起動通知・/support 等）
 support:
+  # サポート Discord サーバーの招待 URL
   discord_invite_url: https://discord.com/invite/H79HKKqx3s
+  # 開発者の Discord User ID（メンション等）
   developer_user_id: 270446628622696449
+  # 開発者の表示名
   developer_display_name: coffin299
+  # 開発者 X（旧 Twitter）プロフィール URL
   x_url: https://x.com/coffin299
+  # Discord ユーザー名（表示用）
   discord_id: coffin299
-  # tips / 障害案内などで使うドキュメント・サイト URL
+  # tips / 障害案内などで使う公式サイト・ドキュメント URL
   docs_url: https://momoka-project.com
 
-# Ko-fi など寄付リンク（LLM/音楽は控えめ、/help は明示）
+# Ko-fi など寄付リンク（LLM/音楽 UI は控えめ、/help は明示）
 donation:
+  # false なら寄付ボタン・文言を出さない
   enabled: true
+  # 寄付ページ URL
   url: https://ko-fi.com/coffin299
+  # 音楽 Now Playing 等に出す控えめラベル
   subtle_label: ☕Buy me a coffee...
+  # /help 画面のボタン文言
   help_button_label: Ko-fi / Support
+  # /help 内の日本語説明文
   help_text_ja: このBotはボランティアで開発・運用されています。サーバー代の足しになるので、よければKo-fiで支援していただけると嬉しいです。
+  # /help 内の英語説明文
   help_text_en: This bot is developed and hosted as a volunteer project. If you'd like to help cover server costs, a small tip on Ko-fi is always appreciated.

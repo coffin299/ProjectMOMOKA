@@ -56,7 +56,7 @@ def configs_dir(root: Optional[Path] = None) -> Path:
 
 
 def ensure_default_configs(root: Optional[Path] = None) -> None:
-    """default があり yaml が無いカテゴリだけコピーする。"""
+    """default があり yaml/json が無いファイルだけコピーする。"""
     # ルートと configs ディレクトリを確定する
     base = configs_dir(root)
     # ディレクトリが無ければ作成する
@@ -81,6 +81,17 @@ def ensure_default_configs(root: Optional[Path] = None) -> None:
         shutil.copyfile(default_path, runtime_path)
         # 生成を知らせる
         logger.info("Generated %s from %s", runtime_path.name, default_path.name)
+    # *.default.json → *.json（例: media_downloader_allowlist）
+    for default_json in sorted(base.glob("*.default.json")):
+        # ランタイム名は .default.json を .json に置換する
+        runtime_json = base / default_json.name.replace(".default.json", ".json")
+        # 既にあれば触らない
+        if runtime_json.exists():
+            continue
+        # default からコピーする
+        shutil.copyfile(default_json, runtime_json)
+        # 生成を知らせる
+        logger.info("Generated %s from %s", runtime_json.name, default_json.name)
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:

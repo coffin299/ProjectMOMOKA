@@ -1,11 +1,23 @@
 # スラッシュ／hybrid コマンドの description / パラメータ説明（Discord localizations）
 # 対応言語: en（フォールバック）, ja, ko, vi, zh-CN, zh-TW, es, fr, de, pt-BR, ru, th, id
 # コマンド name は翻訳しない（英語固定）
-# 本ファイルをそのまま読み込む（commands_i18n_config.yaml は生成しない）。
+# 本ファイルをそのまま読み込む（commands_i18n_config.yaml は生成しない）
+#
+# 構造（各コマンドは同型）:
+#   commands_i18n.fallback          … 未翻訳時に使う言語コード
+#   commands_i18n.commands.<name>   … スラッシュコマンド名（キー＝Discord の name）
+#     description.<lang>            … コマンド説明文
+#     options.<opt>.description.<lang> … オプション説明
+#     messages.<key>.<lang>         … 実行時ユーザー向け文言（あるコマンドのみ）
+# 各言語キー（en/ja/...）への逐一コメントは省略（意味は親キーで自明）
 commands_i18n:
+  # Discord / Bot がロケール未解決のときに使う言語
   fallback: en
+  # コマンド名 → 説明・オプション・メッセージ
   commands:
+    # ブルーアーカイブ風ガチャ
     gacha:
+      # コマンド説明（Discord のローカライズ）
       description:
         en: Recruits students like in Blue Archive.
         ja: ブルーアーカイブ風の生徒募集（ガチャ）を行います。
@@ -1993,19 +2005,29 @@ commands_i18n:
         id: Konfigurasi Link Fix (pengganti embed sosial).
     download_audio:
       description:
-        en: Downloads audio and shares it via Google Drive.
-        ja: 音声をダウンロードし、Google Drive経由で共有します。
-        ko: 음성을 다운로드해 Google Drive로 공유합니다.
-        vi: Tải âm thanh và chia sẻ qua Google Drive.
-        zh-CN: 下载音频并通过 Google Drive 分享。
-        zh-TW: 下載音訊並透過 Google Drive 分享。
-        es: Descarga audio y lo comparte por Google Drive.
-        fr: Télécharge l'audio et le partage via Google Drive.
-        de: Lädt Audio herunter und teilt es per Google Drive.
-        pt-BR: Baixa áudio e compartilha via Google Drive.
-        ru: Скачивает аудио и делится через Google Drive.
-        th: ดาวน์โหลดเสียงและแชร์ผ่าน Google Drive
-        id: Unduh audio dan bagikan via Google Drive.
+        en: Downloads audio and shares it via file.io.
+        ja: 音声をダウンロードし、file.io経由で共有します。
+        ko: 음성을 다운로드해 file.io로 공유합니다.
+        vi: Tải âm thanh và chia sẻ qua file.io.
+        zh-CN: 下载音频并通过 file.io 分享。
+        zh-TW: 下載音訊並透過 file.io 分享。
+        es: Descarga audio y lo comparte por file.io.
+        fr: Télécharge l'audio et le partage via file.io.
+        de: Lädt Audio herunter und teilt es per file.io.
+        pt-BR: Baixa áudio e compartilha via file.io.
+        ru: Скачивает аудио и делится через file.io.
+        th: ดาวน์โหลดเสียงและแชร์ผ่าน file.io
+        id: Unduh audio dan bagikan via file.io.
+      messages:
+        unsupported_site:
+          en: Downloads from this site are not supported. Please use a URL from an allowed video site.
+          ja: このサイトからのダウンロードには対応していません。許可された動画サイトの URL を指定してください。
+        forbidden_site:
+          en: Downloads from this site are forbidden.
+          ja: このサイトからのダウンロードは禁止されています。
+        unsafe_url:
+          en: This URL cannot be downloaded for security reasons (local/private addresses are not allowed).
+          ja: この URL は安全上の理由でダウンロードできません。（ローカル／プライベートアドレスは不可）
       options:
         query:
           description:
@@ -2039,19 +2061,29 @@ commands_i18n:
             id: Format audio keluaran.
     download_video:
       description:
-        en: Downloads a video and shares it via Google Drive.
-        ja: 動画をダウンロードし、Google Drive経由で共有します。
-        ko: 동영상을 다운로드해 Google Drive로 공유합니다.
-        vi: Tải video và chia sẻ qua Google Drive.
-        zh-CN: 下载视频并通过 Google Drive 分享。
-        zh-TW: 下載影片並透過 Google Drive 分享。
-        es: Descarga un vídeo y lo comparte por Google Drive.
-        fr: Télécharge une vidéo et la partage via Google Drive.
-        de: Lädt ein Video herunter und teilt es per Google Drive.
-        pt-BR: Baixa um vídeo e compartilha via Google Drive.
-        ru: Скачивает видео и делится через Google Drive.
-        th: ดาวน์โหลดวิดีโอและแชร์ผ่าน Google Drive
-        id: Unduh video dan bagikan via Google Drive.
+        en: Downloads a video and shares it via file.io.
+        ja: 動画をダウンロードし、file.io経由で共有します。
+        ko: 동영상을 다운로드해 file.io로 공유합니다.
+        vi: Tải video và chia sẻ qua file.io.
+        zh-CN: 下载视频并通过 file.io 分享。
+        zh-TW: 下載影片並透過 file.io 分享。
+        es: Descarga un vídeo y lo comparte por file.io.
+        fr: Télécharge une vidéo et la partage via file.io.
+        de: Lädt ein Video herunter und teilt es per file.io.
+        pt-BR: Baixa um vídeo e compartilha via file.io.
+        ru: Скачивает видео и делится через file.io.
+        th: ดาวน์โหลดวิดีโอและแชร์ผ่าน file.io
+        id: Unduh video dan bagikan via file.io.
+      messages:
+        unsupported_site:
+          en: Downloads from this site are not supported. Please use a URL from an allowed video site.
+          ja: このサイトからのダウンロードには対応していません。許可された動画サイトの URL を指定してください。
+        forbidden_site:
+          en: Downloads from this site are forbidden.
+          ja: このサイトからのダウンロードは禁止されています。
+        unsafe_url:
+          en: This URL cannot be downloaded for security reasons (local/private addresses are not allowed).
+          ja: この URL は安全上の理由でダウンロードできません。（ローカル／プライベートアドレスは不可）
       options:
         query:
           description:
@@ -2083,21 +2115,6 @@ commands_i18n:
         ru: Выключает оба бота после уведомления (только владелец).
         th: ปิดบอททั้งคู่หลังแจ้งเตือน (เจ้าของเท่านั้น)
         id: Matikan kedua bot setelah memberi tahu (hanya owner).
-    reload_plana:
-      description:
-        en: Reload PLANA cogs (admin only).
-        ja: PLANAのCogをリロードします（管理者専用）
-        ko: PLANA Cog를 다시 로드합니다(관리자 전용).
-        vi: Tải lại cog PLANA (chỉ admin).
-        zh-CN: 重新加载 PLANA 的 Cog（仅管理员）。
-        zh-TW: 重新載入 PLANA 的 Cog（僅管理員）。
-        es: Recarga los cogs de PLANA (solo admin).
-        fr: Recharge les cogs PLANA (admin uniquement).
-        de: Lädt PLANA-Cogs neu (nur Admin).
-        pt-BR: Recarrega os cogs do PLANA (somente admin).
-        ru: Перезагружает коги PLANA (только админ).
-        th: รีโหลด Cog ของ PLANA (ผู้ดูแลเท่านั้น)
-        id: Muat ulang cog PLANA (hanya admin).
     list_plana_cogs:
       description:
         en: List loaded PLANA cogs.

@@ -217,23 +217,23 @@ class EarthquakeEmbedsMixin:
             )[:8]
         )
 
-    async def send_quake_notification(self, data: Dict[str, Any]) -> None:
+    async def send_quake_notification(self, data: Dict[str, Any]) -> bool:
         """通常地震情報を共通の地震通知処理へ渡す。"""
         # 既存のタイトルと種別を維持する
-        await self.send_notification(data, InfoType.QUAKE.value, "📊 地震情報")
+        return await self.send_notification(data, InfoType.QUAKE.value, "📊 地震情報")
 
     async def send_notification(
         self,
         data: Dict[str, Any],
         info_type: str,
         title_prefix: str,
-    ) -> None:
-        """通常地震情報の embed を組み立てて配信する。"""
+    ) -> bool:
+        """通常地震情報の embed を組み立てて配信する。成功扱いなら True。"""
         try:
-            # 震源情報がない更新通知は配信しない
+            # 震源情報がない更新通知は配信しない（再試行不要）
             earthquake = data.get("earthquake", {})
             if not earthquake:
-                return
+                return True
             hypocenter = earthquake.get("hypocenter", {})
             issue = data.get("issue", {})
             max_scale = earthquake.get("maxScale", -1)
@@ -332,7 +332,7 @@ class EarthquakeEmbedsMixin:
                         embed.set_image(url="attachment://earthquake_location.png")
                     except Exception as error:  # noqa: BLE001
                         logger.warning("地図生成に失敗: %s", error)
-            await self.send_embed_to_channels(
+            return await self.send_embed_to_channels(
                 embed,
                 info_type,
                 map_file,
@@ -348,10 +348,14 @@ class EarthquakeEmbedsMixin:
         map_file: Optional[discord.File] = None,
         max_scale: Optional[int] = None,
         apply_scale_filter: bool = True,
-    ) -> None:
-        """設定済みチャンネルへ embed を配信する。"""
+    ) -> bool:
+        """設定済みチャンネルへ embed を配信する。完了扱いなら True。"""
         # 設定済みギルドごとに通知先を確認する
         config_modified = False
+        # フィルタ通過後に送信を試みた件数
+        attempted = 0
+        # 実際に送信できた件数
+        succeeded = 0
         for guild_id, guild_config in self.config.copy().items():
             if not isinstance(guild_config, dict):
                 continue
@@ -380,6 +384,8 @@ class EarthquakeEmbedsMixin:
                 permissions = channel.permissions_for(guild.me)
                 if not permissions.send_messages or not permissions.embed_links:
                     continue
+                # 送信対象として数える
+                attempted += 1
                 if map_file:
                     map_file.fp.seek(0)
                     file_copy = discord.File(
@@ -389,6 +395,8 @@ class EarthquakeEmbedsMixin:
                     await channel.send(embed=embed, file=file_copy)
                 else:
                     await channel.send(embed=embed)
+                # 成功件数を加算する
+                succeeded += 1
                 self.not_found_counts.pop((guild_id, info_type), None)
             except discord.NotFound:
                 # 実際の NotFound だけを削除判定に使う
@@ -408,3 +416,5 @@ class EarthquakeEmbedsMixin:
         # NotFound による設定削除だけを保存する
         if config_modified:
             await self.save_config()
+        # 対象無し、または1件以上成功なら処理済みにしてよい
+        return attempted == 0 or succeeded > 0

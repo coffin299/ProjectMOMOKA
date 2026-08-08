@@ -9,5 +9,5 @@ contextBridge.exposeInMainWorld("momokaHost", {
   token,
   host,
   apiBase: `http://${host}:${port}/host-gui/api`,
-  wsLogsUrl: `ws://${host}:${port}/host-gui/api/logs?token=${encodeURIComponent(token)}`,
+  wsLogsUrl: `ws://${host}:${port}/host-gui/api/logs`,
 });

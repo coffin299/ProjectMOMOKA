@@ -99,12 +99,18 @@ class TTSCog(commands.Cog, name="tts_cog"):
         # SettingsDB（TTS / 読み上げ設定）
         self.settings_db = resolve_settings_db(bot)
         self.channel_settings: Dict[int, Dict] = {}
+        # ロード成功時のみ True。失敗時の空 dict 保存で DB を消さない
+        self._channel_settings_loaded_ok = False
         self._load_settings()
 
         self.speech_settings: Dict[str, Dict[str, Any]] = {}
+        # 読み上げ設定のロード成否（unload 全置換のガード）
+        self._speech_settings_loaded_ok = False
         self._load_speech_settings()
 
         self.speech_dictionary: Dict[str, Dict[str, str]] = {}
+        # 辞書ロード成否（失敗時の空保存を禁止）
+        self._dictionary_loaded_ok = False
         self._load_dictionary()
 
         logging.getLogger(__name__).info(
@@ -149,8 +155,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
     async def cog_unload(self):
         """Cogのアンロード時にリソースをクリーンアップ"""
+        # ロード成功時のみ保存し、失敗時の空データで DB を消さない
         self._save_settings()
+        # 読み上げも同様にガード付き保存
         self._save_speech_settings()
+        # 辞書も同様にガード付き保存
         self._save_dictionary()
         
         # TTSモデルをアンロードしてVRAMを解放
@@ -172,21 +181,44 @@ class TTSCog(commands.Cog, name="tts_cog"):
         logging.getLogger(__name__).info("TTSCog unloaded and session closed.")
 
     def _load_settings(self):
+        # 毎回ロード前に未成功扱いへ戻す
+        self._channel_settings_loaded_ok = False
         try:
             # SettingsDB からチャンネル別 TTS 設定を読む
             data = self.settings_db.load(NS_TTS_SETTINGS)
-            if isinstance(data, dict):
+            # 未設定（空テーブル）は正当な空データとして受理する
+            if data is None:
+                # メモリは空でよい
+                self.channel_settings = {}
+                # 空でもロード自体は成功扱い
+                self._channel_settings_loaded_ok = True
+            elif isinstance(data, dict):
                 self.channel_settings = {int(k): v for k, v in data.items()}
+                # 形状正常なので保存を許可する
+                self._channel_settings_loaded_ok = True
                 logging.getLogger(__name__).info(
                     "[TTSCog] モデル設定を読み込みました: %dチャンネル", len(self.channel_settings)
                 )
             else:
+                # 不正形状はメモリを空にしつつ保存禁止のまま
                 self.channel_settings = {}
+                logging.getLogger(__name__).warning(
+                    "[TTSCog] モデル設定の形状が不正なため保存を無効化します"
+                )
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] モデル設定読み込みエラー: %s", e)
+            # 失敗時は空メモリのまま loaded_ok=False を維持する
             self.channel_settings = {}
 
     def _save_settings(self):
+        # ロード失敗時は全置換で DB を消さない
+        if not self._channel_settings_loaded_ok:
+            # スキップ理由を残す
+            logging.getLogger(__name__).warning(
+                "[TTSCog] モデル設定が未ロードのため保存をスキップします"
+            )
+            # 書き込まない
+            return
         try:
             # キーを文字列にして保存する
             data = {str(k): v for k, v in self.channel_settings.items()}
@@ -195,23 +227,58 @@ class TTSCog(commands.Cog, name="tts_cog"):
             logging.getLogger(__name__).error("[TTSCog] モデル設定保存エラー: %s", e)
 
     def _load_speech_settings(self):
+        # 毎回ロード前に未成功扱いへ戻す
+        self._speech_settings_loaded_ok = False
         try:
             # SettingsDB からギルド別読み上げ設定を読む
             data = self.settings_db.load(NS_SPEECH_SETTINGS)
-            if isinstance(data, dict):
+            # 未設定は空 dict として成功扱い
+            if data is None:
+                # メモリを空にする
+                self.speech_settings = {}
+                # ロード成功として保存を許可する
+                self._speech_settings_loaded_ok = True
+            elif isinstance(data, dict):
                 self.speech_settings = data
+                # 正常読み込み完了
+                self._speech_settings_loaded_ok = True
                 logging.getLogger(__name__).info(
                     "[TTSCog] 読み上げ設定を読み込みました: %dギルド", len(self.speech_settings)
                 )
             else:
+                # 不正形状は保存禁止のまま空にする
                 self.speech_settings = {}
+                logging.getLogger(__name__).warning(
+                    "[TTSCog] 読み上げ設定の形状が不正なため保存を無効化します"
+                )
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 読み上げ設定読み込みエラー: %s", e)
+            # 失敗時は空メモリのまま loaded_ok=False
             self.speech_settings = {}
 
-    def _save_speech_settings(self):
+    def _save_speech_settings(self, guild_id: Optional[int] = None):
+        # ロード失敗時は DB を触らない
+        if not self._speech_settings_loaded_ok:
+            # スキップを明示する
+            logging.getLogger(__name__).warning(
+                "[TTSCog] 読み上げ設定が未ロードのため保存をスキップします"
+            )
+            # 終了
+            return
         try:
-            self.settings_db.save(NS_SPEECH_SETTINGS, self.speech_settings)
+            # 単一ギルド更新は他ギルドを巻き込む全置換を避ける
+            if guild_id is not None:
+                # 永続化キーは文字列ギルド ID
+                guild_key = str(guild_id)
+                # 対象ギルドの現在メモリ内容だけを渡す
+                guild_data = self.speech_settings.get(guild_key, {})
+                # save_guild で当該ギルドのみ upsert する
+                self.settings_db.save_guild(
+                    NS_SPEECH_SETTINGS, guild_id, guild_data
+                )
+            else:
+                # unload 等の全体保存パス
+                self.settings_db.save(NS_SPEECH_SETTINGS, self.speech_settings)
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 読み上げ設定保存エラー: %s", e)
 
@@ -295,6 +362,77 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
 
 
+    def _music_occupies_voice(self, guild_id: int) -> bool:
+        """MusicCog が再生中・キューあり・ミキサーに music を持つ場合は True。"""
+        # MusicCog を取得する
+        music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
+        # 未ロードなら音楽占有なし
+        if music_cog is None:
+            # 占有していない
+            return False
+        # 既存ギルド状態だけを見る（新規作成しない）
+        music_state = None
+        # get_existing_guild_state があればそれを使う
+        if hasattr(music_cog, "get_existing_guild_state"):
+            # 削除済みを復活させない API
+            music_state = music_cog.get_existing_guild_state(guild_id)
+        # フォールバック
+        elif hasattr(music_cog, "_get_guild_state"):
+            # 旧 API
+            music_state = music_cog._get_guild_state(guild_id)
+        # 状態が無ければ占有なし
+        if music_state is None:
+            # 音楽なし
+            return False
+        # 再生中なら占有
+        if getattr(music_state, "is_playing", False):
+            # 再生中
+            return True
+        # キューに曲が残っていれば占有
+        queue = getattr(music_state, "queue", None)
+        if queue is not None and not queue.empty():
+            # キューあり
+            return True
+        # ミキサーに music ソースがあれば占有
+        mixer = getattr(music_state, "mixer", None)
+        if mixer is not None and hasattr(mixer, "get_source") and mixer.get_source("music") is not None:
+            # music ソース残存
+            return True
+        # いずれも無ければ占有なし
+        return False
+
+    async def _remove_tts_sources_only(self, guild_id: int) -> None:
+        """ミキサー上の TTS ソースだけを除去する（music は残す）。"""
+        # MusicCog を取得する
+        music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
+        # 未ロードなら何もしない
+        if music_cog is None:
+            # 早期リターン
+            return
+        # ギルド状態を取得する
+        music_state = None
+        # 既存状態 API を優先する
+        if hasattr(music_cog, "get_existing_guild_state"):
+            # 既存のみ
+            music_state = music_cog.get_existing_guild_state(guild_id)
+        elif hasattr(music_cog, "_get_guild_state"):
+            # フォールバック
+            music_state = music_cog._get_guild_state(guild_id)
+        # ミキサーが無ければ終了
+        if not music_state or not getattr(music_state, "mixer", None):
+            # 除去対象なし
+            return
+        # TTS ソース名を列挙する（ミキサーのロック付き API を使う）
+        tts_sources = [
+            name
+            for name in music_state.mixer.get_source_names()
+            if name.startswith("tts_")
+        ]
+        # 各 TTS ソースを除去する
+        for name in tts_sources:
+            # ソースを削除する
+            await music_state.mixer.remove_source(name)
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.id == self.bot.user.id:
@@ -337,12 +475,22 @@ class TTSCog(commands.Cog, name="tts_cog"):
         if before.channel == voice_client.channel and not any(
             m for m in voice_client.channel.members if not m.bot
         ):
+            # 音楽が占有中なら VC は維持し、読み上げ設定と TTS だけ消す
+            if self._music_occupies_voice(guild.id):
+                # TTS ソースのみ除去する
+                await self._remove_tts_sources_only(guild.id)
+                # 読み上げ対象チャンネル設定をクリアする
+                guild_settings["speech_channel_id"] = None
+                # 当該ギルドだけを永続化する
+                self._save_speech_settings(guild.id)
+                # 切断せず終了する
+                return
             # VCから切断する
             await voice_client.disconnect()
             # 読み上げ対象チャンネル設定をクリアする
             guild_settings["speech_channel_id"] = None
-            # 設定を永続化する
-            self._save_speech_settings()
+            # 当該ギルドだけを永続化する
+            self._save_speech_settings(guild.id)
             return
 
     tts_group = app_commands.Group(name="tts", description="TTS-related commands.")
@@ -353,14 +501,19 @@ class TTSCog(commands.Cog, name="tts_cog"):
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         float_volume = volume / 100.0
         guild_settings['volume'] = float_volume
-        self._save_speech_settings()
+        # 当該ギルドの音量だけを保存する
+        self._save_speech_settings(interaction.guild.id)
 
         voice_client = interaction.guild.voice_client
         if voice_client and voice_client.is_playing():
             music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
             music_state = music_cog._get_guild_state(interaction.guild.id) if music_cog else None
             if music_state and music_state.mixer:
-                tts_sources = [name for name in music_state.mixer.sources.keys() if name.startswith("tts_")]
+                tts_sources = [
+                    name
+                    for name in music_state.mixer.get_source_names()
+                    if name.startswith("tts_")
+                ]
                 for name in tts_sources:
                     await music_state.mixer.set_volume(name, float_volume)
             elif isinstance(voice_client.source, discord.PCMVolumeTransformer):
@@ -400,7 +553,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         guild_settings["speech_channel_id"] = interaction.channel.id
-        self._save_speech_settings()
+        # 当該ギルドの読み上げチャンネルだけを保存する
+        self._save_speech_settings(interaction.guild.id)
         embed = discord.Embed(title="🔊 VC読み上げ開始", description=f"対象: {interaction.channel.mention}, {vc.mention}", color=discord.Color.green())
         await interaction.response.send_message(embed=embed)
 
@@ -411,8 +565,14 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return await interaction.response.send_message("ℹ️ 読み上げは無効です。", ephemeral=True)
         
         guild_settings["speech_channel_id"] = None
-        self._save_speech_settings()
-        if interaction.guild.voice_client:
+        # 当該ギルドの無効化だけを保存する
+        self._save_speech_settings(interaction.guild.id)
+        # 音楽が占有中なら VC 切断せず TTS ソースだけ除去する
+        if self._music_occupies_voice(interaction.guild.id):
+            # ミキサー上の TTS のみ消す
+            await self._remove_tts_sources_only(interaction.guild.id)
+        elif interaction.guild.voice_client:
+            # 音楽が無ければ従来どおり切断する
             await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("✅ 読み上げを無効にしました。")
 
@@ -426,7 +586,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
         music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
         music_state = music_cog._get_guild_state(interaction.guild.id) if music_cog else None
         if music_state and music_state.mixer:
-            tts_sources = [name for name in music_state.mixer.sources.keys() if name.startswith("tts_")]
+            tts_sources = [
+                name
+                for name in music_state.mixer.get_source_names()
+                if name.startswith("tts_")
+            ]
             if tts_sources:
                 for name in tts_sources: await music_state.mixer.remove_source(name)
                 skipped = True
@@ -446,7 +610,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
         if interaction.user.id in auto_join_users:
             return await interaction.response.send_message("ℹ️ 自動参加は既に有効です。", ephemeral=True)
         auto_join_users.append(interaction.user.id)
-        self._save_speech_settings()
+        # 当該ギルドの自動参加一覧だけを保存する
+        self._save_speech_settings(interaction.guild.id)
         await interaction.response.send_message("✅ 自動参加を有効にしました。")
 
     @autojoin_group.command(name="disable", description="Disable bot auto-join.")
@@ -456,7 +621,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
         if interaction.user.id not in auto_join_users:
             return await interaction.response.send_message("ℹ️ 自動参加は設定されていません。", ephemeral=True)
         auto_join_users.remove(interaction.user.id)
-        self._save_speech_settings()
+        # 当該ギルドの自動参加解除だけを保存する
+        self._save_speech_settings(interaction.guild.id)
         await interaction.response.send_message("✅ 自動参加を解除しました。")
 
     @app_commands.command(name="say", description="Read text aloud with TTS.")
@@ -490,31 +656,62 @@ class TTSCog(commands.Cog, name="tts_cog"):
         return self.tts_locks.setdefault(guild_id, asyncio.Lock())
 
     def _load_dictionary(self):
+        # 毎回ロード前に未成功扱いへ戻す
+        self._dictionary_loaded_ok = False
         try:
             # SettingsDB から読み上げ辞書を取る
             dictionary_data = self.settings_db.load(NS_SPEECH_DICTIONARY)
+            # 未設定は空として成功扱い
             if dictionary_data is None:
+                # メモリを空にする
                 self.speech_dictionary = {}
+                # 空でもロード成功とする
+                self._dictionary_loaded_ok = True
+                # 早期リターン
                 return
             # ギルド ID ごとの辞書だけを受け入れ、旧来のフラット形式は破棄する
             if self._is_guild_scoped_dictionary(dictionary_data):
                 self.speech_dictionary = dictionary_data
+                # 正常読み込み完了
+                self._dictionary_loaded_ok = True
                 logging.getLogger(__name__).info(
                     "[TTSCog] 読み上げ辞書を読み込みました: %dギルド",
                     len(self.speech_dictionary),
                 )
             else:
+                # 不正形式はメモリ破棄しつつ DB 上書きは禁止
                 self.speech_dictionary = {}
                 logging.getLogger(__name__).warning(
-                    "[TTSCog] 旧形式または不正形式の読み上げ辞書を破棄しました。"
+                    "[TTSCog] 旧形式または不正形式の読み上げ辞書を破棄しました（保存無効）。"
                 )
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 辞書読み込みエラー: %s", e)
+            # 失敗時は空メモリのまま loaded_ok=False
             self.speech_dictionary = {}
 
-    def _save_dictionary(self):
+    def _save_dictionary(self, guild_id: Optional[int] = None):
+        # ロード失敗時は DB を触らない
+        if not self._dictionary_loaded_ok:
+            # スキップを明示する
+            logging.getLogger(__name__).warning(
+                "[TTSCog] 読み上げ辞書が未ロードのため保存をスキップします"
+            )
+            # 終了
+            return
         try:
-            self.settings_db.save(NS_SPEECH_DICTIONARY, self.speech_dictionary)
+            # 単一ギルド更新は他ギルドを巻き込む全置換を避ける
+            if guild_id is not None:
+                # 永続化キーは文字列ギルド ID
+                guild_key = str(guild_id)
+                # 対象ギルドの辞書だけを渡す
+                guild_data = self.speech_dictionary.get(guild_key, {})
+                # save_guild で当該ギルドのみ upsert する
+                self.settings_db.save_guild(
+                    NS_SPEECH_DICTIONARY, guild_id, guild_data
+                )
+            else:
+                # unload 等の全体保存パス
+                self.settings_db.save(NS_SPEECH_DICTIONARY, self.speech_dictionary)
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 辞書保存エラー: %s", e)
 
@@ -581,7 +778,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
         is_update = word in dictionary
         old_reading = dictionary.get(word)
         dictionary[word] = reading
-        self._save_dictionary()
+        # 当該ギルドの辞書だけを保存する
+        self._save_dictionary(interaction.guild.id)
         
         embed = discord.Embed(title=f"📖 辞書を{'更新' if is_update else '追加'}しました", color=discord.Color.blue() if is_update else discord.Color.green())
         embed.add_field(name="単語", value=f"`{word}`", inline=False)
@@ -599,7 +797,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return await interaction.response.send_message(f"❌ `{word}` は辞書にありません。", ephemeral=True)
         
         reading = dictionary.pop(word)
-        self._save_dictionary()
+        # 当該ギルドの辞書削除だけを保存する
+        self._save_dictionary(interaction.guild.id)
         embed = discord.Embed(title="📖 辞書から削除しました", color=discord.Color.orange())
         embed.add_field(name="単語", value=f"`{word}`", inline=True).add_field(name="読み方", value=f"`{reading}`", inline=True)
         await interaction.response.send_message(embed=embed)

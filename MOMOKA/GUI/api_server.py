@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
+import json
 import queue
 import secrets
 import socket
@@ -51,6 +53,16 @@ DEFAULT_HOST_GUI_PORT = 18765
 BIND_HOST = "127.0.0.1"
 # ルート接頭辞（将来 /guild と混ぜない）
 API_PREFIX = "/host-gui"
+# PUT /config で受理するキー
+_CONFIG_ALLOWED_KEYS = frozenset({"font", "max_lines", "auto_scroll", "log_levels"})
+# log_levels 内の許容カテゴリ
+_LOG_LEVEL_KEYS = frozenset({"general", "llm", "tts", "error"})
+# 許容ログレベル名
+_ALLOWED_LOG_LEVELS = frozenset(
+    {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"},
+)
+# max_lines 上限
+_MAX_LINES_LIMIT = 50_000
 
 
 class HostGuiAuth:
@@ -65,6 +77,96 @@ def generate_host_gui_token() -> str:
     """ホスト GUI 用 Bearer トークンを生成する。"""
     # URL セーフな十分長い乱数
     return secrets.token_urlsafe(32)
+
+
+def _tokens_match(provided: Optional[str], expected: str) -> bool:
+    """トークンを安全比較する。型不正や比較例外は常に拒否。"""
+    # 文字列以外は拒否する
+    if not isinstance(provided, str) or not isinstance(expected, str):
+        return False
+    # 空トークンは拒否する
+    if not provided or not expected:
+        return False
+    try:
+        # タイミング攻撃耐性のある比較を使う
+        return hmac.compare_digest(provided, expected)
+    except (TypeError, ValueError):
+        # 比較不能も拒否扱い
+        return False
+
+
+def _validate_config_body(body: Any, base: Dict[str, Any]) -> Dict[str, Any]:
+    """PUT /config の body を検証し、マージ後の設定を返す。"""
+    # body は dict 必須
+    if not isinstance(body, dict):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid_body",
+        )
+    # 未知キーは拒否する
+    unknown = set(body.keys()) - _CONFIG_ALLOWED_KEYS
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="unknown_keys",
+        )
+    # 既定＋既存をベースにコピーする
+    cfg = dict(base)
+    # font: (name, size) タプル相当
+    if "font" in body:
+        font = body["font"]
+        if (
+            not isinstance(font, (list, tuple))
+            or len(font) != 2
+            or not isinstance(font[0], str)
+            or not isinstance(font[1], int)
+            or not (6 <= int(font[1]) <= 72)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_font",
+            )
+        cfg["font"] = [str(font[0]), int(font[1])]
+    # max_lines: 正の int
+    if "max_lines" in body:
+        max_lines = body["max_lines"]
+        if not isinstance(max_lines, int) or not (1 <= max_lines <= _MAX_LINES_LIMIT):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_max_lines",
+            )
+        cfg["max_lines"] = max_lines
+    # auto_scroll: bool
+    if "auto_scroll" in body:
+        if not isinstance(body["auto_scroll"], bool):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_auto_scroll",
+            )
+        cfg["auto_scroll"] = body["auto_scroll"]
+    # log_levels: カテゴリ→レベル
+    if "log_levels" in body:
+        levels = body["log_levels"]
+        if not isinstance(levels, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_log_levels",
+            )
+        if set(levels.keys()) - _LOG_LEVEL_KEYS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="invalid_log_level_keys",
+            )
+        merged_levels = dict(cfg.get("log_levels") or {})
+        for key, value in levels.items():
+            if not isinstance(value, str) or value.upper() not in _ALLOWED_LOG_LEVELS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="invalid_log_level_value",
+                )
+            merged_levels[str(key)] = value.upper()
+        cfg["log_levels"] = merged_levels
+    return cfg
 
 
 def find_free_port(preferred: int = DEFAULT_HOST_GUI_PORT) -> int:
@@ -140,8 +242,8 @@ def create_host_gui_app(
         token = _extract_bearer(authorization) or (
             x_momoka_host_token.strip() if x_momoka_host_token else None
         )
-        # 不一致
-        if not token or not secrets.compare_digest(token, auth.token):
+        # 不一致（比較例外含む）は常に 401
+        if not _tokens_match(token, auth.token):
             # 認証失敗
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -235,9 +337,8 @@ def create_host_gui_app(
         except Exception:
             # 無視
             pass
-        # リクエストで上書き
-        if isinstance(body, dict):
-            cfg.update(body)
+        # スキーマ検証してから上書きする
+        cfg = _validate_config_body(body, cfg)
         # ホストネームスペースへ保存
         settings_db.save(NS_LOG_VIEWER_CONFIG, cfg)
         # 保存後を返す
@@ -325,18 +426,85 @@ def create_host_gui_app(
         )
 
     @router.websocket("/logs")
-    async def ws_logs(
-        websocket: WebSocket,
-        token: Optional[str] = Query(default=None),
-    ) -> None:
-        """ログストリーム（クエリ token 必須）。"""
-        # クエリトークン検証
-        if not token or not secrets.compare_digest(token, auth.token):
-            # 握手前に閉じる
-            await websocket.close(code=4401)
-            return
-        # 接続受理
-        await websocket.accept()
+    async def ws_logs(websocket: WebSocket) -> None:
+        """ログストリーム（クエリ token 不可。subprotocol Bearer または初回メッセージ）。"""
+        # Sec-WebSocket-Protocol から Bearer 系を探す
+        raw_protocols = websocket.headers.get("sec-websocket-protocol") or ""
+        # カンマ区切りプロトコル一覧
+        offered = [part.strip() for part in raw_protocols.split(",") if part.strip()]
+        # 採用する subprotocol（エコー返却用）
+        chosen_subprotocol: Optional[str] = None
+        # 抽出したトークン
+        token: Optional[str] = None
+        # 各プロトコル候補を検査する
+        for idx, proto in enumerate(offered):
+            # bearer.<token> 形式
+            if proto.lower().startswith("bearer."):
+                # プレフィックス以降が本体
+                token = proto[7:]
+                # ネゴシエート用にそのまま採用
+                chosen_subprotocol = proto
+                break
+            # 一部クライアント向け: 先頭が Bearer で次要素がトークン
+            if proto.lower() == "bearer" and idx + 1 < len(offered):
+                # 次要素をトークン候補にする
+                token = offered[idx + 1]
+                # Bearer を選択プロトコルにする
+                chosen_subprotocol = proto
+                break
+        # subprotocol 提示ありならそれで完結（不一致は即切断）
+        if offered:
+            # トークン不一致または抽出失敗
+            if not _tokens_match(token, auth.token):
+                # 握手前に閉じる
+                await websocket.close(code=4401)
+                return
+            # 選択プロトコル付きで accept
+            if chosen_subprotocol:
+                await websocket.accept(subprotocol=chosen_subprotocol)
+            else:
+                await websocket.accept()
+        else:
+            # クエリではなく初回メッセージ認証へ進む
+            await websocket.accept()
+            try:
+                # 認証タイムアウト（秒）
+                raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            except Exception:
+                # 受信失敗は切断
+                await websocket.close(code=4401)
+                return
+            # JSON または生トークンを解釈する
+            parsed_token: Optional[str] = None
+            try:
+                # JSON なら type/auth + token
+                payload = json.loads(raw)
+            except Exception:
+                # 生文字列をトークン候補にする
+                parsed_token = raw.strip() or None
+            else:
+                # dict 以外は拒否
+                if isinstance(payload, dict):
+                    # Bearer 風フィールドも許容
+                    parsed_token = (
+                        payload.get("token")
+                        or payload.get("authorization")
+                        or payload.get("auth")
+                    )
+                    # Authorization: Bearer x 形式なら抽出
+                    if isinstance(parsed_token, str) and parsed_token.lower().startswith(
+                        "bearer "
+                    ):
+                        parsed_token = parsed_token[7:].strip()
+                else:
+                    parsed_token = None
+            # 不一致なら切断
+            if not _tokens_match(
+                parsed_token if isinstance(parsed_token, str) else None,
+                auth.token,
+            ):
+                await websocket.close(code=4401)
+                return
         # 購読者に追加
         subscribers.add(websocket)
         try:
