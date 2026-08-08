@@ -1593,8 +1593,10 @@ class MusicCog(commands.Cog, name="music_cog"):
         state.is_paused = False
         state.update_activity()
 
+        # シーク基準だけ先に置き、壁時計起点は実音開始後に合わせる
+        # （ensure_stream / prime 待ちで seek bar が進んでから 00:00 に戻るのを防ぐ）
         state.seek_position = seek_seconds
-        state.playback_start_time = time.time()
+        state.playback_start_time = None
         state.paused_at = None
 
         # パイプ / ensure_stream で使う player_client 列を決める

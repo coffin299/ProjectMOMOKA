@@ -593,11 +593,10 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             if data:
                 # フレーム長を揃える
                 frame = self._normalize_pcm_frame(data)
-                # 次の read() で返す
+                # 次の read() で返す（この時点では Discord 未出力）
                 self._primed_frame = frame
-                # 出力開始フラグ
-                self._has_produced_audio = True
-                # 所要をログする
+                # _has_produced_audio は実際に Discord へ渡した read() 側で立てる
+                # （プライム待ち中に seek bar が PCM 0 秒扱いへ跳ねないようにする）
                 logger.info(
                     "Guild %s: Primed first audio for '%s' after %s reads (~%sms)",
                     self.guild_id,
@@ -655,6 +654,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             # 一度だけ返す
             frame = self._primed_frame
             self._primed_frame = None
+            # Discord へ実際に渡したので出力開始とみなす
+            self._has_produced_audio = True
             # 位置カウント
             self._produced_audio_frames += 1
             return frame

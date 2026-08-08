@@ -110,6 +110,10 @@ class GuildState:
 
     def get_current_position(self) -> int:
         """再生位置（秒）。実 PCM が出るまでは進めず、以降はフレーム基準を優先する。"""
+        # 実音開始前（ensure_stream / prime 中）はシーク位置で止める
+        if self.is_playing and self.playback_start_time is None:
+            return self.seek_position
+
         # 音楽ソースがあればフレーム基準を使う
         music_source = self._get_music_audio_source()
         if music_source is not None:
