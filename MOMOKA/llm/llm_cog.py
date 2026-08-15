@@ -45,6 +45,7 @@ from MOMOKA.llm.concurrency import chat_limiter
 from MOMOKA.llm.llm_views import ThreadCreationView
 from MOMOKA.llm.message_utils import split_message_smartly
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
+from MOMOKA.llm.utils.language import response_matches_lang
 from MOMOKA.llm.router.mode_runner import (
     coding_attach_settings,
     coding_output_prompt,
@@ -989,11 +990,160 @@ class LLMCog(commands.Cog, name="llm"):
     # 日本語 few-shot / キャラ設定より優先させる言語固定指示（config 非依存）
     _LANGUAGE_ENFORCEMENT_BLOCK = (
         "# Language Control (ABSOLUTE — overrides character examples)\n"
-        "- Always reply in the exact same language as the user's LATEST message.\n"
+        "- If a [RESPONSE_LANGUAGE: xx] tag is present, reply ONLY in that language code.\n"
+        "- Otherwise, always reply in the exact same language as the user's LATEST message.\n"
         "- Dialogue examples are TONE/STYLE only. Never copy their language.\n"
-        "- Do NOT default to Japanese. Use Japanese only if the latest user message is Japanese.\n"
+        "- Do NOT default to Japanese. Use Japanese only if RESPONSE_LANGUAGE is ja "
+        "or the latest user message is Japanese.\n"
         "- English → English. Thai → Thai. Other languages → that same language."
     )
+    # 再適用時に除去するためのマーカー
+    _RESPONSE_LANGUAGE_MARKER = "[RESPONSE_LANGUAGE:"
+
+    def _response_language_block(self, lang: str, *, reinforce: bool = False) -> str:
+        """確定言語コード付きの追従ブロックを組み立てる。"""
+        # 言語コードを正規化する
+        code = (lang or "en").strip() or "en"
+        # 基本ブロックを作る
+        block = (
+            f"{self._RESPONSE_LANGUAGE_MARKER} {code}]\n"
+            f"- Reply ONLY in language code '{code}'.\n"
+            f"- Dialogue examples are tone/style only; never copy their language.\n"
+            f"- Do not switch to Japanese unless RESPONSE_LANGUAGE is ja."
+        )
+        # 不一致リトライ時は再強調文を足す
+        if reinforce:
+            # 前回ドラフトが言語違いだったことを明示する
+            block = (
+                f"{block}\n"
+                f"- PREVIOUS DRAFT USED THE WRONG LANGUAGE. "
+                f"Rewrite the entire reply in '{code}' only."
+            )
+        # 完成したブロックを返す
+        return block
+
+    def _strip_response_language_suffix(self, text: str) -> str:
+        """本文末尾の RESPONSE_LANGUAGE ブロックを取り除く。"""
+        # 空ならそのまま
+        if not text:
+            return text
+        # マーカー位置を探す
+        idx = text.find(self._RESPONSE_LANGUAGE_MARKER)
+        # 無ければそのまま
+        if idx < 0:
+            return text
+        # マーカーより前を本文として残す
+        return text[:idx].rstrip()
+
+    def _append_language_block_to_text(self, text: str, block: str) -> str:
+        """本文末尾へ言語ブロックを（重複なく）付与する。"""
+        # 既存ブロックを落としてから付け直す
+        base = self._strip_response_language_suffix(text or "")
+        # 空本文でもブロックだけは付ける
+        if not base:
+            return block
+        # 本文とブロックを空行区切りで結合する
+        return f"{base}\n\n{block}"
+
+    def _apply_response_language(
+        self,
+        messages: List[Dict[str, Any]],
+        lang: Optional[str],
+        *,
+        reinforce: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """会話 system 末尾と最新 user に同一 RESPONSE_LANGUAGE を注入する。
+
+        Mistral は末尾指示に引っ張られやすいため、system と user の両方へ同文を置く。
+        """
+        # 言語が無ければ何もしない
+        if not lang or not str(lang).strip():
+            return messages
+        # 注入ブロックを作る
+        block = self._response_language_block(str(lang).strip(), reinforce=reinforce)
+        # 浅いコピーでメッセージ列を組む
+        result: List[Dict[str, Any]] = []
+        # 先頭 system を既に処理したか
+        first_system_done = False
+        # 末尾 user のインデックス（後で更新）
+        last_user_idx = -1
+        # 走査してコピーする
+        for msg in messages:
+            # role/content を持つ浅いコピー
+            copied = dict(msg)
+            # content が list のときはパートもコピーする
+            content = copied.get("content")
+            if isinstance(content, list):
+                copied["content"] = [
+                    dict(part) if isinstance(part, dict) else part for part in content
+                ]
+            # 先頭 system（会話プロンプト）の末尾へ追記する
+            if (
+                not first_system_done
+                and copied.get("role") == "system"
+                and isinstance(copied.get("content"), str)
+            ):
+                # system 本文末尾に同一ブロックを付ける
+                copied["content"] = self._append_language_block_to_text(
+                    copied["content"], block
+                )
+                # 先頭 system 処理済みにする
+                first_system_done = True
+            # user の位置を記録する
+            if copied.get("role") == "user":
+                last_user_idx = len(result)
+            # 結果へ追加する
+            result.append(copied)
+        # 最新 user にも同じブロックを付ける
+        if last_user_idx >= 0:
+            # 対象 user メッセージ
+            user_msg = result[last_user_idx]
+            # content を取り出す
+            u_content = user_msg.get("content")
+            # 文字列 content の場合
+            if isinstance(u_content, str):
+                # タイムスタンプ付き本文の末尾へブロックを付ける
+                user_msg["content"] = self._append_language_block_to_text(
+                    self._strip_response_language_suffix(u_content), block
+                )
+            # multimodal list の場合
+            elif isinstance(u_content, list):
+                # 先頭の text パートを探す
+                for part in u_content:
+                    # text パートだけ更新する
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        # 既存の曖昧 mirror / 旧ブロックを落として付け直す
+                        raw = self._strip_response_language_suffix(str(part.get("text") or ""))
+                        # 旧来の Language mirror 行も除去する
+                        raw = re.sub(
+                            r"\n\n\[Language: Reply in the same language[\s\S]*$",
+                            "",
+                            raw,
+                        ).rstrip()
+                        # 同一ブロックを付与する
+                        part["text"] = self._append_language_block_to_text(raw, block)
+                        # 最初の text のみ更新して終わる
+                        break
+        # coding 用の後続 system がある場合、リスト末尾にも同ブロックを置き末尾バイアスを確保する
+        if result and result[-1].get("role") == "system" and first_system_done:
+            # 末尾が先頭 system と別オブジェクトなら末尾へも追記する
+            if last_user_idx >= 0 and len(result) - 1 > 0:
+                # 末尾 system の content
+                tail = result[-1]
+                # 先頭 system と同一参照でなければ追記する
+                if isinstance(tail.get("content"), str) and tail is not result[0]:
+                    # 末尾 system にも同じブロックを付ける
+                    tail["content"] = self._append_language_block_to_text(
+                        tail["content"], block
+                    )
+        # 注入済みメッセージ列を返す
+        logger.info(
+            "[%s] 🌐 [LANG] Applied RESPONSE_LANGUAGE=%s (reinforce=%s)",
+            self._bot_tag(),
+            lang,
+            reinforce,
+        )
+        return result
 
     async def _prepare_system_prompt(self, channel_id: int, user_id: int, user_display_name: str) -> str:
         """persona system_prompt + tools_prompt + language を1本に結合する。"""
@@ -1126,19 +1276,33 @@ class LLMCog(commands.Cog, name="llm"):
             logger.error("[%s] generate_plain failed: %s", self._bot_tag(), e, exc_info=True)
             return f"(generation error: {e})"
 
-    def _format_user_text_for_api(self, timestamp: str, text: str, *, mirror_language: bool = False) -> str:
+    def _format_user_text_for_api(
+        self,
+        timestamp: str,
+        text: str,
+        *,
+        mirror_language: bool = False,
+        response_lang: Optional[str] = None,
+    ) -> str:
         """API 送信用のユーザー本文を組み立てる。
 
-        mirror_language=True のときだけ、最新発話の言語追従リマインダを付与する。
+        response_lang があれば確定言語ブロックを付与する。
+        なければ mirror_language=True のときだけ曖昧な追従リマインダを付与する。
         履歴側には付けず、文脈チェーンは role 履歴で維持する。
         """
         # 時刻プレフィックス付きの本文を先に作る
         body = f"{timestamp} {text}"
+        # 確定言語コードがあればそれを優先する
+        if response_lang and str(response_lang).strip():
+            # 同一ブロックを user 末尾へ付ける
+            return self._append_language_block_to_text(
+                body, self._response_language_block(str(response_lang).strip())
+            )
         # 最新ターン以外は言語リマインダを付けない
         if not mirror_language:
             # 履歴用はそのまま返す
             return body
-        # 最新ユーザー発話の直後に言語追従を明示する（Mistral 対策）
+        # 最新ユーザー発話の直後に言語追従を明示する（route 前の暫定）
         return (
             f"{body}\n\n"
             "[Language: Reply in the same language as the user message above. "
@@ -1958,6 +2122,8 @@ class LLMCog(commands.Cog, name="llm"):
             api_messages = initial_messages
             if route.mode == "coding":
                 api_messages = await self._inject_coding_mode_prompt(initial_messages)
+            # ルーター判定言語を system 末尾＋最新 user へ注入する（Mistral 末尾バイアス対策）
+            api_messages = self._apply_response_language(api_messages, route.lang)
             # ストリーミング開始前に計測タイマーをスタート
             stream_start_time = time.time()
             result = await self._process_streaming_and_send_response(
@@ -2113,10 +2279,8 @@ class LLMCog(commands.Cog, name="llm"):
             else:
                 emoji_prefix, emoji_suffix = "<:stream:1313474295372058758> ", " <:stream:1313474295372058758>"
             max_final_retries, final_retry_delay = 3, 2.0
-            is_first_update = True
             # 待機 V2 から通常 content へ切り替えたか
             waiting_v2_cleared = False
-            logger.debug(f"Starting LLM stream for message {sent_message.id}")
 
             async def _on_model_fallback(
                 new_model: str,
@@ -2142,85 +2306,153 @@ class LLMCog(commands.Cog, name="llm"):
                     estimate_model=estimate_model or new_model,
                 )
 
-            stream_generator = self._llm_stream_and_tool_handler(
-                messages_for_api,
-                llm_client,
-                channel.id,
-                user.id,
-                on_model_fallback=_on_model_fallback if waiting_view is not None else None,
-                route_mode=route_mode,
+            stream_messages = messages_for_api
+            # 言語フォローアップ設定（未設定時は有効）
+            lang_follow_cfg = self.llm_config.get("language_followup") or {}
+            # 機能全体の有効フラグ
+            lang_follow_enabled = bool(lang_follow_cfg.get("enabled", True))
+            # 不一致時リトライの有効フラグ
+            lang_retry_enabled = bool(lang_follow_cfg.get("retry_on_mismatch", True))
+            # conversation のみ最大2回（初回+リトライ1）
+            max_lang_attempts = (
+                2
+                if (
+                    lang_follow_enabled
+                    and lang_retry_enabled
+                    and route_mode == "conversation"
+                    and route_lang
+                )
+                else 1
             )
-            # coding は生成中に本文を流さず、完了後に要約+.md 添付へ
-            coding_cfg = (
-                coding_attach_settings(self.llm_config)
-                if route_mode == "coding"
-                else None
-            )
-            skip_stream_preview = bool(
-                coding_cfg and coding_cfg.get("skip_stream_preview", True)
-            )
-            async for content_chunk in stream_generator:
-                # シャットダウン通知後はストリーム編集を打ち切る
-                if self._shutting_down:
-                    # 再起動文言を上書き済みなのでループを抜ける
-                    break
-                if not content_chunk:
-                    continue
-                chunk_count += 1
-                full_response_text += content_chunk
-                if chunk_count % 100 == 0: logger.debug(
-                    f"Stream chunk #{chunk_count}, total length: {len(full_response_text)} chars")
-                current_time, chars_accumulated = time.time(), len(full_response_text) - last_displayed_length
+            # 言語リトライ済みか
+            lang_retried = False
 
-                should_update = (
-                    not skip_stream_preview
-                    and (
-                        is_first_update
-                        or (
-                            current_time - last_update > update_interval
-                            and chars_accumulated >= min_update_chars
-                        )
-                    )
+            for lang_attempt in range(max_lang_attempts):
+                # 各試行で応答バッファを初期化する
+                full_response_text, last_update, last_displayed_length, chunk_count = "", 0.0, 0, 0
+                # ストリーム表示の初回フラグを試行ごとに戻す
+                is_first_update = True
+                logger.debug(
+                    f"Starting LLM stream for message {sent_message.id} "
+                    f"(lang_attempt={lang_attempt + 1}/{max_lang_attempts})"
                 )
 
-                if should_update and full_response_text:
-                    is_first_update = False
-                    display_length = len(full_response_text)
-                    if display_length > SAFE_MESSAGE_LENGTH:
-                        display_text = f"{emoji_prefix}{full_response_text[:SAFE_MESSAGE_LENGTH - len(emoji_prefix) - len(emoji_suffix) - 100]}\n\n⚠️ (Output is long, will be split...)\n⚠️ (出力が長いため分割します...){emoji_suffix}"
-                    else:
-                        display_text = f"{emoji_prefix}{full_response_text[:SAFE_MESSAGE_LENGTH - len(emoji_prefix) - len(emoji_suffix)]}{emoji_suffix}"
-                    if display_text != sent_message.content:
-                        try:
-                            # 初回は V2 待機 UI を通常 content に切り替える（寄付ボタンも消える）
-                            if not waiting_v2_cleared:
-                                sent_message = await self._replace_waiting_with_content(
-                                    sent_message, channel, display_text, track_active=True
-                                )
-                                waiting_v2_cleared = True
-                            else:
-                                await sent_message.edit(content=display_text, view=None)
-                            last_update, last_displayed_length = current_time, len(full_response_text)
-                            logger.debug(f"Updated Discord message (displayed: {len(display_text)} chars)")
-                        except discord.NotFound:
-                            logger.warning(f"⚠️ Message deleted during stream (ID: {sent_message.id}). Aborting.")
-                            return None, "", None
-                        except discord.HTTPException as e:
-                            if e.status == 429:
-                                retry_after = (e.retry_after or 1.0) + 0.5
-                                logger.warning(
-                                    f"⚠️ Rate limited on message edit (ID: {sent_message.id}). Waiting {retry_after:.2f}s")
-                                await asyncio.sleep(retry_after)
-                                last_update = time.time()
-                            else:
-                                logger.warning(
-                                    f"⚠️ Failed to edit message (ID: {sent_message.id}): {e.status} - {getattr(e, 'text', str(e))}")
-                                await asyncio.sleep(retry_sleep_time)
-            # シャットダウン済みなら最終編集をせずに終了する
-            if self._shutting_down:
-                # 再起動通知メッセージを維持したまま返す
-                return None, "", None
-            logger.debug(f"Stream completed | Total chunks: {chunk_count} | Final length: {len(full_response_text)} chars")
+                stream_generator = self._llm_stream_and_tool_handler(
+                    stream_messages,
+                    llm_client,
+                    channel.id,
+                    user.id,
+                    on_model_fallback=_on_model_fallback if waiting_view is not None else None,
+                    route_mode=route_mode,
+                )
+                # coding は生成中に本文を流さず、完了後に要約+.md 添付へ
+                coding_cfg = (
+                    coding_attach_settings(self.llm_config)
+                    if route_mode == "coding"
+                    else None
+                )
+                skip_stream_preview = bool(
+                    coding_cfg and coding_cfg.get("skip_stream_preview", True)
+                )
+                async for content_chunk in stream_generator:
+                    # シャットダウン通知後はストリーム編集を打ち切る
+                    if self._shutting_down:
+                        # 再起動文言を上書き済みなのでループを抜ける
+                        break
+                    if not content_chunk:
+                        continue
+                    chunk_count += 1
+                    full_response_text += content_chunk
+                    if chunk_count % 100 == 0: logger.debug(
+                        f"Stream chunk #{chunk_count}, total length: {len(full_response_text)} chars")
+                    current_time, chars_accumulated = time.time(), len(full_response_text) - last_displayed_length
+
+                    should_update = (
+                        not skip_stream_preview
+                        and (
+                            is_first_update
+                            or (
+                                current_time - last_update > update_interval
+                                and chars_accumulated >= min_update_chars
+                            )
+                        )
+                    )
+
+                    if should_update and full_response_text:
+                        is_first_update = False
+                        display_length = len(full_response_text)
+                        if display_length > SAFE_MESSAGE_LENGTH:
+                            display_text = f"{emoji_prefix}{full_response_text[:SAFE_MESSAGE_LENGTH - len(emoji_prefix) - len(emoji_suffix) - 100]}\n\n⚠️ (Output is long, will be split...)\n⚠️ (出力が長いため分割します...){emoji_suffix}"
+                        else:
+                            display_text = f"{emoji_prefix}{full_response_text[:SAFE_MESSAGE_LENGTH - len(emoji_prefix) - len(emoji_suffix)]}{emoji_suffix}"
+                        if display_text != sent_message.content:
+                            try:
+                                # 初回は V2 待機 UI を通常 content に切り替える（寄付ボタンも消える）
+                                if not waiting_v2_cleared:
+                                    sent_message = await self._replace_waiting_with_content(
+                                        sent_message, channel, display_text, track_active=True
+                                    )
+                                    waiting_v2_cleared = True
+                                else:
+                                    await sent_message.edit(content=display_text, view=None)
+                                last_update, last_displayed_length = current_time, len(full_response_text)
+                                logger.debug(f"Updated Discord message (displayed: {len(display_text)} chars)")
+                            except discord.NotFound:
+                                logger.warning(f"⚠️ Message deleted during stream (ID: {sent_message.id}). Aborting.")
+                                return None, "", None
+                            except discord.HTTPException as e:
+                                if e.status == 429:
+                                    retry_after = (e.retry_after or 1.0) + 0.5
+                                    logger.warning(
+                                        f"⚠️ Rate limited on message edit (ID: {sent_message.id}). Waiting {retry_after:.2f}s")
+                                    await asyncio.sleep(retry_after)
+                                    last_update = time.time()
+                                else:
+                                    logger.warning(
+                                        f"⚠️ Failed to edit message (ID: {sent_message.id}): {e.status} - {getattr(e, 'text', str(e))}")
+                                    await asyncio.sleep(retry_sleep_time)
+                # シャットダウン済みなら最終編集をせずに終了する
+                if self._shutting_down:
+                    # 再起動通知メッセージを維持したまま返す
+                    return None, "", None
+                logger.debug(
+                    f"Stream completed | Total chunks: {chunk_count} | "
+                    f"Final length: {len(full_response_text)} chars | lang_attempt={lang_attempt + 1}"
+                )
+                # conversation のみ: 言語不一致なら同一モデルで1回だけ再生成する
+                if (
+                    lang_attempt == 0
+                    and max_lang_attempts > 1
+                    and full_response_text
+                    and not response_matches_lang(full_response_text, route_lang or "en")
+                ):
+                    # リトライ開始をログに残す
+                    logger.warning(
+                        "[%s] 🌐 [LANG] Response language mismatch "
+                        "(expected=%s); retrying once with reinforce",
+                        self._bot_tag(),
+                        route_lang,
+                    )
+                    # 強化ブロックを付けたメッセージ列へ差し替える
+                    stream_messages = self._apply_response_language(
+                        messages_for_api, route_lang, reinforce=True
+                    )
+                    # リトライ済みフラグを立てる
+                    lang_retried = True
+                    # 次の試行へ進む
+                    continue
+                # 一致／リトライ不要なら確定へ
+                break
+
+            if lang_retried:
+                # リトライ後の確定をログに残す
+                logger.info(
+                    "[%s] 🌐 [LANG] Language retry finished (expected=%s, len=%s)",
+                    self._bot_tag(),
+                    route_lang,
+                    len(full_response_text),
+                )
+
             if full_response_text:
                 # coding 長文はファイル添付を優先する
                 if route_mode == "coding":
@@ -3612,6 +3844,8 @@ class LLMCog(commands.Cog, name="llm"):
                 api_messages = messages_for_api
                 if route.mode == "coding":
                     api_messages = await self._inject_coding_mode_prompt(messages_for_api)
+                # ルーター判定言語を system 末尾＋最新 user へ注入する
+                api_messages = self._apply_response_language(api_messages, route.lang)
                 # スレッド作成ボタンは削除（常にFalse）
                 sent_messages, full_response_text, used_key_index = await self._process_streaming_and_send_response(
                     sent_message=temp_message, channel=interaction.channel, user=interaction.user,

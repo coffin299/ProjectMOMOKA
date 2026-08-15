@@ -11,6 +11,7 @@ from MOMOKA.llm.router.json_extract import (
     extract_completion_text,
     parse_llm_json_object,
 )
+from MOMOKA.llm.utils.language import heuristic_lang
 
 if TYPE_CHECKING:
     # llm_cog への循環 import を避ける
@@ -79,24 +80,9 @@ class RouteResult:
 
 
 def _heuristic_lang(text: str) -> str:
-    """ルーター失敗時の簡易言語推定。"""
-    # 空なら英語
-    if not text or not text.strip():
-        return "en"
-    # ハングル
-    if re.search(r"[\uac00-\ud7af]", text):
-        return "ko"
-    # ひらがな・カタカナが多ければ日本語
-    if re.search(r"[\u3040-\u30ff]", text):
-        return "ja"
-    # 漢字のみ寄りは簡体寄りとする（厳密判定はしない）
-    if re.search(r"[\u4e00-\u9fff]", text):
-        return "zh-CN"
-    # ベトナム語っぽい声調記号
-    if re.search(r"[ăâêôơưđĂÂÊÔƠƯĐ]", text):
-        return "vi"
-    # それ以外は英語
-    return "en"
+    """ルーター失敗時の簡易言語推定（共有ユーティリティへ委譲）。"""
+    # language.heuristic_lang と同一ロジックを使う
+    return heuristic_lang(text)
 
 
 def _parse_route_json(raw: str) -> Optional[Dict[str, Any]]:

@@ -434,6 +434,8 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 メンション・Bot への reply・/chat の前段で conversation / coding / command / unsupported に振り分けます。**NSFW / 成人向けリクエストは conversation に振り分け**（unsupported にはしない）。coding では冒頭の挨拶文のみ Discord 本文に出し、説明は `article.md`、各コードブロックは言語に応じた拡張子のファイルで添付します。ルーター応答に混入した `<thought>` / `<think>` は JSON 抽出前に除去し、thought 内の JSON も探索します。Google Gemma ルーター呼び出しでは `thinking_level=minimal` で思考出力を抑制します。失敗時は同一プロバイダーの API キーをすべて巡回し、その後に `fallback_models` へ進みます。ストリーム接続後に本文が空（Finish reason が `None` 等）の場合も、残りの `fallback_models` へ自動で切り替えます。
 
+**言語追従:** ルーターが判定した `lang` を `[RESPONSE_LANGUAGE: xx]` として会話 system 末尾と最新 user の両方へ注入します（Mistral 等の末尾バイアス対策）。conversation モードでは応答言語が期待と明らかに不一致な場合のみ、同一モデルで1回再生成します（`llm.language_followup`）。モデル選定自体は変更しません。
+
 
 ### APIキーローテーション
 

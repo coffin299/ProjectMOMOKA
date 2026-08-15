@@ -410,6 +410,8 @@ Music messages are sent `@silent` (suppress notifications) by default.
 
 Before mention, reply-to-bot, and /chat, a lightweight router classifies conversation / coding / command / unsupported. **NSFW / adult requests are routed to conversation**, not unsupported. In coding mode, a short opener stays as plain Discord text; explanations go to `article.md` and each fenced code block is attached with a language-appropriate extension. Leaked `<thought>` / `<think>` blocks are stripped before JSON parsing, and JSON embedded inside thoughts is also scanned. Google Gemma router calls use `thinking_level=minimal` to suppress thought output. On failure, all API keys for the same provider are tried before moving to `fallback_models`. After a stream connects, an empty body (e.g. Finish reason `None`) also advances to the remaining `fallback_models`.
 
+**Language follow-up:** The router's `lang` is injected as `[RESPONSE_LANGUAGE: xx]` at both the end of the conversation system prompt and the latest user turn (helps models such as Mistral that bias toward trailing instructions). In conversation mode only, if the reply language clearly mismatches, the same model regenerates once (`llm.language_followup`). Model selection itself is unchanged.
+
 
 ### API key rotation
 
