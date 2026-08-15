@@ -115,6 +115,7 @@
     function initDocsSidebar() {
         var menuBtn = document.querySelector("[data-docs-menu]");
         var overlay = document.querySelector(".docs-overlay");
+        var sidebar = document.querySelector(".docs-sidebar");
         // メニューボタンが無いページ（LP等）では何もしない
         if (!menuBtn) {
             return;
@@ -123,41 +124,32 @@
         // CSS のドロワー切替と同じブレークポイント
         var mq = window.matchMedia("(max-width: 800px)");
 
-        // サイドバー要素の参照を都度取る（静的HTML想定だが安全側）
-        function getSidebar() {
-            return document.querySelector(".docs-sidebar");
+        // 旧バグ対策: inert は PC でもクリック不能になるため永久に外す
+        if (sidebar) {
+            sidebar.removeAttribute("inert");
         }
 
-        // inert は操作不能にする。デスクトップ常時表示では付けない
-        function setSidebarInert(shouldInert) {
-            var sidebar = getSidebar();
-            if (!sidebar) {
-                return;
-            }
-            if (shouldInert) {
-                sidebar.setAttribute("inert", "");
-                sidebar.setAttribute("aria-hidden", "true");
-            } else {
-                sidebar.removeAttribute("inert");
-                sidebar.setAttribute("aria-hidden", "false");
-            }
-        }
-
-        // ドロワーを閉じる。モバイルのみ inert、PC ではリンク操作を維持
+        // ドロワー閉じ。操作可否は CSS（pointer-events）に任せる
         function close() {
             document.body.classList.remove("docs-sidebar-open");
             menuBtn.setAttribute("aria-expanded", "false");
-            setSidebarInert(mq.matches);
+            if (sidebar) {
+                // モバイル非表示時のみ a11y 上隠す。PC では常に公開
+                sidebar.setAttribute("aria-hidden", mq.matches ? "true" : "false");
+            }
             if (overlay) {
                 overlay.setAttribute("aria-hidden", "true");
             }
         }
 
-        // ドロワーを開き、フォーカス可能な状態にする
+        // ドロワーを開く
         function openMenu() {
             document.body.classList.add("docs-sidebar-open");
             menuBtn.setAttribute("aria-expanded", "true");
-            setSidebarInert(false);
+            if (sidebar) {
+                sidebar.removeAttribute("inert");
+                sidebar.setAttribute("aria-hidden", "false");
+            }
             if (overlay) {
                 overlay.setAttribute("aria-hidden", "false");
             }
@@ -171,14 +163,19 @@
             }
         }
 
-        // 幅変更時: PC は常に操作可、モバイルは閉じた状態から
+        // 幅変更時に開閉状態と aria を同期
         function syncForViewport() {
+            if (sidebar) {
+                sidebar.removeAttribute("inert");
+            }
             if (mq.matches) {
                 close();
             } else {
                 document.body.classList.remove("docs-sidebar-open");
                 menuBtn.setAttribute("aria-expanded", "false");
-                setSidebarInert(false);
+                if (sidebar) {
+                    sidebar.setAttribute("aria-hidden", "false");
+                }
                 if (overlay) {
                     overlay.setAttribute("aria-hidden", "true");
                 }

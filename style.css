@@ -694,10 +694,15 @@ pre code {
         transform: translateX(-105%);
         transition: transform 0.2s ease;
         box-shadow: var(--shadow);
+        /* 画面外ドロワーはクリックを受けない（inert 非依存） */
+        pointer-events: none;
+        visibility: hidden;
     }
 
     body.docs-sidebar-open .docs-sidebar {
         transform: translateX(0);
+        pointer-events: auto;
+        visibility: visible;
     }
 
     body.docs-sidebar-open .docs-overlay {

@@ -14,8 +14,8 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 - GitHub: https://github.com/coffin299/ProjectMOMOKA
 - Support server: https://discord.gg/H79HKKqx3s
 - Operator Discord profile: https://discord.com/users/270446628622696449 (coffin299)
-- Terms: https://momoka-project.com/terms.html
-- Privacy: https://momoka-project.com/privacy.html
+- Terms: https://momoka-project.com/terms/
+- Privacy: https://momoka-project.com/privacy/
 
 ## Invites
 
@@ -53,12 +53,12 @@ Source is public but heavy (Python 3.11, many optional ML stacks). The website r
 
 ## Privacy (short)
 
-Message content and IDs may be processed for features, logging, and third-party APIs (LLM providers, media platforms, Link Fix proxies, Cloudflare Tunnel for temporary downloads ~10 minutes served from the bot host, getloli page-view counter on the website, Google Analytics on the website). Conversation history is generally in-memory only. See https://momoka-project.com/privacy.html
+Message content and IDs may be processed for features, logging, and third-party APIs (LLM providers, media platforms, Link Fix proxies, Cloudflare Tunnel for temporary downloads ~10 minutes served from the bot host, getloli page-view counter on the website, Google Analytics on the website). Conversation history is generally in-memory only. See https://momoka-project.com/privacy/
 
 ## Key pages
 
 - https://momoka-project.com/
-- https://momoka-project.com/faq.html
-- https://momoka-project.com/troubleshooting.html
-- https://momoka-project.com/commands.html
+- https://momoka-project.com/faq/
+- https://momoka-project.com/troubleshooting/
+- https://momoka-project.com/commands/
 - https://momoka-project.com/llms.txt
