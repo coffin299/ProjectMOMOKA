@@ -211,14 +211,7 @@ if exist "gui-electron\dist\index.html" (
 
 REM dist 再ビルド前に残留 Electron を落とす（icudtl.dat EBUSY 防止）
 echo [INFO] Stopping leftover Host Electron GUI processes if any...
-powershell -NoProfile -Command ^
-  "$root = (Resolve-Path 'gui-electron').Path; ^
-   $exe = Join-Path $root 'node_modules\electron\dist\electron.exe'; ^
-   if (Test-Path -LiteralPath $exe) { ^
-     Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" ^| ^
-       Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $exe) } ^| ^
-       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } ^
-   }" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File "gui-electron\stop-leftover-electron.ps1" >nul 2>&1
 
 echo [INFO] Building host Electron GUI ^(dist missing^)...
 pushd "gui-electron"
