@@ -9,11 +9,11 @@ var sources = new Map();
 var zoomStates = new WeakMap();
 var renderTimer = null;
 var renderSeq = 0;
-var MIN_SCALE = 0.4;
-var MAX_SCALE = 3.5;
+var MIN_SCALE = 0.5;
+var MAX_SCALE = 4;
 var STEP = 0.15;
-var DEFAULT_SCALE = 1;
-var FIT_PAD = 20;
+var FIT_PAD = 16;
+var MAX_VIEW_H = 520;
 
 function cacheSources() {
   // 初回だけ定義テキストを保持する（描画後は SVG に置き換わるため）
@@ -62,7 +62,7 @@ function ensureChrome(fig) {
 function getZoom(fig) {
   var state = zoomStates.get(fig);
   if (!state) {
-    state = { scale: DEFAULT_SCALE, x: 0, y: 0, dirty: false };
+    state = { scale: 1, x: 0, y: 0, dirty: false, nw: 0, nh: 0 };
     zoomStates.set(fig, state);
   }
   return state;
@@ -75,7 +75,7 @@ function applyZoom(fig) {
   if (!stage) {
     return;
   }
-  // 拡大縮小とパンを transform で適用（原点は左上）
+  // absolute + transform なのでレイアウトを膨らませない
   stage.style.transform =
     "translate(" +
     state.x +
@@ -93,53 +93,71 @@ function clampScale(n) {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, n));
 }
 
-function measureStage(stage) {
-  // scale(1) 換算の実寸を測る
-  var svg = stage.querySelector("svg");
-  var sw = stage.scrollWidth || stage.offsetWidth || 1;
-  var sh = stage.scrollHeight || stage.offsetHeight || 1;
-  if (svg) {
+function normalizeSvg(svg) {
+  // Mermaid の SVG を viewBox 基準の実ピクセルに固定（100% 伸縮を防ぐ）
+  var w = 0;
+  var h = 0;
+  var vb = svg.viewBox && svg.viewBox.baseVal;
+  if (vb && vb.width > 0 && vb.height > 0) {
+    w = vb.width;
+    h = vb.height;
+  } else {
     try {
       var box = svg.getBBox();
-      sw = Math.max(sw, box.width + box.x);
-      sh = Math.max(sh, box.height + box.y);
+      w = box.width;
+      h = box.height;
     } catch (err) {}
-    var aw = parseFloat(svg.getAttribute("width"));
-    var ah = parseFloat(svg.getAttribute("height"));
-    if (!isNaN(aw) && aw > 0) {
-      sw = Math.max(sw, aw);
-    }
-    if (!isNaN(ah) && ah > 0) {
-      sh = Math.max(sh, ah);
-    }
   }
-  return { sw: Math.max(sw, 1), sh: Math.max(sh, 1) };
+  if (!(w > 0 && h > 0)) {
+    w = svg.clientWidth || 320;
+    h = svg.clientHeight || 180;
+  }
+  svg.setAttribute("width", String(w));
+  svg.setAttribute("height", String(h));
+  svg.style.width = w + "px";
+  svg.style.height = h + "px";
+  svg.style.maxWidth = "none";
+  svg.style.display = "block";
+  return { w: w, h: h };
 }
 
 function fitCentered(fig) {
-  // 全体が収まるよう最大 100% までで縮小し、ビューポート中央へ置く
+  // ビューポート内に全体が収まるよう拡大縮小し、中央へ。枠は視覚サイズに合わせる
   var viewport = fig.querySelector(".docs-mermaid-viewport");
   var stage = fig.querySelector(".docs-mermaid-stage");
   if (!viewport || !stage || fig.hidden) {
     return;
   }
-  stage.style.transform = "translate(0px, 0px) scale(1)";
-  var size = measureStage(stage);
-  var vw = viewport.clientWidth;
-  var vh = viewport.clientHeight;
-  if (vw < 8 || vh < 8) {
+  var svg = stage.querySelector("svg");
+  if (!svg) {
     return;
   }
-  var scale = Math.min(
-    DEFAULT_SCALE,
-    (vw - FIT_PAD * 2) / size.sw,
-    (vh - FIT_PAD * 2) / size.sh
-  );
-  scale = clampScale(scale);
+
+  stage.style.transform = "translate(0px, 0px) scale(1)";
+  var natural = normalizeSvg(svg);
   var state = getZoom(fig);
+  state.nw = natural.w;
+  state.nh = natural.h;
+
+  // 幅はコンテナ、高さ上限は画面の半分程度
+  var availW = Math.max(viewport.clientWidth - FIT_PAD * 2, 80);
+  var availH = Math.min(MAX_VIEW_H, Math.floor(window.innerHeight * 0.55)) - FIT_PAD * 2;
+  if (availH < 120) {
+    availH = 120;
+  }
+
+  // 全体が見える最大スケール（縮小も拡大も可）
+  var scale = Math.min(availW / natural.w, availH / natural.h);
+  scale = clampScale(scale);
+
+  var visW = natural.w * scale;
+  var visH = natural.h * scale;
+  // 枠を図の見え方に合わせて小さくする（巨大な空白を作らない）
+  viewport.style.height = Math.ceil(visH + FIT_PAD * 2) + "px";
+
   state.scale = scale;
-  state.x = (vw - size.sw * scale) / 2;
-  state.y = (vh - size.sh * scale) / 2;
+  state.x = (viewport.clientWidth - visW) / 2;
+  state.y = (viewport.clientHeight - visH) / 2;
   state.dirty = false;
   applyZoom(fig);
 }
@@ -286,21 +304,23 @@ async function renderMermaid(seq) {
   }
   await mermaid.run({ nodes: nodes });
 
-  // レイアウト確定後に fit（次フレームで寸法を取る）
+  // 2 フレーム待ってから寸法確定 → フィット
   requestAnimationFrame(function () {
-    if (seq !== renderSeq) {
-      return;
-    }
-    figures.forEach(function (fig) {
-      if (fig.hidden) {
+    requestAnimationFrame(function () {
+      if (seq !== renderSeq) {
         return;
       }
-      var state = getZoom(fig);
-      if (!state.dirty) {
-        fitCentered(fig);
-      } else {
-        applyZoom(fig);
-      }
+      figures.forEach(function (fig) {
+        if (fig.hidden) {
+          return;
+        }
+        var state = getZoom(fig);
+        if (!state.dirty) {
+          fitCentered(fig);
+        } else {
+          applyZoom(fig);
+        }
+      });
     });
   });
 }
@@ -313,7 +333,6 @@ new MutationObserver(scheduleRender).observe(document.documentElement, {
   attributeFilter: ["data-theme", "data-lang"],
 });
 
-// リサイズ時も未操作の図は再フィット
 window.addEventListener("resize", function () {
   document.querySelectorAll(".docs-mermaid").forEach(function (fig) {
     if (fig.hidden) {
