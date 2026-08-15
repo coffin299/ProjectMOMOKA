@@ -65,7 +65,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=20260815-overview">
+    <link rel="stylesheet" href="/style.css?v=20260815-overview2">
 </head>
 <body class="docs-body docs-wide">
     <header class="docs-header">
@@ -191,36 +191,44 @@
                     <span class="lang-ja">AI チャット</span>
                     <span class="lang-en">AI chat</span>
                 </h2>
-                <p class="lang-ja">メンション・リプライ・<code>/chat</code>・DM で応答します。Agent ルーターが会話 / コーディング / コマンドへ振り分け、必要に応じて Web 検索や画像理解を使います。履歴はメモリ上（再起動で消える）で、送信時に選択中の AI プロバイダへ本文・画像が渡ります。</p>
-                <p class="lang-en">Replies via mention, reply, <code>/chat</code>, or DM. An Agent router classifies conversation / coding / command modes and may use web search or vision. History stays in memory (cleared on restart); text and images go to the selected AI provider when answering.</p>
+                <p class="lang-ja">メンション・リプライ・<code>/chat</code>・DM で応答します。<strong>Agent ルーター自身も LLM API を呼び出して</strong>会話 / コーディング / コマンドへ振り分け、その後の応答生成でも（必要なら Web 検索や画像理解を挟みつつ）再び LLM API を使います。履歴はメモリ上（再起動で消える）です。</p>
+                <p class="lang-en">Replies via mention, reply, <code>/chat</code>, or DM. The <strong>Agent router itself calls an LLM API</strong> to classify conversation / coding / command modes, then the reply path may call the LLM again (optionally with web search or vision). History stays in memory (cleared on restart).</p>
 
                 <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="AI チャットの流れ">
                     <pre class="mermaid">flowchart LR
   M["メンション / DM /chat"] --> R["Agent ルーター"]
+  R -->|"分類"| L1["LLM API"]
+  L1 --> R
   R --> C["会話"]
   R --> K["コーディング"]
   R --> X["コマンド"]
   C --> S{"検索?"}
   S -->|Yes| W["Web 検索"]
-  S --> L["LLM API"]
-  W --> L
-  L --> MEM["メモリ履歴"]
-  L --> D["Discord 応答"]</pre>
-                    <figcaption>入力 → 振り分け →（検索）→ LLM → Discord</figcaption>
+  S --> L2["LLM API"]
+  W --> L2
+  K --> L2
+  X --> L2
+  L2 --> MEM["メモリ履歴"]
+  L2 --> D["Discord 応答"]</pre>
+                    <figcaption>入力 → Agent（LLM で分類）→（検索）→ LLM 応答 → Discord</figcaption>
                 </figure>
                 <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="AI chat flow">
                     <pre class="mermaid">flowchart LR
   M["Mention / DM /chat"] --> R["Agent router"]
+  R -->|"classify"| L1["LLM API"]
+  L1 --> R
   R --> C["Conversation"]
   R --> K["Coding"]
   R --> X["Command"]
   C --> S{"Search?"}
   S -->|Yes| W["Web search"]
-  S --> L["LLM API"]
-  W --> L
-  L --> MEM["In-memory history"]
-  L --> D["Discord reply"]</pre>
-                    <figcaption>Input → route → (search) → LLM → Discord</figcaption>
+  S --> L2["LLM API"]
+  W --> L2
+  K --> L2
+  X --> L2
+  L2 --> MEM["In-memory history"]
+  L2 --> D["Discord reply"]</pre>
+                    <figcaption>Input → Agent (LLM classify) → (search) → LLM reply → Discord</figcaption>
                 </figure>
 
                 <h2 id="music">
@@ -416,7 +424,7 @@
         </aside>
     </div>
 
-    <script src="/script.js?v=20260815-overview"></script>
-    <script type="module" src="/mermaid-docs.js?v=20260815-overview"></script>
+    <script src="/script.js?v=20260815-overview2"></script>
+    <script type="module" src="/mermaid-docs.js?v=20260815-overview2"></script>
 </body>
 </html>

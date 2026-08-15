@@ -9,10 +9,11 @@ var sources = new Map();
 var zoomStates = new WeakMap();
 var renderTimer = null;
 var renderSeq = 0;
-var MIN_SCALE = 0.75;
+var MIN_SCALE = 0.4;
 var MAX_SCALE = 3.5;
-var STEP = 0.2;
-var DEFAULT_SCALE = 1.35;
+var STEP = 0.15;
+var DEFAULT_SCALE = 1;
+var FIT_PAD = 20;
 
 function cacheSources() {
   // 初回だけ定義テキストを保持する（描画後は SVG に置き換わるため）
@@ -38,7 +39,7 @@ function ensureChrome(fig) {
   toolbar.className = "docs-mermaid-toolbar";
   toolbar.innerHTML =
     '<button type="button" class="docs-mermaid-btn" data-zoom-out aria-label="Zoom out">−</button>' +
-    '<span class="docs-mermaid-zoom-label" data-zoom-label>135%</span>' +
+    '<span class="docs-mermaid-zoom-label" data-zoom-label>100%</span>' +
     '<button type="button" class="docs-mermaid-btn" data-zoom-in aria-label="Zoom in">+</button>' +
     '<button type="button" class="docs-mermaid-btn docs-mermaid-btn-reset" data-zoom-reset aria-label="Reset zoom">' +
     '<span class="lang-ja">リセット</span><span class="lang-en">Reset</span></button>' +
@@ -61,7 +62,7 @@ function ensureChrome(fig) {
 function getZoom(fig) {
   var state = zoomStates.get(fig);
   if (!state) {
-    state = { scale: DEFAULT_SCALE, x: 0, y: 0 };
+    state = { scale: DEFAULT_SCALE, x: 0, y: 0, dirty: false };
     zoomStates.set(fig, state);
   }
   return state;
@@ -74,7 +75,7 @@ function applyZoom(fig) {
   if (!stage) {
     return;
   }
-  // 拡大縮小とパンを transform で適用
+  // 拡大縮小とパンを transform で適用（原点は左上）
   stage.style.transform =
     "translate(" +
     state.x +
@@ -92,25 +93,76 @@ function clampScale(n) {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, n));
 }
 
-function bindZoom(fig, viewport, stage, toolbar) {
-  applyZoom(fig);
+function measureStage(stage) {
+  // scale(1) 換算の実寸を測る
+  var svg = stage.querySelector("svg");
+  var sw = stage.scrollWidth || stage.offsetWidth || 1;
+  var sh = stage.scrollHeight || stage.offsetHeight || 1;
+  if (svg) {
+    try {
+      var box = svg.getBBox();
+      sw = Math.max(sw, box.width + box.x);
+      sh = Math.max(sh, box.height + box.y);
+    } catch (err) {}
+    var aw = parseFloat(svg.getAttribute("width"));
+    var ah = parseFloat(svg.getAttribute("height"));
+    if (!isNaN(aw) && aw > 0) {
+      sw = Math.max(sw, aw);
+    }
+    if (!isNaN(ah) && ah > 0) {
+      sh = Math.max(sh, ah);
+    }
+  }
+  return { sw: Math.max(sw, 1), sh: Math.max(sh, 1) };
+}
 
+function fitCentered(fig) {
+  // 全体が収まるよう最大 100% までで縮小し、ビューポート中央へ置く
+  var viewport = fig.querySelector(".docs-mermaid-viewport");
+  var stage = fig.querySelector(".docs-mermaid-stage");
+  if (!viewport || !stage || fig.hidden) {
+    return;
+  }
+  stage.style.transform = "translate(0px, 0px) scale(1)";
+  var size = measureStage(stage);
+  var vw = viewport.clientWidth;
+  var vh = viewport.clientHeight;
+  if (vw < 8 || vh < 8) {
+    return;
+  }
+  var scale = Math.min(
+    DEFAULT_SCALE,
+    (vw - FIT_PAD * 2) / size.sw,
+    (vh - FIT_PAD * 2) / size.sh
+  );
+  scale = clampScale(scale);
+  var state = getZoom(fig);
+  state.scale = scale;
+  state.x = (vw - size.sw * scale) / 2;
+  state.y = (vh - size.sh * scale) / 2;
+  state.dirty = false;
+  applyZoom(fig);
+}
+
+function markDirty(fig) {
+  getZoom(fig).dirty = true;
+}
+
+function bindZoom(fig, viewport, stage, toolbar) {
   toolbar.querySelector("[data-zoom-in]").addEventListener("click", function () {
     var state = getZoom(fig);
     state.scale = clampScale(state.scale + STEP);
+    markDirty(fig);
     applyZoom(fig);
   });
   toolbar.querySelector("[data-zoom-out]").addEventListener("click", function () {
     var state = getZoom(fig);
     state.scale = clampScale(state.scale - STEP);
+    markDirty(fig);
     applyZoom(fig);
   });
   toolbar.querySelector("[data-zoom-reset]").addEventListener("click", function () {
-    var state = getZoom(fig);
-    state.scale = DEFAULT_SCALE;
-    state.x = 0;
-    state.y = 0;
-    applyZoom(fig);
+    fitCentered(fig);
   });
 
   // ホイールで拡大（ページスクロールを止める）
@@ -121,6 +173,7 @@ function bindZoom(fig, viewport, stage, toolbar) {
       var state = getZoom(fig);
       var delta = e.deltaY > 0 ? -STEP : STEP;
       state.scale = clampScale(state.scale + delta);
+      markDirty(fig);
       applyZoom(fig);
     },
     { passive: false }
@@ -149,6 +202,7 @@ function bindZoom(fig, viewport, stage, toolbar) {
     state.y += e.clientY - lastY;
     lastX = e.clientX;
     lastY = e.clientY;
+    markDirty(fig);
     applyZoom(fig);
   });
   function endPan(e) {
@@ -191,18 +245,17 @@ async function renderMermaid(seq) {
     startOnLoad: false,
     theme: theme,
     securityLevel: "strict",
-    // 既定より大きめの文字で読みやすくする
     themeVariables: {
-      fontSize: "18px",
+      fontSize: "16px",
       fontFamily:
         '"Noto Sans JP", "Inter", "Hiragino Sans", "Segoe UI", sans-serif',
     },
     flowchart: {
       htmlLabels: true,
       curve: "basis",
-      nodeSpacing: 40,
-      rankSpacing: 45,
-      padding: 12,
+      nodeSpacing: 36,
+      rankSpacing: 40,
+      padding: 10,
     },
   });
 
@@ -233,11 +286,22 @@ async function renderMermaid(seq) {
   }
   await mermaid.run({ nodes: nodes });
 
-  // 再描画後もズーム状態を維持
-  figures.forEach(function (fig) {
-    if (!fig.hidden) {
-      applyZoom(fig);
+  // レイアウト確定後に fit（次フレームで寸法を取る）
+  requestAnimationFrame(function () {
+    if (seq !== renderSeq) {
+      return;
     }
+    figures.forEach(function (fig) {
+      if (fig.hidden) {
+        return;
+      }
+      var state = getZoom(fig);
+      if (!state.dirty) {
+        fitCentered(fig);
+      } else {
+        applyZoom(fig);
+      }
+    });
   });
 }
 
@@ -247,4 +311,17 @@ scheduleRender();
 new MutationObserver(scheduleRender).observe(document.documentElement, {
   attributes: true,
   attributeFilter: ["data-theme", "data-lang"],
+});
+
+// リサイズ時も未操作の図は再フィット
+window.addEventListener("resize", function () {
+  document.querySelectorAll(".docs-mermaid").forEach(function (fig) {
+    if (fig.hidden) {
+      return;
+    }
+    var state = getZoom(fig);
+    if (!state.dirty) {
+      fitCentered(fig);
+    }
+  });
 });

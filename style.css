@@ -544,9 +544,10 @@ pre code {
 .docs-mermaid-stage {
     transform-origin: 0 0;
     will-change: transform;
-    padding: 1rem;
+    padding: 0.5rem;
     display: inline-block;
-    min-width: 100%;
+    width: max-content;
+    max-width: none;
 }
 
 .docs-mermaid .mermaid {
