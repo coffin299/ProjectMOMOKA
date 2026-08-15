@@ -17,6 +17,8 @@ Docs use clean paths (no `.html` in the browser):
 
 Legacy `*.html` files at the repo root are thin redirects to the clean paths. Shared assets stay at `/style.css`, `/script.js`, `/assets/...`.
 
+`/privacy/` includes a Mermaid data-flow overview of the bot host (ProjectMOMOKA; excludes this website and the dashboard). Diagrams are rendered client-side via the Mermaid CDN and follow the site theme/language toggles.
+
 Do not commit local filesystem paths (`C:\...`, `file://...`). Use site-relative (`/faq/`) or public URLs (`https://momoka-project.com/...`) only.
 
 ## Updating the site
