@@ -37,6 +37,7 @@ try:
         UnsupportedMediaError,
         COMMON_YTDL_OPTS,
         YOUTUBE_PLAYER_CLIENT_FALLBACK,
+        is_youtube_media_url,
     )
     from MOMOKA.music.error.errors import MusicCogExceptionHandler
     from MOMOKA.music.plugins.audio_mixer import AudioMixer, MusicAudioSource
@@ -61,6 +62,7 @@ except ImportError as e:
     UnsupportedMediaError = None
     COMMON_YTDL_OPTS = None
     YOUTUBE_PLAYER_CLIENT_FALLBACK = None
+    is_youtube_media_url = None
     MusicCogExceptionHandler = None
     AudioMixer = None
     MusicAudioSource = None
@@ -1348,6 +1350,13 @@ class MusicCog(commands.Cog, name="music_cog"):
         try:
             # 終了したトラック情報を保存
             finished_track = state.current_track
+            # YouTube のみ player_client フォールバックが有効（ニコニコ等では無意味）
+            track_url = getattr(finished_track, "url", None) if finished_track else None
+            can_client_fallback = bool(
+                is_youtube_media_url is not None
+                and track_url
+                and is_youtube_media_url(track_url)
+            )
             # NO audio + 403/途中切断などなら同一曲を 1 回だけ代替 client でリトライする
             should_retry_stream = (
                 finished_source is not None
@@ -1358,6 +1367,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                 )
                 and finished_track is not None
                 and state.stream_403_retries < 1
+                and can_client_fallback
             )
             # ストリーム失敗リトライ経路
             if should_retry_stream:
@@ -1392,8 +1402,18 @@ class MusicCog(commands.Cog, name="music_cog"):
                     retry_track=finished_track,
                     use_fallback_clients=True,
                 )
-                # リトライ処理を終了する
-                return
+                # リトライ成功（再生開始）ならここで終了する
+                if state.is_playing:
+                    # 成功時は失敗処理へ落とさない
+                    return
+                # リトライも失敗: _play_next_song 内の再入は抑止されるため、
+                # ここで NO audio 失敗処理へフォールスルーして状態を必ず復旧する
+                logger.warning(
+                    "Guild %s: Fallback retry for '%s' also failed; "
+                    "recovering playback state",
+                    guild_id,
+                    finished_track.title,
+                )
 
             # 通常終了・リトライ尽きた場合はカウンタをリセットする
             state.stream_403_retries = 0
@@ -1459,6 +1479,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                 except Exception:
                     pass
 
+            # 次曲のプライム失敗等が再入できるよう、遷移ロックを先に解除する
+            state._playing_next = False
             # 次の曲を再生（キューが空の場合はミキサーの停止も行う）
             await self._play_next_song(guild_id)
         finally:
@@ -1685,6 +1707,11 @@ class MusicCog(commands.Cog, name="music_cog"):
                     source.cleanup()
                 except Exception:
                     pass
+                # 同一曲リトライ中のみ再入禁止（呼び出し元がフォールスルーで処理する）
+                # ※ 次曲再生中の失敗は通常どおり _on_music_source_removed へ渡す
+                if retry_track is not None:
+                    # 再入すると失敗 UI / current_track クリアが握りつぶされ play 不能になる
+                    return
                 # 失敗フラグ付きソースとして次曲／リトライ経路へ渡す
                 await self._on_music_source_removed(guild_id, source)
                 return

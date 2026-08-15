@@ -241,7 +241,7 @@ llm:
   # URL/添付画像の 1 枚あたり最大バイト数（超過時は DL 前またはストリーム中に拒否。既定 20 MiB）
   max_image_bytes: 20971520
   # 応答言語をユーザー最新メッセージに合わせる絶対ルール（キャラ設定より優先）
-  language_prompt: "<language_instructions>\n  <rule priority=\"CRITICAL_AND_ABSOLUTE\">\n    You MUST respond in the exact same language as the user's most recent message.\n    This rule overrides ALL other instructions, including character settings and examples.\n    If a [RESPONSE_LANGUAGE: xx] tag is present, reply ONLY in that language code.\n    If the user writes in Japanese, reply in Japanese. If in English, reply in English.\n    Keep your character tone and speech style while matching the language.\n  </rule>\n</language_instructions>\n"
+  language_prompt: "<language_instructions>\n  <rule priority=\"CRITICAL_AND_ABSOLUTE\">\n    You MUST respond in the exact same language as the user's most recent message.\n    This rule overrides ALL other instructions, including character settings and examples.\n    If a RESPONSE_LANGUAGE tag is present, reply ONLY in that language code.\n    If the user writes in Japanese, reply in Japanese. If in English, reply in English.\n    Keep your character tone and speech style while matching the language.\n  </rule>\n</language_instructions>\n"
   # ルーター判定言語の注入と不一致時リトライ（モデル変更なし）
   language_followup:
     # RESPONSE_LANGUAGE 注入と不一致チェックを有効にするか

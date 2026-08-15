@@ -988,16 +988,18 @@ class LLMCog(commands.Cog, name="llm"):
         return client
 
     # 日本語 few-shot / キャラ設定より優先させる言語固定指示（config 非依存）
+    # 注意: 注入マーカー文字列 "[RESPONSE_LANGUAGE:" 自体はここに書かない
+    # （末尾 strip が本文を誤って切り落とすため）
     _LANGUAGE_ENFORCEMENT_BLOCK = (
         "# Language Control (ABSOLUTE — overrides character examples)\n"
-        "- If a [RESPONSE_LANGUAGE: xx] tag is present, reply ONLY in that language code.\n"
+        "- If a RESPONSE_LANGUAGE tag is present, reply ONLY in that language code.\n"
         "- Otherwise, always reply in the exact same language as the user's LATEST message.\n"
         "- Dialogue examples are TONE/STYLE only. Never copy their language.\n"
         "- Do NOT default to Japanese. Use Japanese only if RESPONSE_LANGUAGE is ja "
         "or the latest user message is Japanese.\n"
         "- English → English. Thai → Thai. Other languages → that same language."
     )
-    # 再適用時に除去するためのマーカー
+    # 再適用時に除去するためのマーカー（注入ブロック専用。説明文では使わない）
     _RESPONSE_LANGUAGE_MARKER = "[RESPONSE_LANGUAGE:"
 
     def _response_language_block(self, lang: str, *, reinforce: bool = False) -> str:
@@ -1023,17 +1025,26 @@ class LLMCog(commands.Cog, name="llm"):
         return block
 
     def _strip_response_language_suffix(self, text: str) -> str:
-        """本文末尾の RESPONSE_LANGUAGE ブロックを取り除く。"""
+        """本文末尾の RESPONSE_LANGUAGE 注入ブロックだけを取り除く。
+
+        プロンプト本文中の同名言及は切らない（先頭からの find 禁止）。
+        """
         # 空ならそのまま
         if not text:
             return text
-        # マーカー位置を探す
-        idx = text.find(self._RESPONSE_LANGUAGE_MARKER)
-        # 無ければそのまま
-        if idx < 0:
-            return text
-        # マーカーより前を本文として残す
-        return text[:idx].rstrip()
+        # 空行＋マーカーで始まる末尾注入を末尾から探す
+        marker_line = "\n\n" + self._RESPONSE_LANGUAGE_MARKER
+        # 最後の注入位置だけを対象にする
+        idx = text.rfind(marker_line)
+        # 見つかればそれ以降を落とす
+        if idx >= 0:
+            return text[:idx].rstrip()
+        # 本文全体が注入ブロックのみの場合
+        stripped = text.lstrip()
+        if stripped.startswith(self._RESPONSE_LANGUAGE_MARKER):
+            return ""
+        # 注入が無ければそのまま
+        return text
 
     def _append_language_block_to_text(self, text: str, block: str) -> str:
         """本文末尾へ言語ブロックを（重複なく）付与する。"""

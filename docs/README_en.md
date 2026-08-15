@@ -66,6 +66,7 @@ Mention `@PLANA` or `@ARONA` to chat. **In DMs, no mention is required** — pla
 ### 2. Music Playback
 
 Both bots can play in voice channels (queue, loop, shuffle, etc.).
+On stream failures (HTTP 403 / NO audio, etc.), an error panel is shown and `current_track` is cleared so the next `/play` is not stuck. YouTube-only: one retry with an alternate `player_client` (not applied to NicoNico and other non-YouTube sources).
 They **cannot share the same VC at once** (load control): if one bot is already connected, the other is refused. If both are already in the same channel, **ARONA (companion) disconnects** and PLANA stays.
 
 The PCM mixer (`AudioMixer`) uses NumPy vectorized add/clip so music and TTS can share one VC with lower CPU cost.
