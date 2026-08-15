@@ -115,31 +115,49 @@
     function initDocsSidebar() {
         var menuBtn = document.querySelector("[data-docs-menu]");
         var overlay = document.querySelector(".docs-overlay");
+        // メニューボタンが無いページ（LP等）では何もしない
         if (!menuBtn) {
             return;
         }
 
+        // CSS のドロワー切替と同じブレークポイント
+        var mq = window.matchMedia("(max-width: 800px)");
+
+        // サイドバー要素の参照を都度取る（静的HTML想定だが安全側）
+        function getSidebar() {
+            return document.querySelector(".docs-sidebar");
+        }
+
+        // inert は操作不能にする。デスクトップ常時表示では付けない
+        function setSidebarInert(shouldInert) {
+            var sidebar = getSidebar();
+            if (!sidebar) {
+                return;
+            }
+            if (shouldInert) {
+                sidebar.setAttribute("inert", "");
+                sidebar.setAttribute("aria-hidden", "true");
+            } else {
+                sidebar.removeAttribute("inert");
+                sidebar.setAttribute("aria-hidden", "false");
+            }
+        }
+
+        // ドロワーを閉じる。モバイルのみ inert、PC ではリンク操作を維持
         function close() {
             document.body.classList.remove("docs-sidebar-open");
             menuBtn.setAttribute("aria-expanded", "false");
-            var sidebar = document.querySelector(".docs-sidebar");
-            if (sidebar) {
-                sidebar.setAttribute("inert", "");
-                sidebar.setAttribute("aria-hidden", "true");
-            }
+            setSidebarInert(mq.matches);
             if (overlay) {
                 overlay.setAttribute("aria-hidden", "true");
             }
         }
 
+        // ドロワーを開き、フォーカス可能な状態にする
         function openMenu() {
             document.body.classList.add("docs-sidebar-open");
             menuBtn.setAttribute("aria-expanded", "true");
-            var sidebar = document.querySelector(".docs-sidebar");
-            if (sidebar) {
-                sidebar.removeAttribute("inert");
-                sidebar.setAttribute("aria-hidden", "false");
-            }
+            setSidebarInert(false);
             if (overlay) {
                 overlay.setAttribute("aria-hidden", "false");
             }
@@ -153,23 +171,43 @@
             }
         }
 
-        // 初期状態は閉じて inert
-        close();
+        // 幅変更時: PC は常に操作可、モバイルは閉じた状態から
+        function syncForViewport() {
+            if (mq.matches) {
+                close();
+            } else {
+                document.body.classList.remove("docs-sidebar-open");
+                menuBtn.setAttribute("aria-expanded", "false");
+                setSidebarInert(false);
+                if (overlay) {
+                    overlay.setAttribute("aria-hidden", "true");
+                }
+            }
+        }
+
+        syncForViewport();
+        if (typeof mq.addEventListener === "function") {
+            mq.addEventListener("change", syncForViewport);
+        } else if (typeof mq.addListener === "function") {
+            mq.addListener(syncForViewport);
+        }
+
         menuBtn.addEventListener("click", toggle);
         if (overlay) {
             overlay.addEventListener("click", close);
         }
 
+        // モバイルでナビリンク押下後はドロワーを閉じる（遷移はブラウザ標準）
         document.querySelectorAll(".docs-nav a").forEach(function (link) {
             link.addEventListener("click", function () {
-                if (window.matchMedia("(max-width: 800px)").matches) {
+                if (mq.matches) {
                     close();
                 }
             });
         });
 
         document.addEventListener("keydown", function (e) {
-            if (e.key === "Escape") {
+            if (e.key === "Escape" && mq.matches) {
                 close();
             }
         });
