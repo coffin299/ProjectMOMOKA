@@ -202,11 +202,32 @@ REM Host Electron GUI ^(skip when already built^)
 echo [INFO] Checking host Electron GUI ^(gui-electron^)...
 if not exist "gui-electron\package.json" (
     echo [WARN] gui-electron\package.json not found — host GUI will be skipped.
-) else if exist "gui-electron\dist\index.html" (
+    goto gui_electron_done
+)
+if exist "gui-electron\dist\index.html" (
     echo [INFO] gui-electron dist already exists — skipping build.
+    goto gui_electron_done
+)
+
+REM dist 再ビルド前に残留 Electron を落とす（icudtl.dat EBUSY 防止）
+echo [INFO] Stopping leftover Host Electron GUI processes if any...
+powershell -NoProfile -Command ^
+  "$root = (Resolve-Path 'gui-electron').Path; ^
+   $exe = Join-Path $root 'node_modules\electron\dist\electron.exe'; ^
+   if (Test-Path -LiteralPath $exe) { ^
+     Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" ^| ^
+       Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $exe) } ^| ^
+       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } ^
+   }" >nul 2>&1
+
+echo [INFO] Building host Electron GUI ^(dist missing^)...
+pushd "gui-electron"
+
+REM node_modules 済みなら npm ci 不要（dist 削除だけの再ビルドを軽く・安全に）
+if exist "node_modules\vite\package.json" (
+    echo [INFO] node_modules present — skipping npm ci/install, running vite build only.
 ) else (
-    echo [INFO] Building host Electron GUI ^(first run^)...
-    pushd "gui-electron"
+    echo [INFO] node_modules missing — installing gui-electron dependencies...
     if exist "package-lock.json" (
         call npm ci
     ) else (
@@ -215,20 +236,22 @@ if not exist "gui-electron\package.json" (
     if errorlevel 1 (
         popd
         echo [WARN] gui-electron npm install failed — Bot will start without Electron GUI.
+        echo [WARN] If you see EBUSY on electron\dist\icudtl.dat, close leftover Electron and retry.
         goto gui_electron_done
     )
-    call npm run build
-    if errorlevel 1 (
-        popd
-        echo [WARN] gui-electron build failed — Bot will start without Electron GUI.
-        goto gui_electron_done
-    )
+)
+
+call npm run build
+if errorlevel 1 (
     popd
-    if exist "gui-electron\dist\index.html" (
-        echo [SUCCESS] Host Electron GUI is ready.
-    ) else (
-        echo [WARN] gui-electron build finished but dist\index.html is missing.
-    )
+    echo [WARN] gui-electron build failed — Bot will start without Electron GUI.
+    goto gui_electron_done
+)
+popd
+if exist "gui-electron\dist\index.html" (
+    echo [SUCCESS] Host Electron GUI is ready.
+) else (
+    echo [WARN] gui-electron build finished but dist\index.html is missing.
 )
 :gui_electron_done
 echo.

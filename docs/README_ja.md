@@ -180,7 +180,8 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
 
    `startMOMOKA.bat` は初回のみ同梱 Provider v1.3.1へ `npm ci` と
    TypeScriptビルドを行います。同様に `gui-electron` も `dist\index.html` が無ければ
-   `npm ci` / `npm run build` し、あればスキップします。
+   再ビルドします（`node_modules` 済みなら `npm run build` のみ。未導入時のみ `npm ci`）。
+   ビルド前に残留 Host Electron を停止して `icudtl.dat` の EBUSY を防ぎます。
    Bot起動前にProviderを開始して `/ping` を確認し、
    GUI・`/shutdown`・Ctrl+Cによる終了時にはMOMOKAが起動したProviderも停止します。
    Providerとyt-dlpの出力は秘密値を除去してGUIの「TTS+Musicログ」へ表示されます。
@@ -205,7 +206,7 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
    全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾 **最大 10000 行** を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
    **ログ管理**パネル: Discord ユーザー ID でログ・DB（`speech_auto_join_users` / VC 再起動セッション内 `requester_id`）を検索。ログは選択／一括で日時のみ残してマスク（`.log`/`.txt`）、DB は選択／一括で完全削除。API: `GET /privacy/search`・`POST /privacy/logs/mask`・`POST /privacy/db/delete`。  
-   初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。未ビルドでも Bot は起動継続。  
+   初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。`dist` のみ消した場合は `node_modules` 済みなら `npm run build` のみ。ビルド前に残留 Electron を停止。未ビルドでも Bot は起動継続。  
    本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
 ---

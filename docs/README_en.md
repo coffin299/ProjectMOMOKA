@@ -195,7 +195,7 @@ Recommended: rate-limit `/d/*` on Cloudflare. Do not force Cloudflare Access log
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
    All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores up to **10000 lines** from the `.log` tail (history across restarts, including join/leave). Clear affects the UI only.  
    **Log management** panel: search logs and DB (`speech_auto_join_users` / VC restart-session `requester_id`) by Discord user ID. Logs: mask selected/all (keep timestamp only in `.log`/`.txt`). DB: hard-delete selected/all. APIs: `GET /privacy/search`, `POST /privacy/logs/mask`, `POST /privacy/db/delete`.  
-   On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). Bot still runs if the GUI build fails.  
+   On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). If only `dist` is missing but `node_modules` is present, it runs `vite build` only (no `npm ci`). Leftover Host Electron is stopped first to avoid `icudtl.dat` EBUSY. Bot still runs if the GUI build fails.  
    Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
