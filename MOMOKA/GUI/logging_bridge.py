@@ -142,6 +142,30 @@ class StdoutCapture:
         return getattr(self.original_stdout, name)
 
 
+# コンソール / QueueHandler / 永続ファイルと揃えるフォーマット
+_CONSOLE_LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+
+def flush_all_logging() -> None:
+    """ルートロガーの全ハンドラと stdout を flush する（終了直前用）。"""
+    # ルートロガーを取得する
+    root = logging.getLogger()
+    # 接続中のハンドラを順に flush する
+    for handler in list(root.handlers):
+        try:
+            # バッファ済みレコードをディスク / コンソールへ押し出す
+            handler.flush()
+        except Exception:
+            # 終了処理を止めない
+            pass
+    try:
+        # print / StdoutCapture 側も押し出す
+        sys.stdout.flush()
+    except Exception:
+        # 終了処理を止めない
+        pass
+
+
 def attach_gui_logging(
     root_logger: logging.Logger | None = None,
 ) -> Tuple[queue.Queue, QueueHandler, StdoutCapture]:
@@ -169,8 +193,25 @@ def attach_gui_logging(
     except Exception as e:
         # ファイル失敗でも GUI キューは維持する
         print(f"永続ログファイルの初期化に失敗しました: {e}")
-    # 元の stdout を退避する
+    # 元の stdout を退避する（バッチコンソールの実体）
     original_stdout = sys.stdout
+    # logging.info 等がバッチ画面に出るよう StreamHandler を付ける
+    # StdoutCapture 経由にしない（QueueHandler との二重投入を避ける）
+    console_handler = logging.StreamHandler(original_stdout)
+    # ファイル側と同様にシークレットを伏せる Formatter を優先する
+    try:
+        # 遅延 import（循環回避）
+        from MOMOKA.GUI.persistent_log import SanitizingFormatter
+
+        # 伏せ字付きでコンソールへ出す
+        console_handler.setFormatter(SanitizingFormatter(_CONSOLE_LOG_FORMAT))
+    except Exception:
+        # フォールバックは通常フォーマット
+        console_handler.setFormatter(logging.Formatter(_CONSOLE_LOG_FORMAT))
+    # INFO 以上をコンソールへ出す
+    console_handler.setLevel(logging.INFO)
+    # ルートへ接続する
+    root_logger.addHandler(console_handler)
     # キャプチャで差し替える
     stdout_capture = StdoutCapture(log_queue, original_stdout)
     # 以降の print も GUI へ届くようにする

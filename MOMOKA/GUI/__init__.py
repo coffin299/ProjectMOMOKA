@@ -6,6 +6,7 @@ from MOMOKA.GUI.logging_bridge import (
     StdoutCapture,
     attach_gui_logging,
     create_log_queue,
+    flush_all_logging,
 )
 from MOMOKA.GUI.runner import run_log_viewer_thread, stop_host_gui
 from MOMOKA.GUI.version import APP_NAME, COPYRIGHT, LOG_VIEWER_NAME, VERSION
@@ -41,6 +42,7 @@ __all__ = [
     "StdoutCapture",
     "attach_gui_logging",
     "create_log_queue",
+    "flush_all_logging",
     "get_bot_ref",
     "get_theme_colors",
     "is_dark_mode",

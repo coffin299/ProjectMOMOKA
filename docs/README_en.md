@@ -247,7 +247,7 @@ If TTS / speech settings fail to load, empty in-memory state is not written back
 - Host GUI log masking uses atomic file replace plus live `event_id` / `content_hash` updates. Delete-all requires a strict boolean
 - Host GUI Bearer token stays in the Electron **main process only** (not exposed to renderer/preload; API and SSE go through IPC)
 - Host GUI waits for `/status` readiness before launching Electron; start/stop uses a generation lock against races
-- On Bot shutdown, Electron is terminated reliably (PID tracking, orphan sweep under gui-electron, `app.quit` when the Host API dies)
+- On Bot shutdown, console / Host GUI / persistent file logs are flushed first, then Electron is terminated (PID tracking, orphan sweep under gui-electron, `app.quit` when the Host API dies). Discord log-channel forwarding is detached during shutdown
 - Status / VC / guilds metrics are snapshotted on the Bot event loop (not read directly from the API thread)
 - Discord forwarded logs drop `[USER_INPUT]` / `[LLM_RESPONSE]`
 - `channel_llm_models` / `response_time_samples` use per-bot_id / per-model UPSERT (avoids dual-bot wipe races)
@@ -273,7 +273,7 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
 - Host GUI log delivery uses **main-process Bearer SSE** (token never reaches the renderer) plus `/logs/history` polling. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
-- After Bot/GUI shutdown, Electron is not left behind: Python sweeps tracked/orphan PIDs and Electron quits when the Host API becomes unreachable
+- After Bot/GUI shutdown, Electron is not left behind: **shutdown logs are flushed and briefly drained first**, then Python sweeps tracked/orphan PIDs; Electron also quits when the Host API becomes unreachable (Shutdown does not close the window immediately)
 - LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 

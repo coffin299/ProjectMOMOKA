@@ -245,6 +245,8 @@ class Momoka(commands.Bot):
 
     async def close(self) -> None:
         """終了前に VC 状態を保存し、利用中ユーザーへ通知してから接続を閉じる。"""
+        # シャットダウン開始をコンソール / GUI に出す
+        logging.info("%s shutdown: starting graceful close", self.display_name)
         try:
             # 音楽 Cog があれば再起動用に VC セッションを先に保存する
             from MOMOKA.music.music_cog import MusicCog
@@ -254,6 +256,11 @@ class Momoka(commands.Bot):
             if music_cog is not None and hasattr(
                 music_cog, "persist_vc_sessions_for_restart"
             ):
+                # 保存工程をログに残す
+                logging.info(
+                    "%s shutdown: persisting VC playback sessions",
+                    self.display_name,
+                )
                 # notify より前にスナップショットを取る（notify は current_track を消す）
                 await music_cog.persist_vc_sessions_for_restart()
         except Exception as e:
@@ -264,6 +271,11 @@ class Momoka(commands.Bot):
                 e,
             )
         try:
+            # 通知工程をログに残す
+            logging.info(
+                "%s shutdown: notifying active users of restart",
+                self.display_name,
+            )
             # Ctrl+C /shutdown 共通で再起動通知を送る
             await self.notify_active_users_of_restart()
         except Exception as e:
@@ -291,8 +303,15 @@ class Momoka(commands.Bot):
         except Exception as e:
             # ハンドラ除去失敗はシャットダウンを止めない
             logging.debug("%s DiscordLogHandler detach failed: %s", self.display_name, e)
+        # Discord Gateway 切断へ進むことをログする
+        logging.info(
+            "%s shutdown: closing Discord connection",
+            self.display_name,
+        )
         # discord.py 本来のクローズ処理へ進む
         await super().close()
+        # 切断完了をログする
+        logging.info("%s shutdown: Discord connection closed", self.display_name)
 
     async def setup_hook(self):
         """Botの初期セットアップ（ログイン後、接続準備完了前）"""
@@ -983,11 +1002,25 @@ if __name__ == "__main__":
             raise
         finally:
             # キャンセル・Ctrl+Cを含む全経路で両Botを閉じる。
+            logging.info("Shutdown: closing all bots")
             await registry.close_all()
             # 一時配信を止める
+            logging.info("Shutdown: stopping media_share")
             await media_share_server.stop()
             # Bot停止後に自分が所有するProviderだけを停止する。
+            logging.info("Shutdown: stopping BgUtils provider")
             await bgutil_manager.stop()
+            # 最終ログをコンソール / GUI / ファイルへ押し出す
+            from MOMOKA.GUI.logging_bridge import flush_all_logging
+
+            # ハンドラと stdout を flush する
+            flush_all_logging()
+            # GUI SSE に最終行が届く余裕を置く（その後ウィンドウを閉じる）
+            logging.info("Shutdown: complete (closing Host GUI after log drain)")
+            # 完了メッセージ自体も flush する
+            flush_all_logging()
+            # SSE 配信待ち（短い固定待ち）
+            await asyncio.sleep(1.0)
             # ホスト Electron GUI も落とす（コンソール pause 阻害防止）
             try:
                 from MOMOKA.GUI.runner import stop_host_gui

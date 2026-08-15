@@ -465,10 +465,14 @@ def build_status_payload() -> Dict[str, Any]:
 
 
 def request_shutdown() -> bool:
-    """全 Bot を閉じるコルーチンをスケジュールする。成功で True。"""
+    """全 Bot を閉じるコルーチンをスケジュールする。成功で True。
+
+    Electron はここでは落とさない。ログ出し切り後に main の finally が
+    stop_host_gui する（または Host API 断で Electron 側 watchdog が終了）。
+    """
     # 循環 import 回避
     import asyncio
-    import threading
+    import logging
 
     from MOMOKA.bots.registry import registry
 
@@ -484,22 +488,9 @@ def request_shutdown() -> bool:
     except Exception:
         # 失敗
         return False
-    # close_all をスレッドセーフに投げる
+    # GUI からの要求をコンソール / ログビューへ残す
+    logging.info("Shutdown requested via Host GUI")
+    # close_all をスレッドセーフに投げる（GUI 即死はさせない）
     asyncio.run_coroutine_threadsafe(registry.close_all(), loop)
-
-    # Electron を遅延終了（HTTP 応答後・コンソール占有解除）
-    def _stop_gui_later() -> None:
-        # runner の stop を呼ぶ
-        try:
-            from MOMOKA.GUI.runner import stop_host_gui
-
-            # GUI プロセスツリーを落とす
-            stop_host_gui()
-        except Exception:
-            # 失敗してもシャットダウンは継続
-            pass
-
-    # 0.8 秒後に GUI 終了（Shutdown API の応答を先に返す）
-    threading.Timer(0.8, _stop_gui_later).start()
     # 受け付けた
     return True

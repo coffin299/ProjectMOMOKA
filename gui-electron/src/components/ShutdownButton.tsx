@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiPost, getHostConfig } from "../api";
+import { apiPost } from "../api";
 
 export function ShutdownButton() {
   const [armed, setArmed] = useState(false);
@@ -13,12 +13,8 @@ export function ShutdownButton() {
     }
     setBusy(true);
     try {
+      // Bot 停止のみ要求。ログ出し切り後に Python / API watchdog がウィンドウを閉じる
       await apiPost("/shutdown");
-      // Bot 停止要求後にウィンドウ自身も閉じる（Python 側 taskkill の保険）
-      const quit = getHostConfig().quitApp;
-      if (quit) {
-        await quit();
-      }
     } catch {
       setBusy(false);
       setArmed(false);
@@ -31,7 +27,7 @@ export function ShutdownButton() {
       className="btn-danger"
       disabled={busy}
       onClick={onClick}
-      title="Click twice to confirm shutdown"
+      title="Click twice to confirm. Window closes after shutdown logs finish."
     >
       {busy ? "Shutting down…" : armed ? "Confirm Shutdown" : "Shutdown"}
     </button>
