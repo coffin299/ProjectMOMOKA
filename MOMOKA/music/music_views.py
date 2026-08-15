@@ -433,23 +433,67 @@ class MusicControllerView(discord.ui.LayoutView):
         # グレーのアクセントで終了状態を示す
         container = discord.ui.Container(accent_color=discord.Color.light_grey())
         # 見出しとメタ欄文言を解決する
-        title_text, detail_text = self._resolve_finished_copy()
-        # URL 再生履歴があれば見出し直下に載せる
-        if state and state.last_history_url:
-            # 見出し → URL の2行にする
-            title_text = f"{title_text}\n{state.last_history_url}"
-        # Now Playing 相当の見出しを TextDisplay で載せる
-        container.add_item(discord.ui.TextDisplay(title_text))
+        status_heading, detail_text = self._resolve_finished_copy()
+        # 終了パネル用に残した最後の曲を取る
+        track = state.last_finished_track if state else None
 
-        # 再生中の Loop/Queue 欄相当：区切り線の下に終了ログを置く
-        container.add_item(discord.ui.Separator())
-        # 複数行の再起動案内などはプレーン、短文はログ風コードブロック
-        if "\n" in detail_text:
-            # 長文はそのままメタ欄に出す
-            container.add_item(discord.ui.TextDisplay(detail_text))
+        # 最後の曲があれば再生中と同型（見出し＋曲名＋チャンネル＋サムネ）にする
+        if track:
+            # タイトルを安全に文字列化する
+            safe_title = track.title or "Unknown title"
+            # 曲URLがあればリンクにする
+            if track.url:
+                # Markdown リンクの曲名にする
+                title_line = f"[{safe_title}]({track.url})"
+            else:
+                # URL 無しはプレーンにする
+                title_line = safe_title
+            # チャンネル名のフォールバック
+            uploader_val = track.uploader if track.uploader else "Unknown"
+            # チャンネルURLがあればリンクにする
+            if track.uploader_url and uploader_val != "Unknown":
+                # クリック可能なチャンネル名にする
+                uploader_display = f"[{uploader_val}]({track.uploader_url})"
+            else:
+                # プレーン名にする
+                uploader_display = uploader_val
+            # Now Playing 相当の見出しの下に最後の曲情報を載せる
+            title_text = (
+                f"{status_heading}\n"
+                f"## {title_line}\n"
+                f"{uploader_display}"
+            )
+            # サムネがあれば Section、無ければ TextDisplay
+            thumb = track.thumbnail
+            if thumb and str(thumb).strip() and str(thumb) != "None":
+                # 右上サムネ付きで載せる
+                container.add_item(
+                    discord.ui.Section(
+                        discord.ui.TextDisplay(title_text),
+                        accessory=discord.ui.Thumbnail(str(thumb)),
+                    )
+                )
+            else:
+                # テキストのみ載せる
+                container.add_item(discord.ui.TextDisplay(title_text))
         else:
-            # ロード失敗バナーと同型のログ風表示にする
-            container.add_item(discord.ui.TextDisplay(f"```\n{detail_text}\n```"))
+            # 曲情報が無い場合の見出し本文
+            title_text = status_heading
+            # URL 履歴だけ残っている場合は見出し直下に載せる
+            if state and state.last_history_url:
+                # 見出し → URL の2行にする
+                title_text = f"{title_text}\n{state.last_history_url}"
+            # TextDisplay で見出しを載せる
+            container.add_item(discord.ui.TextDisplay(title_text))
+
+        # リクエスト元が分かれば、再生中と同じメタ欄位置に残す
+        if track and track.requester_id:
+            # 曲情報とボタンの間に区切り線を入れる
+            container.add_item(discord.ui.Separator())
+            # Requested By 行を載せる
+            container.add_item(
+                discord.ui.TextDisplay(f"**Requested By:** <@{track.requester_id}>")
+            )
 
         # Row1: Pause / Skip / Stop（すべて無効）
         action_row = discord.ui.ActionRow()
@@ -495,6 +539,16 @@ class MusicControllerView(discord.ui.LayoutView):
             donation_row.add_item(donation_btn)
             # コンテナに寄付行を追加する
             container.add_item(donation_row)
+
+        # 最下部（ロード失敗バナーと同位置）に終了ステータスを出す
+        container.add_item(discord.ui.Separator())
+        # 複数行の再起動案内などはプレーン、短文はエラー欄と同型のコードブロック
+        if "\n" in detail_text:
+            # 長文はそのまま最下部に出す
+            container.add_item(discord.ui.TextDisplay(detail_text))
+        else:
+            # エラー表示用と同じログ風コードブロックにする
+            container.add_item(discord.ui.TextDisplay(f"```\n{detail_text}\n```"))
 
         # ビューにコンテナをアタッチする
         self.add_item(container)

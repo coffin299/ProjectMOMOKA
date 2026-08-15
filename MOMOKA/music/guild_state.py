@@ -72,6 +72,8 @@ class GuildState:
         self.ui_load_error_seen: bool = False
         # /play の query が URL だったときの履歴（停止パネル用・サムネ不要）
         self.last_history_url: Optional[str] = None
+        # 終了パネルに残す最後の再生トラック（タイトル・チャンネル・サムネ用）
+        self.last_finished_track: Optional[Track] = None
         # ユーザーが VC ステータスを手動編集したら以降 Bot は書き換えない
         self.vc_status_locked: bool = False
         # Bot が最後に設定した VC ステータス文字列（未設定時は None）

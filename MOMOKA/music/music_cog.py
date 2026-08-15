@@ -301,6 +301,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             try:
                 # プログレス更新を止めて編集競合を避ける
                 state.stop_progress_updater()
+                # 終了パネル用に最後の曲情報を残す
+                self._remember_play_history_url(state, state.current_track)
                 # LayoutView の終了表示分岐に入るため再生中トラックをクリアする
                 state.current_track = None
                 # 再生中フラグも下ろす
@@ -982,11 +984,13 @@ class MusicCog(commands.Cog, name="music_cog"):
         state: GuildState,
         track: Optional[Track],
     ) -> None:
-        """/play の query が URL だったトラックを停止パネル用履歴に残す。"""
+        """終了パネル用に最後の曲を残し、URL 再生なら履歴 URL も更新する。"""
         # トラックが無ければ何もしない
         if not track:
             # 更新スキップ
             return
+        # タイトル・チャンネル・サムネ表示用に最後の曲を保持する
+        state.last_finished_track = track
         # ユーザーが入力した元クエリを取得する
         query = (track.original_query or "").strip()
         # URL 再生のときだけ履歴を上書きする（検索再生では消さない）
@@ -2253,6 +2257,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             state.stopping = True
             # ギルド破棄前にプログレスバー更新を停止する
             state.stop_progress_updater()
+            # 終了パネル用に最後の曲情報を残す
+            self._remember_play_history_url(state, state.current_track)
             # 切断前に再生中トラックをクリアしてグレーアウト表示できるようにする
             state.current_track = None
             # 再生中フラグも下ろす
