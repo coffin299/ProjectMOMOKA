@@ -19,7 +19,7 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 
 ## Invites
 
-- PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands
+- PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=36826112&scope=bot%20applications.commands
 - ARONA (optional): add via PLANA `/help` or `/invite` — not linked on the public site.
 - Default recommendation: invite PLANA first.
 

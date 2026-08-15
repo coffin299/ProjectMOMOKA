@@ -12,7 +12,7 @@ MOMOKA is the project name. PLANA and ARONA run in one process. Japanese takes p
 - Support Discord: https://discord.gg/H79HKKqx3s
 - Operator contact (DM): https://discord.com/users/270446628622696449 (display name: coffin299)
 - Source code: https://github.com/coffin299/ProjectMOMOKA
-- Invite PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands
+- Invite PLANA: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=36826112&scope=bot%20applications.commands
 
 ## What to invite
 

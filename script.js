@@ -4,18 +4,39 @@
     var THEME_KEY = "momoka-theme";
     var LANG_KEY = "momoka-lang";
 
+    function safeGet(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function safeSet(key, value) {
+        try {
+            localStorage.setItem(key, value);
+            return true;
+        } catch (err) {
+            return false;
+        }
+    }
+
     function getPreferredTheme() {
-        var stored = localStorage.getItem(THEME_KEY);
+        var stored = safeGet(THEME_KEY);
         if (stored === "light" || stored === "dark") {
             return stored;
         }
-        return window.matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light";
+        try {
+            return window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+        } catch (err) {
+            return "light";
+        }
     }
 
     function getPreferredLang() {
-        var stored = localStorage.getItem(LANG_KEY);
+        var stored = safeGet(LANG_KEY);
         if (stored === "ja" || stored === "en") {
             return stored;
         }
@@ -24,8 +45,11 @@
     }
 
     function applyTheme(theme) {
+        if (theme !== "light" && theme !== "dark") {
+            theme = "light";
+        }
         document.documentElement.setAttribute("data-theme", theme);
-        localStorage.setItem(THEME_KEY, theme);
+        safeSet(THEME_KEY, theme);
         document.querySelectorAll("[data-theme-toggle]").forEach(function (btn) {
             var isDark = theme === "dark";
             btn.setAttribute("aria-pressed", isDark ? "true" : "false");
@@ -38,9 +62,12 @@
     }
 
     function applyLang(lang) {
+        if (lang !== "ja" && lang !== "en") {
+            lang = "ja";
+        }
         document.documentElement.setAttribute("data-lang", lang);
         document.documentElement.setAttribute("lang", lang);
-        localStorage.setItem(LANG_KEY, lang);
+        safeSet(LANG_KEY, lang);
         document.querySelectorAll("[data-lang-toggle]").forEach(function (btn) {
             btn.textContent = lang === "ja" ? "EN" : "JA";
             btn.setAttribute(
@@ -95,13 +122,39 @@
         function close() {
             document.body.classList.remove("docs-sidebar-open");
             menuBtn.setAttribute("aria-expanded", "false");
+            var sidebar = document.querySelector(".docs-sidebar");
+            if (sidebar) {
+                sidebar.setAttribute("inert", "");
+                sidebar.setAttribute("aria-hidden", "true");
+            }
+            if (overlay) {
+                overlay.setAttribute("aria-hidden", "true");
+            }
+        }
+
+        function openMenu() {
+            document.body.classList.add("docs-sidebar-open");
+            menuBtn.setAttribute("aria-expanded", "true");
+            var sidebar = document.querySelector(".docs-sidebar");
+            if (sidebar) {
+                sidebar.removeAttribute("inert");
+                sidebar.setAttribute("aria-hidden", "false");
+            }
+            if (overlay) {
+                overlay.setAttribute("aria-hidden", "false");
+            }
         }
 
         function toggle() {
-            var open = document.body.classList.toggle("docs-sidebar-open");
-            menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+            if (document.body.classList.contains("docs-sidebar-open")) {
+                close();
+            } else {
+                openMenu();
+            }
         }
 
+        // 初期状態は閉じて inert
+        close();
         menuBtn.addEventListener("click", toggle);
         if (overlay) {
             overlay.addEventListener("click", close);
@@ -225,19 +278,28 @@
 
         input.addEventListener("input", function () {
             var q = (input.value || "").toLowerCase().trim();
-            document.querySelectorAll(".cmd-row").forEach(function (row) {
-                var text = row.textContent.toLowerCase();
-                row.style.display = !q || text.indexOf(q) !== -1 ? "" : "none";
-            });
-
             document.querySelectorAll(".cmd-section").forEach(function (section) {
-                var visible = Array.prototype.some.call(
-                    section.querySelectorAll(".cmd-row"),
-                    function (row) {
-                        return row.style.display !== "none";
+                var heading = section.querySelector("h2, h3, .cmd-section-title, .cmd-cat");
+                var sectionText = (section.textContent || "").toLowerCase();
+                var headingMatch = !q || (heading && (heading.textContent || "").toLowerCase().indexOf(q) !== -1);
+                var rows = section.querySelectorAll(".cmd-row");
+                if (headingMatch && q) {
+                    Array.prototype.forEach.call(rows, function (row) {
+                        row.style.display = "";
+                    });
+                    section.style.display = "";
+                    return;
+                }
+                var anyVisible = false;
+                Array.prototype.forEach.call(rows, function (row) {
+                    var text = row.textContent.toLowerCase();
+                    var show = !q || text.indexOf(q) !== -1;
+                    row.style.display = show ? "" : "none";
+                    if (show) {
+                        anyVisible = true;
                     }
-                );
-                section.style.display = visible ? "" : "none";
+                });
+                section.style.display = !q || anyVisible || sectionText.indexOf(q) !== -1 ? "" : "none";
             });
         });
     }
