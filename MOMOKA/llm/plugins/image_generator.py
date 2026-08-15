@@ -5,6 +5,7 @@ import asyncio
 import datetime
 import io
 import logging
+import math
 import os
 import re
 import time
@@ -89,6 +90,15 @@ class ImageGenerator:
             self.queue_lock = asyncio.Lock()
             self.is_generating = False
             self.current_task = None
+            # DoS 防止用の既定上限（無効時も属性欠落を避ける）
+            self.min_steps = 1
+            self.max_steps = 50
+            self.min_cfg_scale = 1.0
+            self.max_cfg_scale = 20.0
+            self.max_queue_size = 8
+            self.max_user_queued = 2
+            self.job_timeout_sec = 300.0
+            self._active_tasks = set()
             return
 
         self.model_registry = ImageModelRegistry.from_default_root()
@@ -123,6 +133,22 @@ class ImageGenerator:
         self.max_height = self.image_gen_config.get("max_height", 2048)
         self.min_width = self.image_gen_config.get("min_width", 256)
         self.min_height = self.image_gen_config.get("min_height", 256)
+        # サンプリングステップ上限（GPU DoS 防止）
+        self.min_steps = int(self.image_gen_config.get("min_steps", 1))
+        # ステップ下限
+        self.max_steps = int(self.image_gen_config.get("max_steps", 50))
+        # CFG 下限
+        self.min_cfg_scale = float(self.image_gen_config.get("min_cfg_scale", 1.0))
+        # CFG 上限
+        self.max_cfg_scale = float(self.image_gen_config.get("max_cfg_scale", 20.0))
+        # 待機キュー上限
+        self.max_queue_size = int(self.image_gen_config.get("max_queue_size", 8))
+        # 同一ユーザーの同時キュー件数上限
+        self.max_user_queued = int(self.image_gen_config.get("max_user_queued", 2))
+        # 生成ジョブのタイムアウト秒
+        self.job_timeout_sec = float(self.image_gen_config.get("job_timeout_sec", 300.0))
+        # 実行中タスク参照（cancel 用）
+        self._active_tasks: set[asyncio.Task] = set()
 
         # チャンネル別画像モデルは SettingsDB
         self.channel_models: Dict[str, str] = self._load_channel_models()
@@ -137,6 +163,58 @@ class ImageGenerator:
             logger.info("Default model: %s", self.default_model)
         else:
             logger.info("ImageGenerator initialised but disabled (no models found)")
+
+    def _sanitize_generation_args(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """steps/CFG/seed を有限値かつ許容範囲へ正規化する。"""
+        # 呼び出し側 dict を壊さない
+        sanitized = dict(arguments)
+        # 既定 steps
+        default_steps = int(self.default_params.get("steps", 20))
+        # 既定 CFG
+        default_cfg = float(self.default_params.get("cfg_scale", 7.0))
+        # 既定 seed
+        default_seed = int(self.default_params.get("seed", -1))
+        # steps を取る
+        try:
+            # 整数化
+            steps = int(sanitized.get("steps", default_steps))
+        except (TypeError, ValueError):
+            # 不正なら既定
+            steps = default_steps
+        # 非有限や異常値を既定へ
+        if not math.isfinite(float(steps)):
+            # 既定へ戻す
+            steps = default_steps
+        # 閉区間へ clamp
+        steps = max(self.min_steps, min(self.max_steps, steps))
+        # 反映
+        sanitized["steps"] = steps
+        # CFG を取る
+        try:
+            # 浮動小数化
+            cfg_scale = float(sanitized.get("cfg_scale", default_cfg))
+        except (TypeError, ValueError):
+            # 不正なら既定
+            cfg_scale = default_cfg
+        # NaN/Inf を拒否
+        if not math.isfinite(cfg_scale):
+            # 既定へ
+            cfg_scale = default_cfg
+        # 閉区間へ clamp
+        cfg_scale = max(self.min_cfg_scale, min(self.max_cfg_scale, cfg_scale))
+        # 反映
+        sanitized["cfg_scale"] = cfg_scale
+        # seed を取る
+        try:
+            # 整数化
+            seed = int(sanitized.get("seed", default_seed))
+        except (TypeError, ValueError):
+            # 不正なら既定
+            seed = default_seed
+        # 反映
+        sanitized["seed"] = seed
+        # 正規化済みを返す
+        return sanitized
 
     # ------------------------------------------------------------------
     # Channel model helpers
@@ -382,6 +460,9 @@ class ImageGenerator:
         if not confirmed:
             return "📝 Awaiting modal confirmation before starting generation."
 
+        # 実行直前にパラメータを安全範囲へ正規化する
+        arguments = self._sanitize_generation_args(arguments)
+
         task = GenerationTask(
             user_id=user_id,
             user_name=user_name,
@@ -392,7 +473,27 @@ class ImageGenerator:
 
         queue_message: Optional[discord.Message] = None
         async with self.queue_lock:
+            # 同一ユーザーの待機件数を数える
+            user_queued = sum(1 for item in self.generation_queue if item.user_id == user_id)
+            # 実行中も同一ユーザーなら加算する
+            if self.is_generating and self.current_task and self.current_task.user_id == user_id:
+                # 実行中分を含める
+                user_queued += 1
+            # ユーザー上限超過なら拒否する
+            if user_queued >= self.max_user_queued:
+                # 上限メッセージを返す
+                return (
+                    f"❌ You already have {self.max_user_queued} generation request(s). / "
+                    f"同一ユーザーの同時リクエスト上限（{self.max_user_queued}）に達しています。"
+                )
             if self.is_generating:
+                # キュー長上限を超えるなら拒否する
+                if len(self.generation_queue) >= self.max_queue_size:
+                    # 満杯メッセージ
+                    return (
+                        f"❌ Generation queue is full ({self.max_queue_size}). / "
+                        f"生成キューが満杯です（上限 {self.max_queue_size}）。"
+                    )
                 task.position = len(self.generation_queue) + 1
                 self.generation_queue.append(task)
                 logger.info("📋 [IMAGE_GEN] User %s enqueued at position %d", user_name, task.position)
@@ -432,6 +533,8 @@ class ImageGenerator:
         size_input = task.arguments.get("size", self.default_size)
         width, height, adjusted_size = self._validate_and_adjust_size(size_input)
 
+        # 実行直前に再度正規化する（キュー滞留中の改変防止）
+        task.arguments = self._sanitize_generation_args(task.arguments)
         steps = int(task.arguments.get("steps", self.default_params.get("steps", 20)))
         cfg_scale = float(task.arguments.get("cfg_scale", self.default_params.get("cfg_scale", 7.0)))
         sampler_name = task.arguments.get("sampler_name") or self.default_params.get("sampler_name")
@@ -707,10 +810,12 @@ class ImageGenerator:
             user_name=requester_name,
         )
 
-        try:
-            await interaction.followup.send(result, ephemeral=False)
-        except discord.HTTPException as exc:  # noqa: BLE001
-            logger.error("Failed to send modal follow-up message: %s", exc)
+        # 即時生成成功時は None になり得るため、文言があるときだけ followup する
+        if result:
+            try:
+                await interaction.followup.send(result, ephemeral=False)
+            except discord.HTTPException as exc:  # noqa: BLE001
+                logger.error("Failed to send modal follow-up message: %s", exc)
 
     async def _update_queue_message(self, message: discord.Message, status: str, position: int, prompt: str) -> None:
         try:
@@ -980,9 +1085,36 @@ class ImageGenerationModal(discord.ui.Modal):
                 return None
 
         if (steps := parse_int(self.steps_input.value, "Steps")) is not None:
-            updated_args["steps"] = steps
+            # 画像生成器の許容範囲外ならエラーにする
+            gen = self.parent_view.image_generator
+            if steps < gen.min_steps or steps > gen.max_steps:
+                errors.append(
+                    pick_str(
+                        self.lang,
+                        ja=f"Steps: {gen.min_steps}〜{gen.max_steps} の整数にしてください",
+                        en=f"Steps: must be an integer between {gen.min_steps} and {gen.max_steps}",
+                    )
+                )
+            else:
+                updated_args["steps"] = steps
         if (cfg := parse_float(self.cfg_input.value, "CFG Scale")) is not None:
-            updated_args["cfg_scale"] = cfg
+            # 有限値かつ許容範囲のみ受け付ける
+            gen = self.parent_view.image_generator
+            if not math.isfinite(cfg) or cfg < gen.min_cfg_scale or cfg > gen.max_cfg_scale:
+                errors.append(
+                    pick_str(
+                        self.lang,
+                        ja=(
+                            f"CFG Scale: {gen.min_cfg_scale}〜{gen.max_cfg_scale} の有限値にしてください"
+                        ),
+                        en=(
+                            f"CFG Scale: must be a finite number between "
+                            f"{gen.min_cfg_scale} and {gen.max_cfg_scale}"
+                        ),
+                    )
+                )
+            else:
+                updated_args["cfg_scale"] = cfg
         if self.size_input.value.strip():
             updated_args["size"] = self.size_input.value.strip()
         if (seed := parse_int(self.seed_input.value, "Seed")) is not None:
@@ -1048,7 +1180,12 @@ class ImageGenerationSetupView(discord.ui.View):
         self.add_item(self.model_select)
 
     def _is_authorized(self, interaction: discord.Interaction) -> bool:
-        return not self.requester_id or interaction.user.id == self.requester_id
+        # requester_id が未設定/0 のときは安全側で全員拒否する
+        if not self.requester_id or int(self.requester_id) <= 0:
+            # 不正な所有者は操作不可
+            return False
+        # 元リクエストユーザーのみ許可する
+        return interaction.user.id == self.requester_id
 
     async def finalize_interaction(self, message_suffix: str = "") -> None:
         for item in self.children:

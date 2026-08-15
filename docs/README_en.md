@@ -232,9 +232,25 @@ Settings live under `configs/` as category YAML files. Each key is documented wi
 
 Per-guild / per-channel overrides are stored in `data/momoka.db` as **normalized tables**.
 
-Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions`. Schema version lives in `schema_meta.version` (currently 3).
+Examples: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions`. Schema version lives in `schema_meta.version` (currently 4).
 
 If TTS / speech settings fail to load, empty in-memory state is not written back on cog unload (avoids wiping the DB). Per-guild speech settings and dictionary updates prefer `SettingsDB.save_guild()`. Full `tts_channel_settings` replaces reject non-dict input before DELETE.
+
+#### Security boundary notes (Aug 2026 audit remediation)
+
+- `/play`, media download, and LLM image fetches go through `url_safety` (reject non-http(s), DNS checks, peer IP verification)
+- Image models accept `.safetensors` only
+- Media downloads enforce filesize / duration / concurrency / disk quota / cooldown
+- `allowed_channel_ids` is enforced in the LLM listener and `interaction_check` (empty = allow all). DMs use `allowed_channel_allow_dm`
+- Invite OAuth permissions are minimized (View/Send/Embed/Attach/History/Connect/Speak/Voice Activity/Manage Messages)
+- Host GUI log masking uses atomic file replace plus live `event_id` / `content_hash` updates. Delete-all requires a strict boolean
+- Host GUI Bearer token stays in the Electron **main process only** (not exposed to renderer/preload; API and SSE go through IPC)
+- Host GUI waits for `/status` readiness before launching Electron; start/stop uses a generation lock against races
+- Status / VC / guilds metrics are snapshotted on the Bot event loop (not read directly from the API thread)
+- Discord forwarded logs drop `[USER_INPUT]` / `[LLM_RESPONSE]`
+- `channel_llm_models` / `response_time_samples` use per-bot_id / per-model UPSERT (avoids dual-bot wipe races)
+- webpage GitHub Actions pin third-party actions to commit SHAs
+- **M-10 (electron:dev CORS) is intentionally unchanged**
 
 #### Host vs. guild settings boundary
 
@@ -254,7 +270,7 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 #### Host ops GUI (Electron) vs future guild dashboard
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
-- Host GUI log delivery uses **Bearer SSE** (`GET /host-gui/api/logs/stream`) plus `/logs/history` polling. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
+- Host GUI log delivery uses **main-process Bearer SSE** (token never reaches the renderer) plus `/logs/history` polling. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
 - LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 

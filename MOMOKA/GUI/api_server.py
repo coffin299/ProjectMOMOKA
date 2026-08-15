@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
+import itertools
 import json
 import logging
 import queue
@@ -281,6 +283,8 @@ def create_host_gui_app(
     sse_subscribers: Set[asyncio.Queue] = set()
     # 購読前に落ちるログを残す直近バッファ
     recent_logs: Deque[Dict[str, Any]] = deque(maxlen=_RECENT_LOG_BACKLOG)
+    # ライブログ用の単調増加 event_id
+    event_id_counter = itertools.count(1)
     # 設定 DB
     settings_db = get_default_settings_db()
 
@@ -288,6 +292,63 @@ def create_host_gui_app(
         """ログカテゴリを決める。"""
         # persistent_log と同一ロジック
         return categorize_logger_name(name, level)
+
+    def _content_hash(text: str) -> str:
+        """ライブログ照合用の短いハッシュを返す。"""
+        # SHA256 先頭 16 桁
+        return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()[:16]
+
+    def _apply_mask_to_live_logs(content_hashes: Set[str]) -> int:
+        """recent_logs と SSE/WS へマスク反映し、更新件数を返す。"""
+        # 対象が無ければ何もしない
+        if not content_hashes:
+            return 0
+        # 更新件数
+        updated = 0
+        # backlog を走査して置換する
+        for item in recent_logs:
+            # メッセージ本文
+            message = str(item.get("message") or "")
+            # ハッシュ一致ならマスク
+            if _content_hash(message) in content_hashes or _content_hash(
+                message.rstrip("\r\n")
+            ) in content_hashes:
+                # 既にマスク済みならスキップ
+                if message.endswith("[REDACTED]"):
+                    continue
+                # 本文を伏せる
+                item["message"] = "[REDACTED]"
+                # マスク済みフラグ
+                item["masked"] = True
+                # 件数
+                updated += 1
+        # ライブ購読者へマスク通知を送るペイロード
+        notice = {
+            "type": "log_masked",
+            "content_hashes": sorted(content_hashes),
+        }
+        # SSE へ通知
+        for sse_q in list(sse_subscribers):
+            try:
+                # 非ブロッキング
+                sse_q.put_nowait(notice)
+            except asyncio.QueueFull:
+                # 溢れたら次へ
+                pass
+        # WS へ通知（同期関数から呼べないのでタスク化は呼び出し側）
+        return updated
+
+    def _parse_strict_bool(value: Any, *, field: str) -> bool:
+        """真の bool のみ受け付け、それ以外は 422 相当で拒否する。"""
+        # 真の bool 以外は不正
+        if not isinstance(value, bool):
+            # 不正型
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"invalid_{field}_type",
+            )
+        # bool を返す
+        return value
 
     async def _pump_logs() -> None:
         """キューから WebSocket / SSE 購読者へログを流す。"""
@@ -308,12 +369,14 @@ def create_host_gui_app(
                 continue
             # 伏せ字
             safe = sanitize_log_message(str(message), max_length=100_000)
-            # ペイロード
+            # ペイロード（event_id 付き）
             payload = {
+                "event_id": next(event_id_counter),
                 "name": name,
                 "level": level,
                 "message": safe,
                 "category": _categorize(str(name), str(level)),
+                "content_hash": _content_hash(safe),
             }
             # 購読者が居なくても直近へ残す（接続直後の穴埋め用）
             recent_logs.append(payload)
@@ -569,8 +632,24 @@ def create_host_gui_app(
         if not isinstance(items, list):
             # 空リスト
             items = []
-        # マスク実行
-        return mask_log_lines(items)
+        # マスク対象ハッシュを集める
+        content_hashes: Set[str] = set()
+        # 各項目から hash を取る
+        for item in items:
+            # 辞書以外は無視
+            if not isinstance(item, dict):
+                continue
+            # content_hash があれば記録
+            if "content_hash" in item:
+                content_hashes.add(str(item["content_hash"]))
+        # マスク実行（ファイル）
+        result = mask_log_lines(items)
+        # ライブ backlog / SSE にも反映する
+        live_updated = _apply_mask_to_live_logs(content_hashes)
+        # 件数を結果へ載せる
+        result["live_updated"] = live_updated
+        # 返す
+        return result
 
     @router.post("/privacy/db/delete")
     def privacy_delete_db(
@@ -594,16 +673,37 @@ def create_host_gui_app(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="invalid_user_id",
             )
+        # all が無い場合は False（選択削除）
+        if "all" not in body:
+            # 既定は選択削除
+            delete_all = False
+        else:
+            # 真の bool のみ許可する
+            delete_all = _parse_strict_bool(body.get("all"), field="all")
+        # auto_join が指定されているなら list 必須
+        auto_join = body.get("auto_join")
+        # 型チェック
+        if auto_join is not None and not isinstance(auto_join, list):
+            # 不正型
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_auto_join_type",
+            )
+        # vc_sessions も同様
+        vc_sessions = body.get("vc_sessions")
+        # 型チェック
+        if vc_sessions is not None and not isinstance(vc_sessions, list):
+            # 不正型
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_vc_sessions_type",
+            )
         # 削除実行
         return delete_db_user_data(
             int(raw_uid),
-            delete_all=bool(body.get("all")),
-            auto_join=body.get("auto_join") if isinstance(body.get("auto_join"), list) else None,
-            vc_sessions=(
-                body.get("vc_sessions")
-                if isinstance(body.get("vc_sessions"), list)
-                else None
-            ),
+            delete_all=delete_all,
+            auto_join=auto_join,
+            vc_sessions=vc_sessions,
         )
 
     @router.websocket("/logs")
@@ -611,8 +711,8 @@ def create_host_gui_app(
         """ログストリーム（クエリ token 不可）。
 
         認証:
-        - Sec-WebSocket-Protocol: bearer.<token>（Electron 推奨）
-        - または接続直後の JSON `{type,token}`
+        - Sec-WebSocket-Protocol: bearer.<token>（互換経路）
+        - 初回 JSON token 認証は未実装（意図的）。現行 GUI の主経路は SSE `/logs/stream`。
         """
         # Sec-WebSocket-Protocol から Bearer 系を探す
         raw_protocols = websocket.headers.get("sec-websocket-protocol") or ""

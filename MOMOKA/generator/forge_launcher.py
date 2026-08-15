@@ -55,7 +55,14 @@ class ForgeProcessManager:
                 await asyncio.to_thread(self._launch_subprocess)
                 self._start_attempted = True
 
-            await self._wait_until_ready(timeout)
+            try:
+                # ready 待機
+                await self._wait_until_ready(timeout)
+            except Exception:
+                # timeout / 失敗時は孤児 process を回収する
+                self.stop()
+                # 呼び出し元へ再送出
+                raise
 
     async def _is_server_available(self) -> bool:
         target_url = urljoin(self._config.base_url.rstrip("/"), "/sdapi/v1/sd-models")

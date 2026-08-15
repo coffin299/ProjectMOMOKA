@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import tempfile
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from MOMOKA.GUI.persistent_log import (
+    LOG_FILE_LOCK,
     categorize_logger_name,
     get_log_file_path,
     parse_log_line,
@@ -17,8 +20,8 @@ from MOMOKA.storage.settings.constants import DEFAULT_DB_PATH
 from MOMOKA.storage.settings.database import get_default_settings_db
 from MOMOKA.storage.restart_state import get_vc_playback_session_store
 
-# ログファイル書き換えの排他
-_log_rewrite_lock = threading.Lock()
+# ログファイル書き換えの排他（persistent_log の追記ロックと同一）
+_log_rewrite_lock = LOG_FILE_LOCK
 # asctime 抽出用（persistent_log と同型）
 _LINE_RE = re.compile(
     r"^(?P<asctime>.+?) - (?P<name>.+?) - (?P<level>[A-Z]+) - (?P<message>.*)$"
@@ -196,14 +199,37 @@ def _rewrite_file_masking(
     # 変更無ければ終了
     if not changed:
         return 0
-    # 同一パスを seek/truncate で書き戻す（開いた Handler と共存しやすい）
-    with path.open("r+", encoding="utf-8", errors="replace", newline="") as fh:
-        # 先頭へ
-        fh.seek(0)
-        # 全行書込
-        fh.writelines(lines)
-        # 残りを切る
-        fh.truncate()
+    # 一時ファイルへ書いてから原子置換する（追記中の消失を防ぐ）
+    parent = path.parent
+    # 同一ディレクトリに一時ファイルを作る
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(parent),
+    )
+    # パス化
+    tmp_path = Path(tmp_name)
+    try:
+        # 一時ファイルへ全行を書く
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            # 書込
+            fh.writelines(lines)
+            # 確実にディスクへ
+            fh.flush()
+            # fsync
+            os.fsync(fh.fileno())
+        # 原子的に置換する
+        os.replace(tmp_path, path)
+    except Exception:
+        # 失敗時は一時ファイルを消す
+        try:
+            # 残っていれば削除
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            # 掃除失敗は握りつぶす
+            pass
+        # 呼び出し元へ再送出
+        raise
     # マスク件数
     return masked
 
@@ -287,6 +313,13 @@ def delete_db_user_data(
     """DB 上のユーザー紐付けを削除する。"""
     # 対象ユーザー
     uid = int(user_id)
+    # 実行時メモリも先に消して再永続化を防ぐ
+    try:
+        from MOMOKA.GUI.bot_bridge import purge_user_runtime
+
+        runtime = purge_user_runtime(uid)
+    except Exception:
+        runtime = {"tts": 0, "music": 0}
     # 設定 DB
     settings_db = get_default_settings_db(DEFAULT_DB_PATH)
     # VC ストア
@@ -302,6 +335,7 @@ def delete_db_user_data(
             "ok": True,
             "deleted_auto_join": deleted_auto,
             "scrubbed_vc": scrubbed,
+            "runtime": runtime,
         }
     # 個別 autojoin
     deleted_auto = 0
@@ -321,7 +355,7 @@ def delete_db_user_data(
             guild_ids.append(str(row["guild_id"]))
         # 指定ギルドだけ削除
         deleted_auto = settings_db.delete_auto_join_by_user_id(
-            uid, guild_ids=guild_ids
+            uid, guild_ids=guild_ids if guild_ids else []
         )
     # 個別 VC
     scrubbed: Dict[str, Any] = {"updated": 0, "deleted_sessions": 0, "removed_tracks": 0}
@@ -347,4 +381,5 @@ def delete_db_user_data(
         "ok": True,
         "deleted_auto_join": deleted_auto,
         "scrubbed_vc": scrubbed,
+        "runtime": runtime,
     }

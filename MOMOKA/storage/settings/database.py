@@ -66,12 +66,62 @@ class SettingsDB:
                     "id INTEGER PRIMARY KEY CHECK (id = 1), "
                     "version INTEGER NOT NULL)"
                 )
+                # 既存版を読む。
+                row = conn.execute(
+                    "SELECT version FROM schema_meta WHERE id = 1"
+                ).fetchone()
+                # 既存版（無ければ 0）
+                existing_version = int(row[0]) if row else 0
+                # 未知の新しい版は起動拒否する。
+                if existing_version > SCHEMA_VERSION:
+                    # 破壊的ダウングレードを防ぐ
+                    raise RuntimeError(
+                        f"settings DB schema version {existing_version} is newer than "
+                        f"supported {SCHEMA_VERSION}; refuse to start"
+                    )
                 # 全設定テーブルを作成する。
                 self._create_normalized_tables(conn)
-                # 廃止済み blob テーブルを削除する。
-                conn.execute("DROP TABLE IF EXISTS settings")
-                # 廃止済みバックアップテーブルを削除する。
-                conn.execute("DROP TABLE IF EXISTS settings_blob_legacy")
+                # 旧 blob テーブルが残っていれば DROP せず退避する。
+                for legacy_name in ("settings", "settings_blob_legacy"):
+                    # テーブル存在確認
+                    found = conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        (legacy_name,),
+                    ).fetchone()
+                    # 無ければ次へ
+                    if not found:
+                        continue
+                    # 行数を確認する
+                    try:
+                        # 件数
+                        count_row = conn.execute(
+                            f"SELECT COUNT(*) FROM {legacy_name}"
+                        ).fetchone()
+                        # 件数
+                        legacy_count = int(count_row[0]) if count_row else 0
+                    except sqlite3.Error:
+                        # 読めない場合は安全側で退避する
+                        legacy_count = 1
+                    # データがある場合は DROP せずリネーム退避する
+                    if legacy_count > 0:
+                        # 退避名
+                        backup_name = f"{legacy_name}_backup_v{existing_version}"
+                        # 既存退避があれば先に落とす
+                        conn.execute(f"DROP TABLE IF EXISTS {backup_name}")
+                        # リネーム
+                        conn.execute(
+                            f"ALTER TABLE {legacy_name} RENAME TO {backup_name}"
+                        )
+                        # 警告
+                        logger.warning(
+                            "Preserved legacy settings table as %s (%s rows); "
+                            "manual migration may be required",
+                            backup_name,
+                            legacy_count,
+                        )
+                    else:
+                        # 空なら削除してよい
+                        conn.execute(f"DROP TABLE IF EXISTS {legacy_name}")
                 # 現行スキーマ版を書き込む。
                 conn.execute(
                     "INSERT OR REPLACE INTO schema_meta (id, version) VALUES (1, ?)",
@@ -395,25 +445,43 @@ class SettingsDB:
 
     @staticmethod
     def _save_channel_llm(conn: sqlite3.Connection, data: Any) -> None:
-        """channel_llm_models を全置換する。"""
-        conn.execute("DELETE FROM channel_llm_models")
+        """channel_llm_models を bot_id 単位で UPSERT する（他 Bot 行は消さない）。"""
+        # 形状不正は無視（全表 DELETE しない）
         if not isinstance(data, dict):
             return
+        # ペイロードに含まれる bot_id だけを書き換える
         for bot_id, channels in data.items():
+            # bot キーは文字列化
+            bid = str(bot_id)
+            # 当該 Bot の既存行だけ落とす
+            conn.execute(
+                "DELETE FROM channel_llm_models WHERE bot_id = ?",
+                (bid,),
+            )
+            # channels が無い／空なら削除のみで完了
             if not isinstance(channels, dict):
                 continue
+            # チャンネル上書きを挿入
             for channel_id, override in channels.items():
+                # override は dict 必須
                 if not isinstance(override, dict):
                     continue
+                # model 文字列必須
                 model = override.get("model")
                 if not isinstance(model, str):
                     continue
+                # 任意の期限
                 expires_at = override.get("expires_at")
+                # INSERT（当該 bot は直前に DELETE 済み）
                 conn.execute(
                     "INSERT INTO channel_llm_models "
                     "(bot_id, channel_id, model, expires_at) VALUES (?, ?, ?, ?)",
-                    (str(bot_id), str(channel_id), model,
-                     float(expires_at) if expires_at is not None else None),
+                    (
+                        bid,
+                        str(channel_id),
+                        model,
+                        float(expires_at) if expires_at is not None else None,
+                    ),
                 )
 
     # ------------------------------------------------------------------
@@ -975,20 +1043,30 @@ class SettingsDB:
 
     @staticmethod
     def _save_response_times(conn: sqlite3.Connection, data: Any) -> None:
-        """response_time_samples を全置換する。"""
-        conn.execute("DELETE FROM response_time_samples")
+        """response_time_samples を model 単位で置換する（他モデルは消さない）。"""
+        # 形状不正は無視（全表 DELETE しない）
         if not isinstance(data, dict):
             return
+        # 渡されたモデルだけ原子的に差し替える
         for model_name, times in data.items():
+            # モデルキー
+            name = str(model_name)
+            # 当該モデルの旧サンプルを落とす
+            conn.execute(
+                "DELETE FROM response_time_samples WHERE model_name = ?",
+                (name,),
+            )
+            # リスト以外は削除のみ
             if not isinstance(times, list):
                 continue
+            # 新しいサンプルを書き込む
             for index, elapsed in enumerate(times):
                 try:
                     conn.execute(
                         "INSERT INTO response_time_samples "
                         "(model_name, sample_index, elapsed_seconds) "
                         "VALUES (?, ?, ?)",
-                        (str(model_name), int(index), float(elapsed)),
+                        (name, int(index), float(elapsed)),
                     )
                 except (TypeError, ValueError):
                     continue
@@ -1077,12 +1155,15 @@ class SettingsDB:
             conn = self._connect()
             try:
                 # ギルド限定が無ければ全削除。
-                if not guild_ids:
+                if guild_ids is None:
                     # 全ギルド対象。
                     cursor = conn.execute(
                         "DELETE FROM speech_auto_join_users WHERE user_id = ?",
                         (int(user_id),),
                     )
+                elif not guild_ids:
+                    # 空配列は 0 件削除（誤って全削除しない）
+                    return 0
                 else:
                     # 指定ギルドだけ削除する。
                     placeholders = ",".join("?" for _ in guild_ids)

@@ -814,10 +814,12 @@ class LLMCog(commands.Cog, name="llm"):
         return {}
 
     async def _save_channel_models(self) -> None:
-        """チャンネル別モデル設定を SettingsDB へ保存する。"""
+        """自 Bot のチャンネル別モデルだけ SettingsDB へ UPSERT する。"""
         try:
-            # メモリ上の全設定を書く
-            await self.settings_db.save_async(NS_CHANNEL_LLM_MODELS, self.channel_models)
+            # 他 Bot 行を消さないよう自 bot_id スライスのみ送る
+            payload = {self.bot_id: dict(self._bot_channel_map())}
+            # bot_id 単位 UPSERT
+            await self.settings_db.save_async(NS_CHANNEL_LLM_MODELS, payload)
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to save settings namespace '{NS_CHANNEL_LLM_MODELS}': {e}")
             raise
@@ -1359,6 +1361,41 @@ class LLMCog(commands.Cog, name="llm"):
                 if len(image_bytes) > max_image_bytes:
                     logger.warning(f"Image too large ({len(image_bytes)} bytes): {url}")
                     return None
+                # 展開後の寸法・画素・フレーム数を制限する（圧縮爆弾対策）
+                max_pixels = int(self.llm_config.get("max_image_pixels", 25_000_000))
+                max_frames = int(self.llm_config.get("max_image_frames", 60))
+                try:
+                    from PIL import Image, ImageFile
+
+                    # DecompressionBomb を例外として扱う
+                    Image.MAX_IMAGE_PIXELS = max_pixels
+                    ImageFile.LOAD_TRUNCATED_IMAGES = False
+                    # ヘッダだけ先に読む
+                    probe = Image.open(io.BytesIO(image_bytes))
+                    # 幅・高さ
+                    width, height = probe.size
+                    # 総画素
+                    if width * height > max_pixels:
+                        logger.warning(
+                            "Image pixel count too large (%sx%s): %s",
+                            width,
+                            height,
+                            url,
+                        )
+                        return None
+                    # フレーム数（GIF 等）
+                    frame_count = getattr(probe, "n_frames", 1) or 1
+                    if int(frame_count) > max_frames:
+                        logger.warning(
+                            "Image frame count too large (%s): %s",
+                            frame_count,
+                            url,
+                        )
+                        return None
+                except Exception as bomb_exc:
+                    # 爆弾・破損は安全側で破棄
+                    logger.warning("Rejected unsafe image decode for %s: %s", url, bomb_exc)
+                    return None
                 # レスポンスの Content-Type を取得する（パラメータ無し）
                 mime_type = response.content_type
                 # 画像以外の Content-Type が明示されている場合は推測せず破棄する
@@ -1608,6 +1645,25 @@ class LLMCog(commands.Cog, name="llm"):
 
         # DM は 1:1 のためメンション／リプライなしでも反応する
         is_dm = message.guild is None
+        # 許可チャンネル制限
+        if hasattr(self.bot, "is_channel_allowed_for_bot"):
+            # Bot 共通判定
+            if not self.bot.is_channel_allowed_for_bot(
+                getattr(message.channel, "id", None),
+                is_dm=is_dm,
+            ):
+                # 制限外は無視
+                return
+        # 有効な Bot コマンド行は LLM と二重処理しない
+        try:
+            # Context を解決する
+            ctx = await self.bot.get_context(message)
+            # 有効コマンドなら LLM は触らない
+            if ctx.valid:
+                return
+        except Exception:
+            # Context 解決失敗時は LLM 判定を継続する
+            pass
         # スレッド内ではBotのメッセージへのリプライのみに反応
         is_thread = isinstance(message.channel, discord.Thread)
         is_mentioned = self.bot.user.mentioned_in(message) and not message.mention_everyone
@@ -3323,8 +3379,11 @@ class LLMCog(commands.Cog, name="llm"):
                     logger.debug(
                         f"🔧 [TOOL] Result (length: {len(str(tool_response_content))} chars):\n{str(tool_response_content)[:1000]}")
                 elif self.image_generator and function_name == self.image_generator.name:
-                    tool_response_content = await self.image_generator.run(arguments=function_args,
-                                                                           channel_id=channel_id)
+                    tool_response_content = await self.image_generator.run(
+                        arguments=function_args,
+                        channel_id=channel_id,
+                        user_id=user_id,
+                    )
                     logger.debug(f"🔧 [TOOL] Result:\n{tool_response_content}")
                 elif self.feedback_tool and function_name == self.feedback_tool.name:
                     # フィードバック UI（form / confirm）をチャンネルへ送る
@@ -3919,30 +3978,84 @@ class LLMCog(commands.Cog, name="llm"):
     async def clear_history_slash(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         guild_id = interaction.guild.id if interaction.guild else 0  # DMの場合は0
-        cleared_count, threads_to_clear = 0, set()
-        
-        try:
-            async for msg in interaction.channel.history(limit=200):
-                if guild_id in self.message_to_thread and msg.id in self.message_to_thread[guild_id]: 
-                    threads_to_clear.add(self.message_to_thread[guild_id][msg.id])
-        except (discord.Forbidden, discord.HTTPException):
-            embed = discord.Embed(title="⚠️ Permission Error / 権限エラー",
-                                  description="Could not read the channel's message history.\nチャンネルのメッセージ履歴を読み取れませんでした。",
-                                  color=discord.Color.gold())
-            self._add_support_footer(embed)
-            await interaction.followup.send(embed=embed, view=self._create_support_view())
-            return
-        
+        # 返信先が追跡済み LLM 応答ならその thread だけを対象にする
+        target_thread_id = None
+        # 参照メッセージがあるか
+        if interaction.message and interaction.message.reference:
+            # 参照先 ID
+            ref_id = interaction.message.reference.message_id
+            # guild マップ
+            mapping = self.message_to_thread.get(guild_id) or {}
+            # thread を解決
+            target_thread_id = mapping.get(ref_id) if ref_id else None
+        # 参照が無ければ直近の自分の操作対象として、interaction の channel 上の
+        # 「このユーザーが起点の thread」だけに絞るため owner を見る
+        cleared_count = 0
+        # 対象 thread 集合
+        threads_to_clear = set()
+        # 明示 thread があればそれだけ
+        if target_thread_id is not None:
+            # 単一 thread
+            threads_to_clear.add(target_thread_id)
+        else:
+            # 直近履歴から「このチャンネルかつ本人起点」に限定して収集する
+            try:
+                async for msg in interaction.channel.history(limit=200):
+                    # guild マップ
+                    mapping = self.message_to_thread.get(guild_id) or {}
+                    # thread id
+                    thread_id = mapping.get(msg.id)
+                    # 未追跡はスキップ
+                    if thread_id is None:
+                        continue
+                    # 会話スレッド本体
+                    thread = (self.conversation_threads.get(guild_id) or {}).get(thread_id)
+                    # 無ければスキップ
+                    if not thread:
+                        continue
+                    # owner_id があれば本人/管理者のみ
+                    owner_id = None
+                    # thread が dict で meta を持つ場合
+                    if isinstance(thread, dict):
+                        owner_id = thread.get("owner_id")
+                    # list 形式の従来 thread は先頭ユーザーを所有者候補にする
+                    elif isinstance(thread, list):
+                        for entry in thread:
+                            # dict かつ user
+                            if isinstance(entry, dict) and entry.get("role") == "user":
+                                owner_id = entry.get("owner_id") or entry.get("user_id")
+                                break
+                    # 所有者不明なら管理者のみ許可
+                    is_admin = False
+                    # bot に is_admin があれば使う
+                    if hasattr(self.bot, "is_admin"):
+                        is_admin = bool(self.bot.is_admin(interaction.user.id))
+                    # 本人または管理者以外はスキップ
+                    if owner_id is not None and int(owner_id) != interaction.user.id and not is_admin:
+                        continue
+                    # 所有者不明かつ非管理者はスキップ
+                    if owner_id is None and not is_admin:
+                        continue
+                    # 対象へ追加
+                    threads_to_clear.add(thread_id)
+            except (discord.Forbidden, discord.HTTPException):
+                embed = discord.Embed(title="⚠️ Permission Error / 権限エラー",
+                                      description="Could not read the channel's message history.\nチャンネルのメッセージ履歴を読み取れませんでした。",
+                                      color=discord.Color.gold())
+                self._add_support_footer(embed)
+                await interaction.followup.send(embed=embed, view=self._create_support_view())
+                return
+
         for thread_id in threads_to_clear:
             if guild_id in self.conversation_threads and thread_id in self.conversation_threads[guild_id]:
                 del self.conversation_threads[guild_id][thread_id]
                 if guild_id in self.message_to_thread:
                     self.message_to_thread[guild_id] = {
-                        k: v for k, v in self.message_to_thread[guild_id].items() 
+                        k: v for k, v in self.message_to_thread[guild_id].items()
                         if v != thread_id
                     }
                 cleared_count += 1
-        
+
         if cleared_count > 0:
             embed = discord.Embed(title="✅ History Cleared / 履歴をクリアしました",
                                   description=f"Cleared the history of {cleared_count} conversation thread(s) related to this channel.\nこのチャンネルに関連する {cleared_count} 個の会話スレッドの履歴をクリアしました。",

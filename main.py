@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from typing import Optional
 
 import aiohttp
 import discord
@@ -163,6 +164,51 @@ class Momoka(commands.Bot):
             if str(admin_id).isdigit()
         }
         return user_id in admin_ids
+
+    def is_channel_allowed_for_bot(
+        self,
+        channel_id: Optional[int],
+        *,
+        is_dm: bool = False,
+    ) -> bool:
+        """allowed_channel_ids 設定に基づき応答可否を返す。"""
+        # 遅延 import（起動時循環回避）
+        from MOMOKA.utilities.channel_allowlist import is_channel_allowed
+
+        # DM 方針（未設定時は許可）
+        allow_dm = bool(self.config.get("allowed_channel_allow_dm", True))
+        # 共通判定
+        return is_channel_allowed(
+            channel_id,
+            self.config.get("allowed_channel_ids", []),
+            allow_dm=allow_dm,
+            is_dm=is_dm,
+        )
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """スラッシュ／コンポーネント操作前の共通チャンネル制限。"""
+        # DM 判定
+        is_dm = interaction.guild is None
+        # チャンネル ID
+        channel_id = interaction.channel_id
+        # 許可チェック
+        if not self.is_channel_allowed_for_bot(channel_id, is_dm=is_dm):
+            # 拒否時は ephemeral で通知を試みる
+            try:
+                # 未応答なら
+                if not interaction.response.is_done():
+                    # エラー返信
+                    await interaction.response.send_message(
+                        "This channel is not allowed. / このチャンネルでは応答しません。",
+                        ephemeral=True,
+                    )
+            except Exception:
+                # 通知失敗は握りつぶす
+                pass
+            # 実行拒否
+            return False
+        # 許可
+        return True
 
     async def notify_active_users_of_restart(self) -> None:
         """利用中ユーザー（音楽・LLM）へ再起動通知を送る。"""
@@ -766,9 +812,26 @@ if __name__ == "__main__":
     # PLANA の表示名を取得する
     plana_display = plana_bot_config.get('display_name', 'PLANA')
 
+    def _command_prefix(bot, message):
+        """設定されたテキスト接頭辞のみ返す（空ならプレフィックス無効）。"""
+        # 収集先
+        prefixes = []
+        # 音楽用
+        music_prefix = str(merged_config.get("music_cog_prefix") or "").strip()
+        # LLM 用
+        llm_prefix = str(merged_config.get("llm_cog_prefix") or "").strip()
+        # 非空のみ採用
+        if music_prefix:
+            prefixes.append(music_prefix)
+        # LLM が別値なら追加
+        if llm_prefix and llm_prefix not in prefixes:
+            prefixes.append(llm_prefix)
+        # 空リスト = テキストプレフィックス無効（スラッシュのみ）
+        return prefixes
+
     # PLANA ボットインスタンスを作成する
     plana_bot = Momoka(
-        command_prefix=commands.when_mentioned,
+        command_prefix=_command_prefix,
         intents=intents,
         help_command=None,
         allowed_mentions=allowed_mentions,
@@ -798,7 +861,7 @@ if __name__ == "__main__":
 
     # ARONA ボットインスタンスを作成する
     arona_bot = Momoka(
-        command_prefix=commands.when_mentioned,
+        command_prefix=_command_prefix,
         intents=intents,
         help_command=None,
         allowed_mentions=allowed_mentions,

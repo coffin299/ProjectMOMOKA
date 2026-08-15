@@ -16,6 +16,12 @@ import yt_dlp
 logger = logging.getLogger("MOMOKA.music.plugins.ytdlp")
 from yt_dlp.utils import DownloadError, ExtractorError  # 抽出・ダウンロード失敗を個別に捕捉する
 
+from MOMOKA.utilities.url_safety import (
+    UnsafeURLError,
+    assert_info_urls_safe,
+    assert_user_media_query_safe,
+)
+
 
 class UnsupportedMediaError(RuntimeError):
     """DRM / 非対応サイトなど、再試行しても取得できないメディア向け例外。"""
@@ -1315,6 +1321,16 @@ async def extract(
     ニコニコ動画の場合はダウンロードを試み、それ以外はストリームURLを取得する。
     max_playlist_items はプレイリスト展開の上限（playlistend）。呼び出し元 config を渡すこと。
     """
+    # 利用者入力の SSRF / 非 http(s) スキームを入口で拒否する
+    try:
+        # クエリを安全側へ正規化する
+        query = assert_user_media_query_safe(query)
+    except UnsafeURLError as unsafe_exc:
+        # 危険 URL は抽出へ渡さず警告する
+        logger.warning("Rejected unsafe music query: %s", unsafe_exc)
+        # 呼び出し元は None を「見つからない」と同様に扱う
+        return None
+
     loop = asyncio.get_running_loop()
     is_nico_query = _is_nico(query)
 
@@ -1408,6 +1424,30 @@ async def extract(
     await loop.run_in_executor(None, _run_yt_dlp_extraction)
 
     if not extracted_info:  # 情報抽出に失敗した場合
+        return None
+
+    # Generic 抽出器は任意 URL への到達経路になるため拒否する
+    extractor_key = str(
+        extracted_info.get("extractor_key")
+        or extracted_info.get("ie_key")
+        or extracted_info.get("extractor")
+        or ""
+    ).strip()
+    # Generic / GenericOpenGraph を拒否する
+    if extractor_key in ("Generic", "GenericOpenGraph"):
+        # 危険な汎用抽出を止める
+        logger.warning("Rejected generic extractor for query: %s", query)
+        # 見つからない扱い
+        return None
+
+    # 抽出後 URL（webpage / formats 等）を再検証する
+    try:
+        # info 内の http(s) をすべて検査する
+        assert_info_urls_safe(extracted_info)
+    except UnsafeURLError as unsafe_exc:
+        # 抽出後に内部向け URL が出た場合は破棄する
+        logger.warning("Rejected unsafe extracted media URLs: %s", unsafe_exc)
+        # 見つからない扱い
         return None
 
     # 結果をTrackオブジェクトに変換

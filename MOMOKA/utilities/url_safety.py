@@ -1,12 +1,13 @@
 # MOMOKA/utilities/url_safety.py
-# 外部 URL 取得前の SSRF 対策（スキーム制限・DNS 解決後のプライベート IP 拒否・リダイレクト再検証）。
+# 外部 URL 取得前の SSRF 対策（スキーム制限・DNS 解決後のプライベート IP 拒否・
+# 検証済み IP への接続固定・リダイレクト再検証・peer IP 確認）。
 from __future__ import annotations
 
 import asyncio
 import ipaddress
 import logging
 import socket
-from typing import Any, Collection, Optional, Sequence, Set, Union
+from typing import Any, Collection, Optional, Sequence, Set, Tuple, Union
 from urllib.parse import urljoin, urlparse
 
 import aiohttp
@@ -148,6 +149,17 @@ async def _resolve_host_ips_async(hostname: str) -> Set[str]:
     return resolved
 
 
+def _safe_ips_from_resolved(hostname: str, resolved: Set[str]) -> list[str]:
+    """解決済み IP からブロック対象を除き、空なら例外を投げる。"""
+    # 許可 IP だけを残す
+    safe = [ip for ip in resolved if not is_blocked_ip(ip)]
+    # 1 件も無ければ拒否
+    if not safe:
+        raise UnsafeURLError(f"All resolved IPs blocked for host {hostname}")
+    # 許可 IP 一覧を返す
+    return safe
+
+
 def assert_safe_http_url(url: str, *, resolve_dns: bool = True) -> str:
     """http(s) URL を検証し、危険なら UnsafeURLError。問題なければ正規化 URL を返す。"""
     # 空は拒否
@@ -179,13 +191,8 @@ def assert_safe_http_url(url: str, *, resolve_dns: bool = True) -> str:
         raise UnsafeURLError(f"Blocked IP literal in URL: {hostname}")
     # DNS 解決して全 IP を検査する
     if resolve_dns:
-        # 同期解決
-        for ip_str in _resolve_host_ips(hostname):
-            # いずれかがブロック対象なら拒否（DNS リバインディング軽減）
-            if is_blocked_ip(ip_str):
-                raise UnsafeURLError(
-                    f"Blocked resolved IP {ip_str} for host {hostname}"
-                )
+        # 同期解決し、許可 IP が残るか確認する
+        _safe_ips_from_resolved(hostname, _resolve_host_ips(hostname))
     # 検証済み URL を返す
     return cleaned
 
@@ -221,15 +228,123 @@ async def assert_safe_http_url_async(url: str, *, resolve_dns: bool = True) -> s
         raise UnsafeURLError(f"Blocked IP literal in URL: {hostname}")
     # DNS 解決
     if resolve_dns:
-        # 非同期解決
-        for ip_str in await _resolve_host_ips_async(hostname):
-            # ブロック IP なら拒否
-            if is_blocked_ip(ip_str):
-                raise UnsafeURLError(
-                    f"Blocked resolved IP {ip_str} for host {hostname}"
-                )
+        # 非同期解決し、許可 IP が残るか確認する
+        _safe_ips_from_resolved(hostname, await _resolve_host_ips_async(hostname))
     # 返す
     return cleaned
+
+
+def resolve_safe_connect_ip(url: str) -> Tuple[str, str, str]:
+    """
+    URL を検証し、(正規化URL, ホスト名, 接続用の許可 IP) を返す。
+    DNS リバインディング対策のため、接続はこの IP へ固定する想定。
+    """
+    # まずスキーム・ホストを検証する（DNS は後で自分で取る）
+    cleaned = assert_safe_http_url(url, resolve_dns=False)
+    # パース結果を再利用する
+    parsed = urlparse(cleaned)
+    # ホスト名は検証済み
+    hostname = parsed.hostname or ""
+    # IP リテラルならその IP を接続先にする
+    try:
+        # リテラル IP として解釈する
+        literal_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        # ホスト名なら DNS 解決する
+        literal_ip = None
+    # リテラルが危険なら拒否（assert 済みだが二重防御）
+    if literal_ip is not None:
+        # ブロック対象なら拒否
+        if is_blocked_ip(literal_ip):
+            raise UnsafeURLError(f"Blocked IP literal in URL: {hostname}")
+        # リテラル IP を接続先として返す
+        return cleaned, hostname, str(literal_ip)
+    # DNS 解決して許可 IP だけ残す
+    safe_ips = _safe_ips_from_resolved(hostname, _resolve_host_ips(hostname))
+    # 先頭の許可 IP を接続先に使う
+    return cleaned, hostname, safe_ips[0]
+
+
+async def resolve_safe_connect_ip_async(url: str) -> Tuple[str, str, str]:
+    """resolve_safe_connect_ip の非同期版。"""
+    # DNS 無しで基本検証する
+    cleaned = await assert_safe_http_url_async(url, resolve_dns=False)
+    # パース
+    parsed = urlparse(cleaned)
+    # ホスト
+    hostname = parsed.hostname or ""
+    # IP リテラル判定
+    try:
+        # リテラル IP
+        literal_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        # ホスト名
+        literal_ip = None
+    # リテラルならその IP を使う
+    if literal_ip is not None:
+        # 危険なら拒否
+        if is_blocked_ip(literal_ip):
+            raise UnsafeURLError(f"Blocked IP literal in URL: {hostname}")
+        # 返す
+        return cleaned, hostname, str(literal_ip)
+    # 非同期 DNS 解決
+    safe_ips = _safe_ips_from_resolved(
+        hostname, await _resolve_host_ips_async(hostname)
+    )
+    # 先頭 IP を返す
+    return cleaned, hostname, safe_ips[0]
+
+
+def _peer_ip_from_response(response: aiohttp.ClientResponse) -> Optional[str]:
+    """レスポンス接続の peer IP を取り出す。取れなければ None。"""
+    # connection が無い場合は確認不能
+    connection = getattr(response, "connection", None)
+    # 接続オブジェクトが無ければ諦める
+    if connection is None:
+        return None
+    # transport を取る
+    transport = getattr(connection, "transport", None)
+    # transport 無ければ諦める
+    if transport is None:
+        return None
+    # peername を読む
+    peername = transport.get_extra_info("peername")
+    # 形式が想定外なら諦める
+    if not peername:
+        return None
+    # (ip, port) または (ip, port, ...)
+    if isinstance(peername, tuple) and peername:
+        # 先頭が IP 文字列
+        return str(peername[0])
+    # 不明形式
+    return None
+
+
+def assert_response_peer_safe(
+    response: aiohttp.ClientResponse,
+    *,
+    hostname: Optional[str] = None,
+) -> None:
+    """接続後 peer IP がブロック対象ならレスポンスを閉じて拒否する。"""
+    # peer IP を取得する
+    peer_ip = _peer_ip_from_response(response)
+    # 取得不能なら（プロキシ等）追加検証はスキップする
+    if peer_ip is None:
+        # デバッグログだけ残す
+        logger.debug(
+            "Peer IP unavailable for SSRF check (host=%s)",
+            hostname or "?",
+        )
+        # 接続前 DNS 検査に依存する
+        return
+    # ブロック対象なら切断して例外
+    if is_blocked_ip(peer_ip):
+        # レスポンスを閉じる
+        response.close()
+        # 拒否理由を付ける
+        host_part = f" for host {hostname}" if hostname else ""
+        # 例外を投げる
+        raise UnsafeURLError(f"Blocked peer IP {peer_ip}{host_part}")
 
 
 def looks_like_http_url(value: str) -> bool:
@@ -243,6 +358,114 @@ def looks_like_http_url(value: str) -> bool:
     return lowered.startswith("http://") or lowered.startswith("https://")
 
 
+def has_explicit_uri_scheme(value: str) -> bool:
+    """`scheme://` 形式の URI スキームを明示しているか。"""
+    # 空はスキーム無し
+    if not value or not str(value).strip():
+        return False
+    # 前後空白を除く
+    text = str(value).strip()
+    # スキーム区切りが無ければ検索語扱い
+    if "://" not in text:
+        return False
+    # 先頭トークンをスキーム候補とする
+    scheme = text.split("://", 1)[0].strip().lower()
+    # 英数字と +.- のみのスキームなら明示 URI
+    return bool(scheme) and all(ch.isalnum() or ch in "+.-" for ch in scheme)
+
+
+def assert_user_media_query_safe(url_or_query: str) -> str:
+    """
+    利用者入力の URL/検索語を検証する。
+    - 明示スキームがあり http(s) 以外なら拒否
+    - http(s) なら SSRF 検査
+    - スキーム無し（検索語）はそのまま許可
+    """
+    # 空は拒否
+    if not url_or_query or not str(url_or_query).strip():
+        raise UnsafeURLError("Empty URL or query")
+    # 正規化
+    cleaned = str(url_or_query).strip()
+    # 明示スキームがある入力
+    if has_explicit_uri_scheme(cleaned):
+        # http(s) 以外は即拒否（rtmp 等のすり抜け防止）
+        if not looks_like_http_url(cleaned):
+            raise UnsafeURLError("Only http/https URLs are allowed")
+        # SSRF 検査（DNS 含む）
+        return assert_safe_http_url(cleaned)
+    # 検索語はそのまま返す
+    return cleaned
+
+
+def collect_info_urls(info: dict) -> list[str]:
+    """yt-dlp info dict から検査対象 URL を集める。"""
+    # 候補格納
+    candidates: list[str] = []
+    # 見たいキー
+    for key in (
+        "webpage_url",
+        "original_url",
+        "url",
+        "thumbnail",
+        "manifest_url",
+    ):
+        # 値を取る
+        val = info.get(key)
+        # 文字列かつ http(s) のみ
+        if isinstance(val, str) and looks_like_http_url(val):
+            candidates.append(val)
+    # formats / entries も再帰的に見る
+    formats = info.get("formats")
+    # formats がリストなら各要素の url を見る
+    if isinstance(formats, list):
+        for fmt in formats:
+            # 辞書以外は無視
+            if not isinstance(fmt, dict):
+                continue
+            # format url
+            fmt_url = fmt.get("url")
+            # http(s) のみ
+            if isinstance(fmt_url, str) and looks_like_http_url(fmt_url):
+                candidates.append(fmt_url)
+            # fragment 等
+            frag_url = fmt.get("fragment_base_url")
+            # http(s) のみ
+            if isinstance(frag_url, str) and looks_like_http_url(frag_url):
+                candidates.append(frag_url)
+    # プレイリスト entries
+    entries = info.get("entries")
+    # entries があれば再帰
+    if isinstance(entries, list):
+        for entry in entries:
+            # 辞書以外は無視
+            if not isinstance(entry, dict):
+                continue
+            # 子エントリの URL を追加
+            candidates.extend(collect_info_urls(entry))
+    # 重複除去しつつ順序維持
+    seen: set[str] = set()
+    # 結果
+    unique: list[str] = []
+    # 走査
+    for item in candidates:
+        # 既出はスキップ
+        if item in seen:
+            continue
+        # 記録
+        seen.add(item)
+        unique.append(item)
+    # 返す
+    return unique
+
+
+def assert_info_urls_safe(info: dict) -> None:
+    """yt-dlp info 内の http(s) URL をすべて SSRF 検査する。"""
+    # 各候補を検証
+    for candidate in collect_info_urls(info):
+        # 危険なら例外
+        assert_safe_http_url(candidate)
+
+
 async def get_with_ssrf_protection(
     session: aiohttp.ClientSession,
     url: str,
@@ -253,7 +476,8 @@ async def get_with_ssrf_protection(
 ) -> aiohttp.ClientResponse:
     """
     SSRF ガード付き GET。
-    初回 URL と各リダイレクト先を再検証し、allow_redirects=False で手動追跡する。
+    初回 URL と各リダイレクト先を DNS 検証し、接続後 peer IP も再確認する。
+    allow_redirects=False で手動追跡する。
     呼び出し側は返却レスポンスを async with / 終了時 close すること。
     """
     # 追跡中の URL（初回は検証済みにする）
@@ -262,6 +486,8 @@ async def get_with_ssrf_protection(
     redirects = 0
     # 手動でリダイレクトを追う
     while True:
+        # ホスト名を peer 検証メッセージ用に控える
+        hostname = urlparse(current).hostname
         # 自動リダイレクトは無効化し、都度検証する
         response = await session.get(
             current,
@@ -269,6 +495,8 @@ async def get_with_ssrf_protection(
             timeout=timeout,
             **request_kwargs,
         )
+        # 接続後 peer IP が内部向けなら拒否する（DNS 再解決 TOCTOU 対策）
+        assert_response_peer_safe(response, hostname=hostname)
         # リダイレクト系ステータス以外なら本文レスポンスとして返す
         if response.status not in {301, 302, 303, 307, 308}:
             # 最終レスポンス（呼び出し側が close / async with する）

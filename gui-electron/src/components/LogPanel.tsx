@@ -54,7 +54,7 @@ export function LogPanel({
         <span
           title={
             live
-              ? "WebSocket ライブ接続中"
+              ? "SSE ライブ接続中"
               : "履歴ポーリング中（WS 未接続でも更新されます）"
           }
           style={{ opacity: 0.75, fontSize: "0.85em" }}

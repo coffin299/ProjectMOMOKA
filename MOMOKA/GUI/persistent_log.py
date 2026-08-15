@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -24,6 +25,8 @@ _TAIL_CHUNK = 64 * 1024
 _LINE_RE = re.compile(
     r"^(?P<asctime>.+?) - (?P<name>.+?) - (?P<level>[A-Z]+) - (?P<message>.*)$"
 )
+# 追記とマスク書換えで共有するロック（H-10）
+LOG_FILE_LOCK = threading.RLock()
 
 
 class SanitizingFormatter(logging.Formatter):
@@ -34,6 +37,16 @@ class SanitizingFormatter(logging.Formatter):
         text = super().format(record)
         # トークン等を伏せて返す
         return sanitize_log_message(text, max_length=100_000)
+
+
+class LockedFileHandler(logging.FileHandler):
+    """マスク書換えと競合しないよう共通ロックで追記する FileHandler。"""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # マスク処理と排他する
+        with LOG_FILE_LOCK:
+            # 通常の FileHandler 追記を行う
+            super().emit(record)
 
 
 def get_log_file_path() -> Path:
@@ -57,8 +70,8 @@ def attach_persistent_file_handlers(
     formatter = SanitizingFormatter(_FORMAT)
     # txt / log の両方へ append
     for path in (_LOG_TXT, _LOG_LOG):
-        # 追記モード・UTF-8
-        handler = logging.FileHandler(path, mode="a", encoding="utf-8")
+        # 追記モード・UTF-8・共通ロック付き
+        handler = LockedFileHandler(path, mode="a", encoding="utf-8")
         # 伏せ字付きフォーマット
         handler.setFormatter(formatter)
         # ルートへ接続する

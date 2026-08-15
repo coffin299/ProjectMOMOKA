@@ -58,14 +58,22 @@ class ResponseTimeTracker:
         except Exception as e:
             logger.warning("応答時間データの読込に失敗: %s", e)
 
-    def _save(self) -> None:
-        """現在の記録を SettingsDB に保存する"""
+    def _save(self, model_name: Optional[str] = None) -> None:
+        """応答時間を SettingsDB に保存する（model 単位推奨）。"""
         try:
-            # deque → list へ変換して保存
-            payload = {
-                model: list(times)
-                for model, times in self._times.items()
-            }
+            # 1 モデルだけ送れば他モデル行は SettingsDB が保持する
+            if model_name is not None:
+                # 対象モデルの deque を list 化
+                times = self._times.get(model_name)
+                # 無ければ空リストで当該モデルをクリア
+                payload = {model_name: list(times) if times is not None else []}
+            else:
+                # 全モデル（起動時など）
+                payload = {
+                    model: list(times)
+                    for model, times in self._times.items()
+                }
+            # 永続化
             self.settings_db.save(NS_RESPONSE_TIMES, payload)
         except Exception as e:
             logger.warning("応答時間データの保存に失敗: %s", e)
@@ -79,8 +87,8 @@ class ResponseTimeTracker:
         if elapsed_seconds < 0.5 or elapsed_seconds > 600:
             return
         self._times[model_name].append(elapsed_seconds)
-        # 記録のたびに永続化
-        self._save()
+        # 記録のたびに当該モデルだけ永続化
+        self._save(model_name)
         logger.debug(
             "応答時間を記録: %s = %.1f秒 (サンプル数: %d)",
             model_name, elapsed_seconds, len(self._times[model_name])

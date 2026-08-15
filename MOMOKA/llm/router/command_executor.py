@@ -111,8 +111,19 @@ async def _invoke_music(
                     if lang.startswith("ja")
                     else "/play requires a query or URL."
                 )
-            # 公開 play を呼ぶ
-            await music_cog.play(ctx, query=query)
+            # 公開 play を呼ぶ（例外時は失敗文）
+            try:
+                await music_cog.play(ctx, query=query)
+            except Exception as exc:  # noqa: BLE001
+                return (
+                    f"再生に失敗しました: {exc}"
+                    if lang.startswith("ja")
+                    else f"Playback failed: {exc}"
+                )
+            # AgentMusicContext が失敗を保持していればそれを返す
+            err = getattr(ctx, "last_error", None)
+            if err:
+                return str(err)
             return (
                 f"再生を開始しました: {query}"
                 if lang.startswith("ja")

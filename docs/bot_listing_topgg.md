@@ -26,7 +26,7 @@ Also see: [bot_listing_discord.md](bot_listing_discord.md) (Discord App Director
 ## Official links
 
 - Website: https://momoka-project.com/
-- Invite: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands
+- Invite: https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=36826112&scope=bot%20applications.commands
 - Support Discord: https://discord.gg/H79HKKqx3s
 - Commands: https://momoka-project.com/commands.html
 - FAQ: https://momoka-project.com/faq.html
@@ -111,7 +111,7 @@ Fetch video or audio and share via a Cloudflare Tunnel temporary link (about 10 
 
 ## Get started
 
-1. [Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands)
+1. [Invite PLANA](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=36826112&scope=bot%20applications.commands)
 2. Run `/help` in your server, or see the [command list](https://momoka-project.com/commands.html)
 
 **Website:** [momoka-project.com](https://momoka-project.com/)  
@@ -182,7 +182,7 @@ Fetch video or audio and share via a Cloudflare Tunnel temporary link (about 10 
 
 ## はじめに
 
-1. [PLANA を招待](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=6516795221339600&scope=bot%20applications.commands)
+1. [PLANA を招待](https://discord.com/oauth2/authorize?client_id=1031673203774464160&permissions=36826112&scope=bot%20applications.commands)
 2. サーバーで `/help`、または [コマンド一覧](https://momoka-project.com/commands.html)
 
 **公式サイト:** [momoka-project.com](https://momoka-project.com/)  

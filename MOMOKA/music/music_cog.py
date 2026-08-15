@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import collections
 import gc
 import io
@@ -226,20 +226,51 @@ class MusicCog(commands.Cog, name="music_cog"):
             self.cleanup_task.cancel()
         if hasattr(self, 'cleanup_task_loop') and self.cleanup_task_loop.is_running():
             self.cleanup_task_loop.cancel()
+        # 切断タスクを追跡する
+        disconnect_tasks = []
         for guild_id in list(self.guild_states.keys()):
             try:
                 state = self.guild_states[guild_id]
                 if state.mixer:
                     state.mixer.stop()
                 if state.voice_client and state.voice_client.is_connected():
-                    asyncio.create_task(state.voice_client.disconnect(force=True))
+                    # 参照を保持して後で回収する
+                    disconnect_tasks.append(
+                        asyncio.create_task(state.voice_client.disconnect(force=True))
+                    )
                 if state.auto_leave_task and not state.auto_leave_task.done():
                     state.auto_leave_task.cancel()
             except Exception as e:
                 guild = self.bot.get_guild(guild_id)
                 logger.warning(f"Guild {guild_id} ({guild.name if guild else ''}) unload cleanup error: {e}")
+        # 切断タスク参照を残す（ループ終了前の回収用）
+        self._unload_disconnect_tasks = disconnect_tasks
         self.guild_states.clear()
         logger.info("MusicCog unloaded.")
+
+    def purge_user_runtime(self, user_id: int) -> int:
+        """実行時の current_track / queue から requester_id を除去する。"""
+        # 除去件数
+        removed = 0
+        uid = int(user_id)
+        # 各ギルド状態
+        for state in list(self.guild_states.values()):
+            # 現在曲
+            track = getattr(state, "current_track", None)
+            if track is not None and int(getattr(track, "requester_id", 0) or 0) == uid:
+                # 識別子を消す
+                track.requester_id = None
+                removed += 1
+            # キュー内部 deque
+            raw = getattr(getattr(state, "queue", None), "_queue", None)
+            if raw is None:
+                continue
+            # 各トラック
+            for queued in list(raw):
+                if int(getattr(queued, "requester_id", 0) or 0) == uid:
+                    queued.requester_id = None
+                    removed += 1
+        return removed
 
     async def notify_admin_restart(self) -> None:
         """再起動前に Now Playing UI を管理者再起動メッセージへ切り替える。"""

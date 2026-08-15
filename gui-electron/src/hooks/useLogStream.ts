@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { apiGet, getHostConfig } from "../api";
+import { apiGet, getHostConfig, hostHasAuth } from "../api";
 
 export type LogEntry = {
   name: string;
@@ -7,6 +7,9 @@ export type LogEntry = {
   message: string;
   category: string;
   id: number;
+  event_id?: number;
+  content_hash?: string;
+  masked?: boolean;
 };
 
 const LEVEL_RANK: Record<string, number> = {
@@ -33,19 +36,39 @@ function mapRows(
   }));
 }
 
-/** 末尾へ未所持メッセージだけ足す（同一文言の完全重複は捨てる） */
+/** 末尾へ未所持イベントだけ足す（event_id / content_hash 優先、無ければ文言） */
 function appendFresh(
   prev: LogEntry[],
   incoming: Omit<LogEntry, "id">[],
   maxLines: number
 ): LogEntry[] {
   if (!incoming.length) return prev;
-  const seen = new Set(prev.map((e) => e.message));
+  const seenEventIds = new Set(
+    prev.map((e) => e.event_id).filter((v): v is number => typeof v === "number")
+  );
+  const seenHashes = new Set(
+    prev
+      .map((e) => e.content_hash)
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
+  );
+  const seenMessages = new Set(prev.map((e) => e.message));
   const fresh: LogEntry[] = [];
   for (const row of incoming) {
     if (!row || typeof row.message !== "string") continue;
-    if (seen.has(row.message)) continue;
-    seen.add(row.message);
+    // マスク通知は一覧へ載せない
+    if ((row as { type?: string }).type === "log_masked") {
+      continue;
+    }
+    if (typeof row.event_id === "number") {
+      if (seenEventIds.has(row.event_id)) continue;
+      seenEventIds.add(row.event_id);
+    } else if (typeof row.content_hash === "string" && row.content_hash) {
+      if (seenHashes.has(row.content_hash)) continue;
+      seenHashes.add(row.content_hash);
+    } else if (seenMessages.has(row.message)) {
+      continue;
+    }
+    seenMessages.add(row.message);
     fresh.push({ ...row, id: ++seq });
   }
   if (!fresh.length) return prev;
@@ -56,38 +79,14 @@ function appendFresh(
   return next;
 }
 
-function parseSseChunk(
-  chunk: string,
-  onData: (payload: Omit<LogEntry, "id">) => void
-): string {
-  const parts = chunk.split("\n\n");
-  const rest = parts.pop() ?? "";
-  for (const frame of parts) {
-    const dataLines = frame
-      .split("\n")
-      .filter((ln) => ln.startsWith("data:"))
-      .map((ln) => ln.slice(5).trimStart());
-    if (!dataLines.length) continue;
-    try {
-      const data = JSON.parse(dataLines.join("\n")) as Omit<LogEntry, "id">;
-      if (data && typeof data.message === "string") onData(data);
-    } catch {
-      /* ignore */
-    }
-  }
-  return rest;
-}
-
 export function useLogStream(maxLines = 10000) {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const [restored, setRestored] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
   const liveRef = useRef(false);
+  const unsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const cfg = getHostConfig();
-    if (!cfg.token) return;
     let closed = false;
     let retry: number | undefined;
     let pollTimer: number | undefined;
@@ -113,21 +112,79 @@ export function useLogStream(maxLines = 10000) {
       }
     };
 
+    const teardownSse = () => {
+      if (unsubRef.current) {
+        try {
+          unsubRef.current();
+        } catch {
+          /* ignore */
+        }
+        unsubRef.current = null;
+      }
+      const cfg = getHostConfig();
+      if (cfg.stopLogSse) {
+        void cfg.stopLogSse().catch(() => undefined);
+      }
+      liveRef.current = false;
+      setConnected(false);
+    };
+
     const connectSse = async () => {
       if (closed) return;
+      const ok = await hostHasAuth();
+      if (!ok || closed) return;
+
       const live = getHostConfig();
-      if (!live.token) return;
+      teardownSse();
 
-      try {
-        abortRef.current?.abort();
-      } catch {
-        /* ignore */
+      // Electron: main が SSE を購読し IPC で転送（token 非公開）
+      if (live.startLogSse && live.onLogSse) {
+        try {
+          const offData = live.onLogSse((raw) => {
+            const row = raw as Omit<LogEntry, "id"> & { type?: string };
+            if (row && typeof row.message === "string") {
+              setEntries((prev) => appendFresh(prev, [row], maxLines));
+            }
+          });
+          const offEnd = live.onLogSseEnd
+            ? live.onLogSseEnd(() => {
+                liveRef.current = false;
+                setConnected(false);
+                if (!closed) {
+                  retry = window.setTimeout(() => {
+                    void connectSse();
+                  }, LIVE_RETRY_MS);
+                }
+              })
+            : () => undefined;
+          unsubRef.current = () => {
+            offData();
+            offEnd();
+          };
+          await live.startLogSse();
+          if (closed) {
+            teardownSse();
+            return;
+          }
+          liveRef.current = true;
+          setConnected(true);
+        } catch {
+          liveRef.current = false;
+          setConnected(false);
+          if (!closed) {
+            retry = window.setTimeout(() => {
+              void connectSse();
+            }, LIVE_RETRY_MS);
+          }
+        }
+        return;
       }
-      const ac = new AbortController();
-      abortRef.current = ac;
 
+      // preload 無しフォールバック（通常は未使用）
+      if (!live.token) return;
       try {
-        // Bearer 付き SSE のみ（WS は localhost onopen 競合で死にやすいので使わない）
+        const ac = new AbortController();
+        unsubRef.current = () => ac.abort();
         const res = await fetch(`${live.apiBase}/logs/stream`, {
           headers: {
             Authorization: `Bearer ${live.token}`,
@@ -148,12 +205,29 @@ export function useLogStream(maxLines = 10000) {
           const { done, value } = await reader.read();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
-          buf = parseSseChunk(buf, (row) => {
-            setEntries((prev) => appendFresh(prev, [row], maxLines));
-          });
+          const parts = buf.split("\n\n");
+          buf = parts.pop() ?? "";
+          for (const frame of parts) {
+            const dataLines = frame
+              .split("\n")
+              .filter((ln) => ln.startsWith("data:"))
+              .map((ln) => ln.slice(5).trimStart());
+            if (!dataLines.length) continue;
+            try {
+              const data = JSON.parse(dataLines.join("\n")) as Omit<
+                LogEntry,
+                "id"
+              >;
+              if (data && typeof data.message === "string") {
+                setEntries((prev) => appendFresh(prev, [data], maxLines));
+              }
+            } catch {
+              /* ignore */
+            }
+          }
         }
       } catch {
-        if (ac.signal.aborted || closed) return;
+        /* reconnect below */
       } finally {
         liveRef.current = false;
         setConnected(false);
@@ -165,25 +239,26 @@ export function useLogStream(maxLines = 10000) {
       }
     };
 
-    loadHistory("replace").finally(() => {
+    void (async () => {
+      const ok = await hostHasAuth();
+      if (!ok || closed) {
+        setRestored(true);
+        return;
+      }
+      await loadHistory("replace");
       if (closed) return;
       void connectSse();
-      // WS に依存せず、ファイル履歴ポーリングで必ず追従する
       pollTimer = window.setInterval(() => {
         if (closed) return;
         void loadHistory("append", liveRef.current ? 500 : maxLines);
       }, HISTORY_POLL_MS);
-    });
+    })();
 
     return () => {
       closed = true;
       if (retry) window.clearTimeout(retry);
       if (pollTimer) window.clearInterval(pollTimer);
-      try {
-        abortRef.current?.abort();
-      } catch {
-        /* ignore */
-      }
+      teardownSse();
     };
   }, [maxLines]);
 

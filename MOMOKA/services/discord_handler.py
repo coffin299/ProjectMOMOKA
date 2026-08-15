@@ -134,6 +134,17 @@ class DiscordLogHandler(logging.Handler):
             return
         if self._closed:
             return
+        # ユーザー入力・LLM 応答本文は Discord 転送しない（プライバシー）
+        try:
+            # 生メッセージを取る
+            raw_msg = record.getMessage()
+        except Exception:
+            # 取れなければ空
+            raw_msg = ""
+        # マーカー付きログは Host GUI のみ
+        if "[USER_INPUT]" in raw_msg or "[LLM_RESPONSE]" in raw_msg:
+            # Discord へは送らない
+            return
         msg = self.format(record)
         msg = self._sanitize_log_message(msg)
         try:

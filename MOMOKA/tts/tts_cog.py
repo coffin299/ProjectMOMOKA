@@ -6,6 +6,7 @@ import aiohttp
 import io
 import asyncio
 import json
+import math
 from pathlib import Path
 import re
 from typing import Dict, Optional, List, Any
@@ -75,6 +76,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
             length_scale=float(self.config.get('length_scale', 1.0)),
         )
         self.synthesizer = StyleBertVITS2Synthesizer(tts_cfg)
+        # ギルド横断で共有 synthesizer を守るグローバルロック
+        self._synthesizer_lock = asyncio.Lock()
         self.api_url = self.config.get('api_server_url')  # optional legacy
         self.api_key = self.config.get('api_key')
 
@@ -152,6 +155,29 @@ class TTSCog(commands.Cog, name="tts_cog"):
     async def cog_load(self):
         logging.getLogger(__name__).info("TTSCog loaded. Preparing internal synthesizer...")
         await self.fetch_available_models()  # still useful for UI and IDs
+
+    def purge_user_runtime(self, user_id: int) -> int:
+        """メモリ上の auto_join_users から指定ユーザーを除去する。"""
+        # 除去件数
+        removed = 0
+        # ギルド設定を走査する
+        for _guild_id, settings in list(getattr(self, "speech_settings", {}) or {}).items():
+            # dict 以外は無視
+            if not isinstance(settings, dict):
+                continue
+            # 一覧
+            users = settings.get("auto_join_users")
+            # list 以外は無視
+            if not isinstance(users, list):
+                continue
+            # 除去前件数
+            before = len(users)
+            # 対象以外を残す
+            settings["auto_join_users"] = [u for u in users if int(u) != int(user_id)]
+            # 差分を加算
+            removed += before - len(settings["auto_join_users"])
+        # 件数を返す
+        return removed
 
     async def cog_unload(self):
         """Cogのアンロード時にリソースをクリーンアップ"""
@@ -646,6 +672,28 @@ class TTSCog(commands.Cog, name="tts_cog"):
         final_speed = speed if speed is not None else channel_settings["speed"]
         final_volume = guild_settings.get("volume", self.default_volume)
 
+        # speed / style_weight の有限値・範囲を検証する（defer 前）
+        try:
+            # float 化
+            final_speed = float(final_speed)
+            final_style_weight = float(final_style_weight)
+        except (TypeError, ValueError):
+            # 不正型
+            return await interaction.response.send_message(
+                "❌ speed / style_weight が不正です。",
+                ephemeral=True,
+            )
+        # 有限値チェック
+        if not math.isfinite(final_speed) or not math.isfinite(final_style_weight):
+            return await interaction.response.send_message(
+                "❌ speed / style_weight は有限値にしてください。",
+                ephemeral=True,
+            )
+        # ゼロ除算・巨大 length を防ぐ閉区間
+        final_speed = max(0.5, min(2.0, final_speed))
+        # style_weight も同様に制限
+        final_style_weight = max(0.0, min(2.0, final_style_weight))
+
         await interaction.response.defer()
         async with lock:
             success = await self._handle_say_logic(interaction.guild, text, final_model_id, final_style, final_style_weight, final_speed, final_volume, interaction)
@@ -869,24 +917,28 @@ class TTSCog(commands.Cog, name="tts_cog"):
     async def _api_call_to_audio_data(self, text: str, model_id: int, style: str, style_weight: float, speed: float) -> Optional[bytes]:
         # 内製シンセサイザーを優先。失敗時はレガシーHTTP APIにフォールバック
         try:
-            # synthesize_to_wav 内で未ロード時は自動ロードされる
-            wav = self.synthesizer.synthesize_to_wav(
-                text=text,
-                style=style,
-                style_weight=style_weight,
-                speed=speed,
-                noise_scale=self.config.get('noise_scale', 0.667),
-                noise_w=self.config.get('noise_w', 0.8),
-                length_scale=self.config.get('length_scale', 1.0),
-            )
-            # 合成完了後、モデルをアンロードしてVRAMを解放
-            self.synthesizer.unload_model()
-            return wav
+            # synthesizer は Cog 共有のためギルド横断ロックで守る
+            async with self._synthesizer_lock:
+                # synthesize_to_wav 内で未ロード時は自動ロードされる
+                wav = self.synthesizer.synthesize_to_wav(
+                    text=text,
+                    style=style,
+                    style_weight=style_weight,
+                    speed=speed,
+                    noise_scale=self.config.get('noise_scale', 0.667),
+                    noise_w=self.config.get('noise_w', 0.8),
+                    length_scale=self.config.get('length_scale', 1.0),
+                )
+                # 合成完了後、モデルをアンロードしてVRAMを解放
+                self.synthesizer.unload_model()
+                return wav
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 内製TTS処理エラー: %s", e)
             # エラー時もVRAM解放を試みる
             try:
-                self.synthesizer.unload_model()
+                # ロック下で unload する
+                async with self._synthesizer_lock:
+                    self.synthesizer.unload_model()
             except Exception:  # noqa: BLE001
                 pass
 

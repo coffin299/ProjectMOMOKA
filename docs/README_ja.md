@@ -234,9 +234,25 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
 
 ギルド／チャンネル単位の上書き設定などは `data/momoka.db` に**正規化テーブル**で保存します。
 
-主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions` など。版は `schema_meta.version`（現行 3）。
+主なテーブル例: `channel_llm_models`, `link_fix_guilds` / `link_fix_sites`, `tts_channel_settings`, `speech_guild_settings`, `twitch_watch`, `earthquake_guild_config`, `logging_channels`, `vc_playback_sessions` など。版は `schema_meta.version`（現行 4）。
 
 TTS / 読み上げ設定のロードに失敗した場合、Cog unload 時の空データ保存は行いません（DB 全消し防止）。読み上げ設定・辞書のギルド単位更新は `SettingsDB.save_guild()` を優先します。`tts_channel_settings` の全体保存は dict 以外を拒否し、DELETE 前に検証します。
+
+#### セキュリティ境界（2026-08 監査対応の要点）
+
+- `/play`・メディア DL・画像 URL 取得は `url_safety`（非 http(s) 拒否・DNS 検査・接続後 peer IP 確認）を通す
+- 画像モデルは `.safetensors` のみ受理（`.ckpt` / `.pt` / `.bin` は拒否）
+- メディア DL は filesize / duration / 同時数 / ディスク quota / クールダウンを制限
+- `allowed_channel_ids` を LLM listener・`interaction_check` で実施（空 = 全許可）。DM は `allowed_channel_allow_dm`
+- Discord 招待権限は最小セット（View/Send/Embed/Attach/History/Connect/Speak/Voice Activity/Manage Messages）
+- Host GUI のログマスクはファイル原子置換 + ライブログ `event_id` / `content_hash` 反映。`all` 削除は strict bool
+- Host GUI Bearer は Electron **main process のみ**保持（renderer / preload に渡さない。API・SSE は IPC 代理）
+- Host GUI API ready は `/status` ヘルス確認後に Electron 起動。起動停止は世代ロックで競合回避
+- status / VC / guilds メトリクスは Bot イベントループ上でスナップショット（API スレッドから直接触らない）
+- Discord 転送ログから `[USER_INPUT]` / `[LLM_RESPONSE]` を除外
+- `channel_llm_models` / `response_time_samples` は bot_id・model 単位 UPSERT（二体 Bot の消し合い防止）
+- webpage GitHub Actions は third-party action をコミット SHA ピン
+- **M-10（electron:dev CORS）は意図的に未変更**（触ると開発フローが壊れやすい）
 
 #### ホスト設定とギルド設定の境界
 
@@ -256,8 +272,9 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 #### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
-- Host GUI のログ配信は **Bearer 付き SSE**（`GET /host-gui/api/logs/stream`）と `/logs/history` ポーリング。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
-- LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証）
+- Host GUI のログ配信は **main process 経由の Bearer SSE**（renderer に token を渡さない）と `/logs/history` ポーリング。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
+- LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証・peer IP 確認）
+- 画像生成パラメータは steps/CFG 範囲制限・キュー上限あり。モデルは safetensors のみ
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない
 
 #### 将来 Web ダッシュボード設計メモ（未実装）

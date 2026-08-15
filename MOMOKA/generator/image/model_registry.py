@@ -11,9 +11,6 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_WEIGHTS_EXTENSIONS = {
     ".safetensors",
-    ".ckpt",
-    ".pt",
-    ".bin",
 }
 SUPPORTED_VAE_EXTENSIONS = {
     ".vae",
@@ -21,8 +18,6 @@ SUPPORTED_VAE_EXTENSIONS = {
 }
 SUPPORTED_LORA_EXTENSIONS = {
     ".safetensors",
-    ".ckpt",
-    ".pt",
 }
 
 

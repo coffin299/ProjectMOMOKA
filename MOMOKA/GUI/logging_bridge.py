@@ -7,10 +7,10 @@ from io import StringIO
 from typing import Tuple
 
 
-def create_log_queue() -> queue.Queue:
+def create_log_queue(maxsize: int = 5000) -> queue.Queue:
     """GUI ログビューアと共有するキューを生成する。"""
-    # スレッドセーフな FIFO を返す
-    return queue.Queue()
+    # 上限付き FIFO（OOM 防止）
+    return queue.Queue(maxsize=maxsize)
 
 
 class QueueHandler(logging.Handler):
@@ -30,7 +30,25 @@ class QueueHandler(logging.Handler):
         """1 レコードをキューへ載せる。"""
         try:
             # (ロガー名, レベル名, 整形済み文言) のタプルで送る
-            self.log_queue.put((record.name, record.levelname, self.format(record)))
+            self.log_queue.put_nowait(
+                (record.name, record.levelname, self.format(record))
+            )
+        except queue.Full:
+            # 満杯時は古いものを捨てて最新を優先する
+            try:
+                # 古い 1 件を捨てる
+                self.log_queue.get_nowait()
+            except queue.Empty:
+                # 競合で空なら何もしない
+                pass
+            try:
+                # 最新を再度入れる
+                self.log_queue.put_nowait(
+                    (record.name, record.levelname, self.format(record))
+                )
+            except queue.Full:
+                # それでもダメなら破棄
+                pass
         except Exception:
             # logging 標準のエラー処理に委ねる
             self.handleError(record)
@@ -61,8 +79,19 @@ class StdoutCapture:
             for line in text.rstrip().split("\n"):
                 # 空白のみの行は捨てる
                 if line.strip():
-                    # 標準出力のログとして扱う
-                    self.log_queue.put(("stdout", "INFO", line))
+                    # 標準出力のログとして扱う（満杯時は古いものを捨てる）
+                    try:
+                        # 非ブロッキング投入
+                        self.log_queue.put_nowait(("stdout", "INFO", line))
+                    except queue.Full:
+                        try:
+                            # 古い 1 件を捨てる
+                            self.log_queue.get_nowait()
+                            # 最新を入れる
+                            self.log_queue.put_nowait(("stdout", "INFO", line))
+                        except Exception:
+                            # 破棄
+                            pass
         except Exception:
             # エラーが発生しても元の標準出力は動作させる
             pass

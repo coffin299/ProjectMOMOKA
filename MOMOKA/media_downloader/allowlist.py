@@ -12,7 +12,9 @@ from yt_dlp.extractor import gen_extractors
 from MOMOKA.config.loader import configs_dir, ensure_default_configs
 from MOMOKA.utilities.url_safety import (
     UnsafeURLError,
-    assert_safe_http_url,
+    assert_info_urls_safe,
+    assert_user_media_query_safe,
+    has_explicit_uri_scheme,
     looks_like_http_url,
 )
 
@@ -215,17 +217,19 @@ def check_download_url_allowed(
     """
     # 許可集合（未指定ならロード）
     allow = allowed if allowed is not None else load_allowed_extractors()
-    # 検索クエリ（非 URL）は default_search=ytsearch 前提で YouTube 扱い
-    if not looks_like_http_url(url_or_query):
+    # 明示スキーム付きの非 http(s)（rtmp 等）は検索語扱いにせず拒否する
+    try:
+        # 利用者入力の共通検証
+        assert_user_media_query_safe(url_or_query)
+    except UnsafeURLError:
+        # SSRF / 不正スキーム
+        return False, "unsafe_url", None
+    # 検索クエリ（スキーム無し）は default_search=ytsearch 前提で YouTube 扱い
+    if not looks_like_http_url(url_or_query) and not has_explicit_uri_scheme(
+        url_or_query
+    ):
         # YouTube 検索は常に許可
         return True, "ok", "Youtube"
-    # http(s) URL ならプライベート IP 等を拒否
-    try:
-        # SSRF / プライベート IP 検査
-        assert_safe_http_url(url_or_query)
-    except UnsafeURLError:
-        # 危険 URL
-        return False, "unsafe_url", None
     # マッチ IE を解決
     ie = resolve_extractor_for_url(url_or_query)
     # 無し
@@ -312,20 +316,9 @@ def _evaluate_ie(
 
 
 def assert_info_url_safe(info: Dict[str, Any]) -> None:
-    """extract_info 後の webpage_url / url に対する追加 SSRF チェック。"""
-    # 候補 URL を集める
-    candidates = []
-    # ページ URL
-    for key in ("webpage_url", "original_url", "url"):
-        # 値を取る
-        val = info.get(key)
-        # http(s) らしいものだけ
-        if isinstance(val, str) and looks_like_http_url(val):
-            candidates.append(val)
-    # 各候補を検証
-    for candidate in candidates:
-        # 危険なら例外
-        assert_safe_http_url(candidate)
+    """extract_info 後の webpage_url / url / formats 等に対する追加 SSRF チェック。"""
+    # 共通ヘルパーで info 内の全 http(s) URL を検証する
+    assert_info_urls_safe(info)
 
 
 def allowlist_path_for_docs() -> Path:

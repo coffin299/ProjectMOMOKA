@@ -400,11 +400,16 @@ class TunnelFileServer:
         resp = web.FileResponse(path)
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Cache-Control"] = "no-store"
-        # RFC 5987 風のファイル名
-        ascii_name = filename.encode("ascii", "ignore").decode("ascii") or "download.bin"
-        utf8_name = quote(filename)
+        # RFC 5987 風のファイル名（制御文字・引用符を除去）
+        cleaned = "".join(
+            ch for ch in filename if ch >= " " and ch not in {'"', "\\", "\r", "\n"}
+        )
+        ascii_name = cleaned.encode("ascii", "ignore").decode("ascii") or "download.bin"
+        # 残った危険文字も念のため置換
+        ascii_name = ascii_name.replace(";", "_")
+        utf8_name = quote(cleaned or "download.bin", safe="")
         resp.headers["Content-Disposition"] = (
-            f'attachment; filename="{ascii_name}"; '
+            f"attachment; filename=\"{ascii_name}\"; "
             f"filename*=UTF-8''{utf8_name}"
         )
         return resp

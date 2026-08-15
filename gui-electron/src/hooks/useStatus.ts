@@ -41,7 +41,14 @@ export function useStatus(pollMs = 1000) {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
+    let generation = 0;
+    let timer: number | undefined;
+
     const tick = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      const myGen = ++generation;
       try {
         const [s, v, g, l] = await Promise.all([
           apiGet<StatusPayload>("/status"),
@@ -49,20 +56,29 @@ export function useStatus(pollMs = 1000) {
           apiGet<{ items: GuildItem[] }>("/guilds"),
           apiGet<{ average_seconds: number | null }>("/llm/stats"),
         ]);
-        if (cancelled) return;
+        if (cancelled || myGen !== generation) return;
         setStatus(s);
         setVc(v.items || []);
         setGuilds(g.items || []);
         setAvgLatency(l.average_seconds);
       } catch {
-        // API 未起動時は無視
+        if (cancelled || myGen !== generation) return;
+        // 失敗時は切断状態へ倒す
+        setStatus(null);
+        setVc([]);
+        setGuilds([]);
+        setAvgLatency(null);
+      } finally {
+        inFlight = false;
+        if (!cancelled) {
+          timer = window.setTimeout(tick, pollMs);
+        }
       }
     };
     tick();
-    const id = window.setInterval(tick, pollMs);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [pollMs]);
 

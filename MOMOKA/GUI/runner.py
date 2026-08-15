@@ -9,6 +9,8 @@ import subprocess
 import threading
 import time
 import traceback
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -18,10 +20,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GUI_ELECTRON_DIR = _REPO_ROOT / "gui-electron"
 # 起動中の Electron（または npm）プロセス
 _electron_proc: Optional[subprocess.Popen] = None
-# stop の多重呼び出し防止
-_stop_lock = threading.Lock()
+# start / stop を直列化する（Popen 代入レース防止）
+_lifecycle_lock = threading.Lock()
 # atexit 登録済みか
 _atexit_registered = False
+# 起動世代（stop 中の古い start を破棄）
+_start_generation = 0
 
 # Windows: コンソールから切り離し（pause のキー入力を奪わない）
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -31,9 +35,11 @@ _DETACHED_PROCESS = 0x00000008
 def stop_host_gui() -> None:
     """Electron ホスト GUI プロセスツリーを終了する。"""
     # グローバル参照
-    global _electron_proc
+    global _electron_proc, _start_generation
     # 多重実行を直列化
-    with _stop_lock:
+    with _lifecycle_lock:
+        # 進行中の start を無効化
+        _start_generation += 1
         # 現在のプロセスを取る
         proc = _electron_proc
         # 参照を先に外す
@@ -100,6 +106,40 @@ def _popen_detached(args: list, *, cwd: str, env: dict) -> subprocess.Popen:
     return subprocess.Popen(args, **kwargs)
 
 
+def _wait_api_ready(port: int, token: str, timeout_sec: float = 15.0) -> bool:
+    """Host GUI /status が 200 を返すまで待つ。"""
+    # ヘルス確認 URL
+    url = f"http://127.0.0.1:{port}/host-gui/api/status"
+    # 期限
+    deadline = time.monotonic() + timeout_sec
+    # 認証付き GET
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    # ポーリング
+    while time.monotonic() < deadline:
+        try:
+            # 短いタイムアウトで叩く
+            with urllib.request.urlopen(req, timeout=1.0) as resp:
+                # 200 なら ready
+                if getattr(resp, "status", 200) == 200:
+                    return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            # 未起動は再試行
+            time.sleep(0.2)
+            continue
+        except Exception:
+            # 想定外も再試行
+            time.sleep(0.2)
+            continue
+        # 非 200 も少し待つ
+        time.sleep(0.2)
+    # タイムアウト
+    return False
+
+
 def _start_api_server(log_queue) -> tuple[int, str]:
     """uvicorn をデーモンスレッドで起動し (port, token) を返す。"""
     # 遅延 import
@@ -121,10 +161,14 @@ def _start_api_server(log_queue) -> tuple[int, str]:
     port = find_free_port()
     # FastAPI アプリ
     app = create_host_gui_app(log_queue, auth)
+    # 起動完了シグナル
+    ready = threading.Event()
 
     def _run() -> None:
         """uvicorn をこのスレッドで回す。"""
         try:
+            # リッスン開始直前に合図（実際の ready は HTTP で再確認）
+            ready.set()
             # loopback のみ
             uvicorn.run(
                 app,
@@ -143,13 +187,19 @@ def _start_api_server(log_queue) -> tuple[int, str]:
     thread = threading.Thread(target=_run, name="momoka-host-gui-api", daemon=True)
     # 開始
     thread.start()
-    # 起動待ち（短い）
-    time.sleep(0.8)
+    # スレッド開始待ち
+    ready.wait(timeout=5.0)
+    # HTTP ready 待ち（固定 sleep をやめる）
+    if not _wait_api_ready(port, token):
+        print(
+            "WARNING: ホスト GUI API の ready 確認がタイムアウトしました。"
+            "Electron 起動を継続します。"
+        )
     # ポートとトークン
     return port, token
 
 
-def _launch_electron(port: int, token: str) -> Optional[subprocess.Popen]:
+def _launch_electron(port: int, token: str, generation: int) -> Optional[subprocess.Popen]:
     """gui-electron を subprocess 起動。失敗時は None。"""
     # グローバルに保持
     global _electron_proc
@@ -200,33 +250,56 @@ def _launch_electron(port: int, token: str) -> Optional[subprocess.Popen]:
                 "`cd gui-electron && npm run build` を実行してください。（Bot は継続します）"
             )
             return None
+
+        def _adopt(proc: subprocess.Popen) -> Optional[subprocess.Popen]:
+            """世代が一致するときだけグローバルへ登録する。"""
+            with _lifecycle_lock:
+                # stop 済み世代なら即終了
+                if generation != _start_generation:
+                    try:
+                        if os.name == "nt":
+                            subprocess.run(
+                                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                                check=False,
+                            )
+                        else:
+                            proc.kill()
+                    except Exception:
+                        pass
+                    return None
+                # 正常採用
+                _electron_proc = proc
+                return proc
+
         # 1) electron.exe 直接
         if os.name == "nt" and electron_exe.is_file():
-            proc = _popen_detached(
-                [str(electron_exe), "."],
-                cwd=str(_GUI_ELECTRON_DIR),
-                env=env,
+            return _adopt(
+                _popen_detached(
+                    [str(electron_exe), "."],
+                    cwd=str(_GUI_ELECTRON_DIR),
+                    env=env,
+                )
             )
-            _electron_proc = proc
-            return proc
         # 2) node_modules/.bin/electron
         if electron_bin.exists():
-            proc = _popen_detached(
-                [str(electron_bin), "."],
-                cwd=str(_GUI_ELECTRON_DIR),
-                env=env,
+            return _adopt(
+                _popen_detached(
+                    [str(electron_bin), "."],
+                    cwd=str(_GUI_ELECTRON_DIR),
+                    env=env,
+                )
             )
-            _electron_proc = proc
-            return proc
         # 3) npm run electron:prod フォールバック
         if npm and (_GUI_ELECTRON_DIR / "package.json").is_file():
-            proc = _popen_detached(
-                [npm, "run", "electron:prod"],
-                cwd=str(_GUI_ELECTRON_DIR),
-                env=env,
+            return _adopt(
+                _popen_detached(
+                    [npm, "run", "electron:prod"],
+                    cwd=str(_GUI_ELECTRON_DIR),
+                    env=env,
+                )
             )
-            _electron_proc = proc
-            return proc
     except Exception as e:
         # 起動失敗
         print(f"WARNING: Electron の起動に失敗しました: {e}")
@@ -250,15 +323,22 @@ def run_log_viewer_thread(log_queue) -> threading.Thread:
 
     def run_gui() -> None:
         """API と Electron を起動する。"""
+        global _start_generation
         try:
-            # API 起動
+            # この起動の世代番号
+            with _lifecycle_lock:
+                _start_generation += 1
+                generation = _start_generation
+            # API 起動（ready 待ち込み）
             port, token = _start_api_server(log_queue)
+            # stop 済みなら Electron を出さない
+            with _lifecycle_lock:
+                if generation != _start_generation:
+                    return
             # 起動ログ（トークンは出さない）
             print(f"ホスト GUI API を 127.0.0.1:{port} で起動しました。")
-            # 静的配信・uvicorn 準備待ち
-            time.sleep(0.8)
             # Electron
-            _launch_electron(port, token)
+            _launch_electron(port, token, generation)
         except Exception as e:
             # GUI 失敗でも Bot 本体は止めない
             print(f"ホスト GUI でエラーが発生しました: {e}")

@@ -33,6 +33,20 @@ image_generator:
   min_width: 256
   # 最小高さ（px）
   min_height: 256
+  # サンプリングステップ下限（GPU DoS 防止）
+  min_steps: 1
+  # サンプリングステップ上限
+  max_steps: 50
+  # CFG 下限
+  min_cfg_scale: 1.0
+  # CFG 上限
+  max_cfg_scale: 20.0
+  # 待機キュー最大長
+  max_queue_size: 8
+  # 同一ユーザーの同時リクエスト上限（実行中含む）
+  max_user_queued: 2
+  # 1 生成ジョブのタイムアウト秒
+  job_timeout_sec: 300.0
   # 使うモデル ID / パス。null なら環境・Forge 側の既定に従う
   model: null
   # ローカル／共通の既定生成パラメータ

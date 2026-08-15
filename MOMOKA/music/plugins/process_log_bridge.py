@@ -35,7 +35,7 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
     (
         re.compile(
-            r"(?i)\b(cookie|set-cookie)\s*[:=]\s*[^\s,;]+"
+            r"(?i)\b(cookie|set-cookie)\s*[:=]\s*.+$",
         ),
         r"\1=[REDACTED]",
     ),

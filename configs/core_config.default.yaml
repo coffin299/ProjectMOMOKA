@@ -37,6 +37,8 @@ presence:
 
 # 空配列 = 全チャンネル許可。ID を列挙するとそのチャンネルだけ応答する制限モード
 allowed_channel_ids: []
+# true なら DM も許可（allowed_channel_ids が空でなくても DM は別判定）
+allowed_channel_allow_dm: true
 
 # 音楽 Cog のテキストプレフィックスコマンド接頭辞（空 = プレフィックス無効、スラッシュのみ）
 music_cog_prefix: ''

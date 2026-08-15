@@ -8,7 +8,7 @@ import logging
 import os
 import time
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import discord
 import yt_dlp
@@ -31,15 +31,141 @@ from MOMOKA.utilities.locale import pick_str, resolve_interaction_lang
 DELETE_DELAY_SECONDS = 600
 # 一時ダウンロードディレクトリ
 DOWNLOAD_DIR = "temp_media_download"
+# 1 ファイルの最大サイズ（バイト）
+MAX_FILESIZE_BYTES = 512 * 1024 * 1024
+# 最大再生時間（秒）
+MAX_DURATION_SEC = 3 * 60 * 60
+# 同時ダウンロード数
+MAX_CONCURRENT_DOWNLOADS = 2
+# ダウンロードジョブのタイムアウト（秒）
+DOWNLOAD_JOB_TIMEOUT_SEC = 600.0
+# DOWNLOAD_DIR の総容量上限（バイト）
+DISK_QUOTA_BYTES = 2 * 1024 * 1024 * 1024
+# 同一ユーザーの連続実行クールダウン（秒）
+USER_COOLDOWN_SEC = 15.0
 # --- 設定項目ここまで ---
 
 logger = logging.getLogger(__name__)
+
+# 同時ダウンロード制御用セマフォ（Cog 初期化時に作る）
+_download_semaphore: Optional[asyncio.Semaphore] = None
+# ユーザー別最終実行時刻
+_user_cooldown_until: Dict[int, float] = {}
 
 # UI アクセント色
 _ACCENT_SELECT = discord.Color.from_rgb(220, 40, 40)
 _ACCENT_PROGRESS = discord.Color.from_rgb(79, 194, 255)
 _ACCENT_READY = discord.Color.green()
 _ACCENT_ERROR = discord.Color.dark_red()
+
+
+def _dir_usage_bytes(path: str) -> int:
+    """ディレクトリ内ファイルの合計バイト数を返す。"""
+    # 合計
+    total = 0
+    # 無ければ 0
+    if not os.path.isdir(path):
+        return 0
+    # 配下を走査する
+    for root, _dirs, files in os.walk(path):
+        # 各ファイル
+        for name in files:
+            # フルパス
+            full = os.path.join(root, name)
+            try:
+                # サイズ加算
+                total += os.path.getsize(full)
+            except OSError:
+                # 消失等は無視
+                continue
+    # 返す
+    return total
+
+
+def _info_resource_reject_reason(info: Dict[str, Any], *, lang: str) -> Optional[str]:
+    """filesize / duration 上限超過ならユーザー向け文言、問題なければ None。"""
+    # 再生時間
+    duration = info.get("duration")
+    # 数値化を試みる
+    try:
+        # 秒
+        duration_sec = float(duration) if duration is not None else 0.0
+    except (TypeError, ValueError):
+        # 不明は 0 扱い
+        duration_sec = 0.0
+    # 上限超過
+    if duration_sec > MAX_DURATION_SEC:
+        # 拒否文言
+        return pick_str(
+            lang,
+            ja=f"再生時間が長すぎます（上限 {int(MAX_DURATION_SEC // 60)} 分）。",
+            en=f"Media is too long (max {int(MAX_DURATION_SEC // 60)} minutes).",
+        )
+    # ファイルサイズ候補
+    size = info.get("filesize") or info.get("filesize_approx")
+    # 数値化
+    try:
+        # バイト
+        size_bytes = int(size) if size is not None else 0
+    except (TypeError, ValueError):
+        # 不明は 0
+        size_bytes = 0
+    # 上限超過
+    if size_bytes > MAX_FILESIZE_BYTES:
+        # 拒否文言
+        return pick_str(
+            lang,
+            ja=f"ファイルが大きすぎます（上限 {MAX_FILESIZE_BYTES // (1024 * 1024)} MB）。",
+            en=f"File is too large (max {MAX_FILESIZE_BYTES // (1024 * 1024)} MB).",
+        )
+    # ディスク quota
+    if _dir_usage_bytes(DOWNLOAD_DIR) >= DISK_QUOTA_BYTES:
+        # 容量不足
+        return pick_str(
+            lang,
+            ja="一時保存領域の容量上限に達しています。しばらく待ってから再試行してください。",
+            en="Temporary storage quota reached. Please try again later.",
+        )
+    # OK
+    return None
+
+
+def _get_download_semaphore() -> asyncio.Semaphore:
+    """プロセス内共有のダウンロードセマフォを返す。"""
+    # グローバル参照
+    global _download_semaphore
+    # 未作成なら作る
+    if _download_semaphore is None:
+        # 同時実行上限
+        _download_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+    # 返す
+    return _download_semaphore
+
+
+def _check_user_cooldown(user_id: int, *, lang: str) -> Optional[str]:
+    """クールダウン中なら文言、そうでなければ None。"""
+    # 現在時刻
+    now = time.monotonic()
+    # 解除時刻
+    until = _user_cooldown_until.get(int(user_id), 0.0)
+    # まだ待て
+    if until > now:
+        # 残り秒
+        remain = int(until - now) + 1
+        # 文言
+        return pick_str(
+            lang,
+            ja=f"クールダウン中です。あと約 {remain} 秒待ってください。",
+            en=f"Cooldownoldown active. Please wait about {remain}s.",
+        )
+    # OK
+    return None
+
+
+def _mark_user_cooldown(user_id: int) -> None:
+    """ユーザーのクールダウン終了時刻を更新する。"""
+    # 終了時刻を記録する
+    _user_cooldown_until[int(user_id)] = time.monotonic() + USER_COOLDOWN_SEC
 
 
 def _format_duration(duration: Optional[int]) -> str:
@@ -372,6 +498,44 @@ class VideoFormatSelect(discord.ui.Select):
                     content=None, embed=None, view=progress
                 )
                 return
+            # 資源上限（時間・サイズ・ディスク）を確認する
+            if isinstance(self.info, dict):
+                # 上限超過文言
+                resource_msg = _info_resource_reject_reason(self.info, lang=lang)
+                # 超過なら拒否
+                if resource_msg:
+                    progress.update(
+                        pick_str(
+                            lang,
+                            ja=f"### ❌ エラー\n{resource_msg}",
+                            en=f"### ❌ Error\n{resource_msg}",
+                        ),
+                        accent=_ACCENT_ERROR,
+                    )
+                    await interaction.edit_original_response(
+                        content=None, embed=None, view=progress
+                    )
+                    return
+            # クールダウン確認
+            cool_msg = _check_user_cooldown(interaction.user.id, lang=lang)
+            # クールダウン中なら拒否
+            if cool_msg:
+                progress.update(
+                    pick_str(
+                        lang,
+                        ja=f"### ❌ エラー\n{cool_msg}",
+                        en=f"### ❌ Error\n{cool_msg}",
+                    ),
+                    accent=_ACCENT_ERROR,
+                )
+                await interaction.edit_original_response(
+                    content=None, embed=None, view=progress
+                )
+                return
+            # yt-dlp にも filesize / timeout を渡す
+            ydl_opts["max_filesize"] = MAX_FILESIZE_BYTES
+            # ソケットタイムアウト
+            ydl_opts["socket_timeout"] = 30
             # 同期ダウンロードをスレッドへ逃がす
             def download_sync():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -380,8 +544,15 @@ class VideoFormatSelect(discord.ui.Select):
                     ydl.download([self.url])
                     return final_path if os.path.exists(final_path) else None
 
-            # ダウンロード実行
-            downloaded_file_path = await asyncio.to_thread(download_sync)
+            # セマフォで同時実行を制限する
+            async with _get_download_semaphore():
+                # タイムアウト付きでダウンロードする
+                downloaded_file_path = await asyncio.wait_for(
+                    asyncio.to_thread(download_sync),
+                    timeout=DOWNLOAD_JOB_TIMEOUT_SEC,
+                )
+            # 成功したらクールダウンを記録する
+            _mark_user_cooldown(interaction.user.id)
 
             # 結合失敗
             if not downloaded_file_path:
@@ -764,6 +935,20 @@ class YtdlpDownloaderCog(commands.Cog):
             )
             await interaction.followup.send(view=err_view)
             return
+        # クールダウン確認
+        cool_msg = _check_user_cooldown(interaction.user.id, lang=lang)
+        # クールダウン中なら拒否
+        if cool_msg:
+            err_view = StatusLayoutView(
+                pick_str(
+                    lang,
+                    ja=f"### ❌ エラー\n{cool_msg}",
+                    en=f"### ❌ Error\n{cool_msg}",
+                ),
+                accent=_ACCENT_ERROR,
+            )
+            await interaction.followup.send(view=err_view)
+            return
         # 一時ファイル用 ID
         unique_id = str(uuid.uuid4())
         output_path = os.path.join(DOWNLOAD_DIR, f"{unique_id}.{audio_format}")
@@ -784,6 +969,8 @@ class YtdlpDownloaderCog(commands.Cog):
                 "quiet": True,
                 "no_warnings": True,
                 "noprogress": True,
+                "max_filesize": MAX_FILESIZE_BYTES,
+                "socket_timeout": 30,
             }
         )
 
@@ -821,6 +1008,20 @@ class YtdlpDownloaderCog(commands.Cog):
                     )
                     await interaction.followup.send(view=err_view)
                     return
+                # 資源上限を確認する
+                resource_msg = _info_resource_reject_reason(info, lang=lang)
+                # 超過なら拒否
+                if resource_msg:
+                    err_view = StatusLayoutView(
+                        pick_str(
+                            lang,
+                            ja=f"### ❌ エラー\n{resource_msg}",
+                            en=f"### ❌ Error\n{resource_msg}",
+                        ),
+                        accent=_ACCENT_ERROR,
+                    )
+                    await interaction.followup.send(view=err_view)
+                    return
                 video_title = info.get("title", "audio")
                 # 進捗本文を更新
                 progress.update(
@@ -838,8 +1039,15 @@ class YtdlpDownloaderCog(commands.Cog):
                 )
                 # 初回送信（V2）
                 message = await interaction.followup.send(view=progress)
-                # ダウンロード実行
-                await asyncio.to_thread(ydl.download, [query])
+                # セマフォ + タイムアウト付きでダウンロードする
+                async with _get_download_semaphore():
+                    # ジョブタイムアウトを適用する
+                    await asyncio.wait_for(
+                        asyncio.to_thread(ydl.download, [query]),
+                        timeout=DOWNLOAD_JOB_TIMEOUT_SEC,
+                    )
+                # 成功時クールダウン
+                _mark_user_cooldown(interaction.user.id)
             # 変換結果が無い
             if not os.path.exists(output_path):
                 progress.update(
@@ -981,6 +1189,34 @@ class YtdlpDownloaderCog(commands.Cog):
                         lang,
                         ja=f"### ❌ エラー\n{reject_after}",
                         en=f"### ❌ Error\n{reject_after}",
+                    ),
+                    accent=_ACCENT_ERROR,
+                )
+                await interaction.followup.send(view=err_view)
+                return
+            # 資源上限を確認する
+            resource_msg = _info_resource_reject_reason(info, lang=lang)
+            # 超過なら拒否
+            if resource_msg:
+                err_view = StatusLayoutView(
+                    pick_str(
+                        lang,
+                        ja=f"### ❌ エラー\n{resource_msg}",
+                        en=f"### ❌ Error\n{resource_msg}",
+                    ),
+                    accent=_ACCENT_ERROR,
+                )
+                await interaction.followup.send(view=err_view)
+                return
+            # クールダウン確認
+            cool_msg = _check_user_cooldown(interaction.user.id, lang=lang)
+            # クールダウン中なら拒否
+            if cool_msg:
+                err_view = StatusLayoutView(
+                    pick_str(
+                        lang,
+                        ja=f"### ❌ エラー\n{cool_msg}",
+                        en=f"### ❌ Error\n{cool_msg}",
                     ),
                     accent=_ACCENT_ERROR,
                 )

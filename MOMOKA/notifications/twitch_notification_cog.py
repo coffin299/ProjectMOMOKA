@@ -38,6 +38,39 @@ def _is_valid_twitch_credential(value: Any) -> bool:
     return bool(value.strip()) and not value.strip().upper().startswith("YOUR_")
 
 
+def _parse_oauth_token_payload(data: Any) -> tuple[str, int]:
+    """OAuth token JSON を検証して (access_token, expires_in) を返す。"""
+    # ルートは object
+    if not isinstance(data, dict):
+        raise DataParsingError("Twitch OAuth 応答が object ではありません")
+    # access_token
+    token = data.get("access_token")
+    if not isinstance(token, str) or not token.strip():
+        raise DataParsingError("Twitch OAuth 応答に access_token がありません")
+    # expires_in
+    expires_in = data.get("expires_in")
+    if not isinstance(expires_in, (int, float)) or float(expires_in) <= 0:
+        raise DataParsingError("Twitch OAuth 応答の expires_in が不正です")
+    # 正規化して返す
+    return token.strip(), int(expires_in)
+
+
+def _parse_helix_data_list(data: Any, *, context: str) -> List[Dict[str, Any]]:
+    """Helix 応答の data 配列を検証して dict 要素だけ返す。"""
+    # ルートは object
+    if not isinstance(data, dict):
+        raise DataParsingError(f"Twitch Helix 応答が object ではありません ({context})")
+    # data キー
+    items = data.get("data")
+    # 省略は空
+    if items is None:
+        return []
+    # 配列必須
+    if not isinstance(items, list):
+        raise DataParsingError(f"Twitch Helix 応答の data が配列ではありません ({context})")
+    # object 要素のみ受理
+    return [row for row in items if isinstance(row, dict)]
+
 class TwitchNotification(commands.Cog):
     """Twitchの配信開始を通知するCog"""
 
@@ -138,14 +171,19 @@ class TwitchNotification(commands.Cog):
         try:
             async with self.session.post(TWITCH_AUTH_URL, params=params) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
-                    self.access_token = data["access_token"]
+                    data = await resp.json(content_type=None)
+                    # スキーマ検証（L-12）
+                    token, expires_in = _parse_oauth_token_payload(data)
+                    self.access_token = token
                     # 期限の1分前に更新するようにマージンを設定
-                    self.token_expires_at = time.time() + data["expires_in"] - 60
+                    self.token_expires_at = time.time() + expires_in - 60
                     logger.info("Twitch APIのアクセストークンを更新しました。")
                 else:
                     text = await resp.text()
                     raise self.handler.handle_api_response_error(resp.status, TWITCH_AUTH_URL, text)
+        except DataParsingError:
+            # 検証失敗はそのまま伝播
+            raise
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             raise self.handler.handle_api_error(e, "アクセストークン取得")
 
@@ -167,7 +205,10 @@ class TwitchNotification(commands.Cog):
         try:
             async with self.session.get(url, headers=headers, params=params) as resp:
                 if resp.status == 200:
-                    return await resp.json()
+                    raw = await resp.json(content_type=None)
+                    # data 配列を検証し、正規化済み dict を返す
+                    items = _parse_helix_data_list(raw, context=endpoint)
+                    return {"data": items}
                 if resp.status == 401:
                     # 失効トークンを捨てる
                     self.access_token = None
@@ -182,6 +223,8 @@ class TwitchNotification(commands.Cog):
                         )
                 text = await resp.text()
                 raise self.handler.handle_api_response_error(resp.status, url, text)
+        except DataParsingError:
+            raise
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             raise self.handler.handle_api_error(e, f"APIリクエスト: {endpoint}")
         except json.JSONDecodeError as e:
@@ -238,9 +281,13 @@ class TwitchNotification(commands.Cog):
                 )
 
             settings_changed = False
+            # await 中の設定変更で破壊されないよう snapshot を取る
+            guild_items = list(self.settings.items())
             # 全てのサーバー、全てのチャンネル設定をチェック
-            for guild_id, guild_settings in self.settings.items():
-                for user_id, stream_config in guild_settings.items():
+            for guild_id, guild_settings in guild_items:
+                # ギルド内も snapshot
+                user_items = list(guild_settings.items())
+                for user_id, stream_config in user_items:
                     channel = self.bot.get_channel(stream_config["notification_channel_id"])
                     if not channel:
                         logger.warning(
