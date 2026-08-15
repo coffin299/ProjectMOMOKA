@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-46J394MX23"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-46J394MX23');
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>機能概要｜MOMOKA Discordボット</title>
+    <meta name="description" content="MOMOKA（PLANA / ARONA）の機能概要。全体構成と AI・音楽・TTS・Link Fix・通知などのフロー図と解説。">
+    <meta name="robots" content="index, follow, max-snippet:-1">
+    <link rel="canonical" href="https://momoka-project.com/overview/">
+    <link rel="alternate" hreflang="ja" href="https://momoka-project.com/overview/">
+    <link rel="alternate" hreflang="en" href="https://momoka-project.com/overview/">
+    <link rel="alternate" hreflang="x-default" href="https://momoka-project.com/overview/">
+    <link rel="icon" href="/assets/icons/favicon.ico">
+    <link rel="apple-touch-icon" href="/assets/images/icon.png">
+    <meta property="og:title" content="機能概要｜MOMOKA">
+    <meta property="og:description" content="全体構成と主要機能のフロー図・解説。">
+    <meta property="og:url" content="https://momoka-project.com/overview/">
+    <meta property="og:type" content="article">
+    <meta property="og:site_name" content="MOMOKA">
+    <meta property="og:locale" content="ja_JP">
+    <meta property="og:image" content="https://momoka-project.com/assets/images/icon.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="機能概要｜MOMOKA">
+    <meta name="twitter:description" content="全体構成と主要機能のフロー図・解説。">
+    <meta name="twitter:image" content="https://momoka-project.com/assets/images/icon.png">
+    <meta name="theme-color" content="#1c1917">
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "機能概要｜MOMOKA",
+      "description": "MOMOKA Discordボットの機能概要とフロー図",
+      "url": "https://momoka-project.com/overview/",
+      "isPartOf": { "@type": "WebSite", "name": "MOMOKA", "url": "https://momoka-project.com/" },
+      "breadcrumb": {
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+          { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://momoka-project.com/" },
+          { "@type": "ListItem", "position": 2, "name": "Overview", "item": "https://momoka-project.com/overview/" }
+        ]
+      }
+    }
+    </script>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("momoka-theme");
+          if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", t);
+          var l = localStorage.getItem("momoka-lang");
+          if (!l) l = (navigator.language || "ja").toLowerCase().indexOf("ja") === 0 ? "ja" : "en";
+          document.documentElement.setAttribute("data-lang", l);
+          document.documentElement.setAttribute("lang", l);
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/style.css?v=20260815-overview">
+</head>
+<body class="docs-body docs-wide">
+    <header class="docs-header">
+        <div class="docs-header-left">
+            <button type="button" class="docs-menu-btn" data-docs-menu aria-expanded="false" aria-label="Menu">☰</button>
+            <a class="docs-brand" href="/">
+                <img src="/assets/images/icon.png" alt="" width="28" height="28">
+                <span>MOMOKA</span>
+            </a>
+        </div>
+        <div class="site-controls">
+            <button type="button" class="ctrl-btn" data-lang-toggle>EN</button>
+            <button type="button" class="ctrl-btn" data-theme-toggle>Dark</button>
+        </div>
+    </header>
+    <div class="docs-overlay" aria-hidden="true"></div>
+
+    <div class="docs-layout">
+        <aside class="docs-sidebar" aria-label="Docs">
+            <div class="docs-nav-label">Docs</div>
+            <nav class="docs-nav">
+                <a href="/"><span class="lang-ja">ホーム</span><span class="lang-en">Home</span></a>
+                <a href="/overview/" class="active"><span class="lang-ja">機能概要</span><span class="lang-en">Overview</span></a>
+                <a href="/faq/">FAQ</a>
+                <a href="/troubleshooting/"><span class="lang-ja">トラブルシューティング</span><span class="lang-en">Troubleshooting</span></a>
+                <a href="/commands/"><span class="lang-ja">コマンド</span><span class="lang-en">Commands</span></a>
+                <a href="/terms/"><span class="lang-ja">利用規約</span><span class="lang-en">Terms</span></a>
+                <a href="/privacy/"><span class="lang-ja">プライバシー</span><span class="lang-en">Privacy</span></a>
+                <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a>
+            </nav>
+        </aside>
+
+        <main class="docs-main">
+            <article class="docs-article">
+                <h1 class="lang-ja">機能概要</h1>
+                <h1 class="lang-en">Feature overview</h1>
+                <p class="docs-lede lang-ja">ボット本体（webpage / ダッシュボードを除く）の構成と主要機能の流れです。図は拡大・縮小・ドラッグ移動できます。コード解説は <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a>、コマンド一覧は <a href="/commands/">コマンド</a>、個人情報の扱いは <a href="/privacy/">プライバシー</a> を参照してください。</p>
+                <p class="docs-lede lang-en">Architecture and major feature flows of the bot host (excluding this website and the dashboard). Diagrams support zoom, pan, and drag. See <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a> for code-oriented docs, <a href="/commands/">Commands</a> for the command list, and <a href="/privacy/">Privacy</a> for data handling.</p>
+
+                <div class="docs-ext-links">
+                    <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a>
+                    <a href="https://github.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">GitHub</a>
+                    <a href="/commands/"><span class="lang-ja">コマンド一覧</span><span class="lang-en">Commands</span></a>
+                </div>
+
+                <h2 id="architecture">
+                    <span class="lang-ja">全体構成</span>
+                    <span class="lang-en">Architecture</span>
+                </h2>
+                <p class="lang-ja">Discord 経由で PLANA / ARONA が動き、設定は SQLite、会話は主にメモリ、機能ごとに外部 API やローカル処理へ振り分けます。</p>
+                <p class="lang-en">PLANA / ARONA talk to Discord; settings live in SQLite, chat history mostly in memory, and features call external APIs or local engines as needed.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="MOMOKA 全体構成">
+                    <pre class="mermaid">flowchart TB
+  U["Discord ユーザー"] --> D["Discord"]
+  D &lt;--&gt; BOT["MOMOKA ホスト&lt;br/&gt;PLANA / ARONA"]
+  BOT --> MEM["メモリ&lt;br/&gt;会話・再生状態"]
+  BOT --> DB[("SQLite&lt;br/&gt;ギルド設定")]
+  BOT --> TMP["一時ファイル"]
+  BOT --> LOCAL["ローカル&lt;br/&gt;TTS / 画像生成"]
+  BOT -->|"本文・画像"| LLM["AI プロバイダ"]
+  BOT -->|"クエリ"| SEARCH["Web 検索"]
+  BOT -->|"URL"| MEDIA["yt-dlp 先"]
+  TMP --> CF["Cloudflare Tunnel"]
+  CF --> D
+  BOT --> TW["Twitch"]
+  BOT --> EQ["地震 API"]
+  BOT --> GAME["戦績 API"]
+  BOT -->|"Fix URL"| D
+  D -.-> FIX["Link Fix プロキシ"]
+  BOT --> IMG["画像 API"]</pre>
+                    <figcaption>利用者 → Discord → ホスト → メモリ / SQLite / 外部サービス</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="MOMOKA architecture">
+                    <pre class="mermaid">flowchart TB
+  U["Discord user"] --> D["Discord"]
+  D &lt;--&gt; BOT["MOMOKA host&lt;br/&gt;PLANA / ARONA"]
+  BOT --> MEM["Memory&lt;br/&gt;chat / playback"]
+  BOT --> DB[("SQLite&lt;br/&gt;guild settings")]
+  BOT --> TMP["Temp files"]
+  BOT --> LOCAL["Local&lt;br/&gt;TTS / image gen"]
+  BOT -->|"text / images"| LLM["AI providers"]
+  BOT -->|"queries"| SEARCH["Web search"]
+  BOT -->|"URLs"| MEDIA["yt-dlp targets"]
+  TMP --> CF["Cloudflare Tunnel"]
+  CF --> D
+  BOT --> TW["Twitch"]
+  BOT --> EQ["Earthquake API"]
+  BOT --> GAME["Stats APIs"]
+  BOT -->|"Fix URLs"| D
+  D -.-> FIX["Link Fix proxies"]
+  BOT --> IMG["Image APIs"]</pre>
+                    <figcaption>User → Discord → host → memory / SQLite / external services</figcaption>
+                </figure>
+
+                <h2 id="dual-bot">
+                    <span class="lang-ja">デュアルボット</span>
+                    <span class="lang-en">Dual bots</span>
+                </h2>
+                <p class="lang-ja">MOMOKA はプロジェクト名です。公開ボットは <strong>PLANA</strong>（主）と <strong>ARONA</strong>（任意のコンパニオン）で、1 プロセスで両方を動かします。TTS・画像・通知・戦績・Link Fix・メディア DL は PLANA 専用です。</p>
+                <p class="lang-en">MOMOKA is the project name. Public bots are <strong>PLANA</strong> (primary) and optional <strong>ARONA</strong> (companion), running in one process. TTS, images, notifications, trackers, Link Fix, and media download are PLANA-only.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="デュアルボット">
+                    <pre class="mermaid">flowchart LR
+  U["ユーザー"] --> P["PLANA&lt;br/&gt;全機能"]
+  U -.->|"任意"| A["ARONA&lt;br/&gt;LLM / 音楽"]
+  A -->|"TTS 等は誘導"| P
+  P --> H["同一ホストプロセス"]
+  A --> H</pre>
+                    <figcaption>まず PLANA を招待。ARONA は /help や /invite から追加</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Dual bots">
+                    <pre class="mermaid">flowchart LR
+  U["User"] --> P["PLANA&lt;br/&gt;full feature set"]
+  U -.->|"optional"| A["ARONA&lt;br/&gt;LLM / music"]
+  A -->|"redirects TTS etc."| P
+  P --> H["Same host process"]
+  A --> H</pre>
+                    <figcaption>Invite PLANA first; add ARONA via /help or /invite</figcaption>
+                </figure>
+
+                <h2 id="llm">
+                    <span class="lang-ja">AI チャット</span>
+                    <span class="lang-en">AI chat</span>
+                </h2>
+                <p class="lang-ja">メンション・リプライ・<code>/chat</code>・DM で応答します。Agent ルーターが会話 / コーディング / コマンドへ振り分け、必要に応じて Web 検索や画像理解を使います。履歴はメモリ上（再起動で消える）で、送信時に選択中の AI プロバイダへ本文・画像が渡ります。</p>
+                <p class="lang-en">Replies via mention, reply, <code>/chat</code>, or DM. An Agent router classifies conversation / coding / command modes and may use web search or vision. History stays in memory (cleared on restart); text and images go to the selected AI provider when answering.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="AI チャットの流れ">
+                    <pre class="mermaid">flowchart LR
+  M["メンション / DM /chat"] --> R["Agent ルーター"]
+  R --> C["会話"]
+  R --> K["コーディング"]
+  R --> X["コマンド"]
+  C --> S{"検索?"}
+  S -->|Yes| W["Web 検索"]
+  S --> L["LLM API"]
+  W --> L
+  L --> MEM["メモリ履歴"]
+  L --> D["Discord 応答"]</pre>
+                    <figcaption>入力 → 振り分け →（検索）→ LLM → Discord</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="AI chat flow">
+                    <pre class="mermaid">flowchart LR
+  M["Mention / DM /chat"] --> R["Agent router"]
+  R --> C["Conversation"]
+  R --> K["Coding"]
+  R --> X["Command"]
+  C --> S{"Search?"}
+  S -->|Yes| W["Web search"]
+  S --> L["LLM API"]
+  W --> L
+  L --> MEM["In-memory history"]
+  L --> D["Discord reply"]</pre>
+                    <figcaption>Input → route → (search) → LLM → Discord</figcaption>
+                </figure>
+
+                <h2 id="music">
+                    <span class="lang-ja">音楽再生</span>
+                    <span class="lang-en">Music</span>
+                </h2>
+                <p class="lang-ja">両ボットで VC 再生が可能です（同一 VC への同時接続は不可）。YouTube / Spotify ページ / ニコニコなど yt-dlp 対応ソースから取得し、キュー・ループなどに対応します。グレースフル再起動時は再生状態を SQLite に一時保存します。</p>
+                <p class="lang-en">Both bots can play in voice channels (not the same VC at once). Sources go through yt-dlp (YouTube, Spotify pages, Niconico, etc.) with queue and loop support. On graceful restart, playback state may be snapshotted in SQLite.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="音楽再生の流れ">
+                    <pre class="mermaid">flowchart LR
+  U["再生コマンド"] --> B["ボット"]
+  B --> Y["yt-dlp"]
+  Y --> SRC["動画サイト"]
+  B --> VC["Discord VC"]
+  B --> Q["メモリ上のキュー"]
+  B -.->|"再起動時"| DB[("SQLite セッション")]</pre>
+                    <figcaption>コマンド → yt-dlp → VC 再生</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Music flow">
+                    <pre class="mermaid">flowchart LR
+  U["Play command"] --> B["Bot"]
+  B --> Y["yt-dlp"]
+  Y --> SRC["Media sites"]
+  B --> VC["Discord VC"]
+  B --> Q["In-memory queue"]
+  B -.->|"on restart"| DB[("SQLite session")]</pre>
+                    <figcaption>Command → yt-dlp → VC playback</figcaption>
+                </figure>
+
+                <h2 id="tts">
+                    <span class="lang-ja">読み上げ（TTS）</span>
+                    <span class="lang-en">Text-to-speech</span>
+                </h2>
+                <p class="lang-ja">PLANA 専用。チャンネルのメッセージをローカルの Style-Bert-VITS2 で読み上げ、音楽と同一 VC で重ねられます。声・自動参加ユーザーなどはギルド設定として SQLite に保存します。</p>
+                <p class="lang-en">PLANA-only. Channel messages are spoken with local Style-Bert-VITS2 and can mix with music in the same VC. Voice and auto-join users are stored as guild settings in SQLite.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="TTS の流れ">
+                    <pre class="mermaid">flowchart LR
+  MSG["テキストチャンネル"] --> P["PLANA"]
+  P --> DB[("SQLite 設定")]
+  P --> TTS["ローカル TTS"]
+  TTS --> VC["Discord VC"]</pre>
+                    <figcaption>メッセージ → ローカル TTS → VC</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="TTS flow">
+                    <pre class="mermaid">flowchart LR
+  MSG["Text channel"] --> P["PLANA"]
+  P --> DB[("SQLite settings")]
+  P --> TTS["Local TTS"]
+  TTS --> VC["Discord VC"]</pre>
+                    <figcaption>Message → local TTS → VC</figcaption>
+                </figure>
+
+                <h2 id="image">
+                    <span class="lang-ja">画像生成</span>
+                    <span class="lang-en">Image generation</span>
+                </h2>
+                <p class="lang-ja">PLANA 専用。原則ホスト上の diffusers エンジンで生成します（外部 API 不要）。任意で Forge 等のローカル API も利用できます。猫・Danbooru 等の画像コマンドは別途外部 API を呼びます。</p>
+                <p class="lang-en">PLANA-only. Images are usually generated by the on-host diffusers engine (no cloud API required). Optional local Forge-style APIs are supported. Separate image commands may call Cat API / Danbooru, etc.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="画像生成の流れ">
+                    <pre class="mermaid">flowchart LR
+  U["画像コマンド"] --> P["PLANA"]
+  P --> GEN["ローカル生成&lt;br/&gt;diffusers 等"]
+  P --> API["画像 API&lt;br/&gt;任意コマンド"]
+  GEN --> D["Discord 投稿"]
+  API --> D</pre>
+                    <figcaption>コマンド → ローカル生成または外部 API → Discord</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Image generation flow">
+                    <pre class="mermaid">flowchart LR
+  U["Image command"] --> P["PLANA"]
+  P --> GEN["Local gen&lt;br/&gt;diffusers etc."]
+  P --> API["Image APIs&lt;br/&gt;some commands"]
+  GEN --> D["Discord post"]
+  API --> D</pre>
+                    <figcaption>Command → local gen or external API → Discord</figcaption>
+                </figure>
+
+                <h2 id="link-fix">
+                    <span class="lang-ja">Link Fix</span>
+                    <span class="lang-en">Link Fix</span>
+                </h2>
+                <p class="lang-ja">PLANA 専用・デフォルト無効。<code>/linkfix</code> で有効化すると、SNS URL の公式 embed を抑え、Fix 系プロキシ URL を silent 引用返信します。閲覧時は Fix 側が元コンテンツを取得し得ます。<code>fxignore</code> や <code>&lt;URL&gt;</code> でスキップできます。</p>
+                <p class="lang-en">PLANA-only; disabled by default. After enabling via <code>/linkfix</code>, social URLs get original embeds suppressed and Fix proxy URLs as silent quote-replies. Fix hosts may fetch the original on preview. Skip with <code>fxignore</code> or <code>&lt;URL&gt;</code>.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="Link Fix の流れ">
+                    <pre class="mermaid">flowchart LR
+  U["SNS URL 投稿"] --> P["PLANA"]
+  P --> DB[("SQLite&lt;br/&gt;ギルド設定")]
+  P -->|"公式 embed 抑制"| D["Discord"]
+  P -->|"Fix URL 返信"| D
+  D -.->|"プレビュー"| F["Fix プロキシ"]</pre>
+                    <figcaption>投稿検知 → 設定確認 → Fix URL 返信</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Link Fix flow">
+                    <pre class="mermaid">flowchart LR
+  U["Social URL post"] --> P["PLANA"]
+  P --> DB[("SQLite&lt;br/&gt;guild settings")]
+  P -->|"suppress embed"| D["Discord"]
+  P -->|"Fix URL reply"| D
+  D -.->|"preview"| F["Fix proxies"]</pre>
+                    <figcaption>Detect → check settings → Fix URL reply</figcaption>
+                </figure>
+
+                <h2 id="media-download">
+                    <span class="lang-ja">メディアダウンロード</span>
+                    <span class="lang-en">Media download</span>
+                </h2>
+                <p class="lang-ja">PLANA の <code>/download_video</code> / <code>/download_audio</code>。yt-dlp で取得したファイルをホスト上に一時保存し、Cloudflare Tunnel の期限付き URL（約 10 分）で共有します。第三者ホストへはアップロードしません。</p>
+                <p class="lang-en">PLANA <code>/download_video</code> / <code>/download_audio</code>. Files fetched via yt-dlp are kept temporarily on the host and shared through a Cloudflare Tunnel URL (~10 minutes). Files are not uploaded to third-party hosts.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="メディアダウンロードの流れ">
+                    <pre class="mermaid">flowchart LR
+  U["/download_*"] --> P["PLANA"]
+  P --> Y["yt-dlp"]
+  Y --> SRC["動画サイト"]
+  P --> TMP["一時ファイル"]
+  TMP --> CF["Cloudflare Tunnel"]
+  CF -->|"期限付き URL"| D["Discord"]</pre>
+                    <figcaption>取得 → 一時保存 → Tunnel 共有</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Media download flow">
+                    <pre class="mermaid">flowchart LR
+  U["/download_*"] --> P["PLANA"]
+  P --> Y["yt-dlp"]
+  Y --> SRC["Media sites"]
+  P --> TMP["Temp file"]
+  TMP --> CF["Cloudflare Tunnel"]
+  CF -->|"timed URL"| D["Discord"]</pre>
+                    <figcaption>Fetch → temp store → Tunnel share</figcaption>
+                </figure>
+
+                <h2 id="notifications">
+                    <span class="lang-ja">通知（地震 / Twitch）</span>
+                    <span class="lang-en">Notifications (earthquake / Twitch)</span>
+                </h2>
+                <p class="lang-ja">PLANA 専用。P2P 地震情報 API と Twitch Helix を監視し、ギルドで設定したチャンネルへ投稿します。通知先やフィルタは SQLite に保存されます。</p>
+                <p class="lang-en">PLANA-only. Watches the P2P earthquake API and Twitch Helix, then posts to guild-configured channels. Destinations and filters are stored in SQLite.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="通知の流れ">
+                    <pre class="mermaid">flowchart LR
+  EQ["地震 API"] --> P["PLANA"]
+  TW["Twitch API"] --> P
+  P --> DB[("SQLite 設定")]
+  P --> CH["通知チャンネル"]</pre>
+                    <figcaption>外部イベント → 設定照合 → Discord 通知</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Notifications flow">
+                    <pre class="mermaid">flowchart LR
+  EQ["Earthquake API"] --> P["PLANA"]
+  TW["Twitch API"] --> P
+  P --> DB[("SQLite settings")]
+  P --> CH["Notify channel"]</pre>
+                    <figcaption>External events → settings → Discord notify</figcaption>
+                </figure>
+
+                <h2 id="trackers">
+                    <span class="lang-ja">ゲーム戦績</span>
+                    <span class="lang-en">Game trackers</span>
+                </h2>
+                <p class="lang-ja">PLANA 専用。Valorant / Rainbow Six Siege のプレイヤー名などから外部戦績 API を照会し、結果を Discord に表示します。</p>
+                <p class="lang-en">PLANA-only. Looks up Valorant / Rainbow Six Siege stats via third-party APIs from player names and posts results to Discord.</p>
+
+                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="戦績の流れ">
+                    <pre class="mermaid">flowchart LR
+  U["戦績コマンド"] --> P["PLANA"]
+  P -->|"プレイヤー名等"| API["戦績 API"]
+  API --> P
+  P --> D["Discord 表示"]</pre>
+                    <figcaption>コマンド → 外部 API → 表示</figcaption>
+                </figure>
+                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="Trackers flow">
+                    <pre class="mermaid">flowchart LR
+  U["Tracker command"] --> P["PLANA"]
+  P -->|"player name etc."| API["Stats APIs"]
+  API --> P
+  P --> D["Discord display"]</pre>
+                    <figcaption>Command → external API → display</figcaption>
+                </figure>
+
+                <p class="docs-meta lang-ja">図は現行の公開運用を要約したものです。実装詳細は <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a> と GitHub を優先してください。</p>
+                <p class="docs-meta lang-en">Diagrams summarize current hosted behavior. Prefer <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a> and GitHub for implementation detail.</p>
+                <p class="docs-credit lang-ja">&copy; 2026 MOMOKA · <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a> &amp; <a href="https://discord.com/users/583206903442571264" target="_blank" rel="noopener noreferrer">zer0latency</a></p>
+                <p class="docs-credit lang-en">&copy; 2026 MOMOKA · <a href="https://discord.com/users/270446628622696449" target="_blank" rel="noopener noreferrer">coffin299</a> &amp; <a href="https://discord.com/users/583206903442571264" target="_blank" rel="noopener noreferrer">zer0latency</a></p>
+            </article>
+        </main>
+
+        <aside class="docs-toc" aria-label="On this page">
+            <div class="docs-toc-title">On this page</div>
+            <nav data-docs-toc></nav>
+        </aside>
+    </div>
+
+    <script src="/script.js?v=20260815-overview"></script>
+    <script type="module" src="/mermaid-docs.js?v=20260815-overview"></script>
+</body>
+</html>

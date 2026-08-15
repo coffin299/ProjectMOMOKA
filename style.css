@@ -469,19 +469,89 @@ pre code {
     border-bottom: 1px solid var(--border);
 }
 
-/* Mermaid diagrams（プライバシー等の概要図） */
+/* Mermaid diagrams（機能概要などのフロー図・拡大縮小対応） */
 .docs-mermaid {
-    margin: 0.5rem 0 1.5rem;
-    padding: 1rem 0.85rem 0.85rem;
+    margin: 0.75rem 0 1.5rem;
+    padding: 0.65rem 0.65rem 0.75rem;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--bg-elevated);
-    overflow-x: auto;
+}
+
+.docs-mermaid-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem 0.45rem;
+    margin-bottom: 0.5rem;
+}
+
+.docs-mermaid-btn {
+    font-family: var(--font-sans);
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1;
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-muted);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.docs-mermaid-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.docs-mermaid-btn-reset {
+    font-weight: 500;
+    font-size: 0.8rem;
+}
+
+.docs-mermaid-zoom-label {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    min-width: 3.2rem;
+    text-align: center;
+}
+
+.docs-mermaid-hint {
+    font-size: 0.75rem;
+    color: var(--text-faint);
+    margin-left: 0.25rem;
+}
+
+.docs-mermaid-viewport {
+    position: relative;
+    overflow: hidden;
+    min-height: 260px;
+    max-height: min(70vh, 640px);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg);
+    cursor: grab;
+    touch-action: none;
+}
+
+.docs-mermaid-viewport.is-panning {
+    cursor: grabbing;
+}
+
+.docs-mermaid-stage {
+    transform-origin: 0 0;
+    will-change: transform;
+    padding: 1rem;
+    display: inline-block;
+    min-width: 100%;
 }
 
 .docs-mermaid .mermaid {
     display: flex;
-    justify-content: center;
+    justify-content: flex-start;
     margin: 0;
     padding: 0;
     border: none;
@@ -490,7 +560,7 @@ pre code {
 }
 
 .docs-mermaid svg {
-    max-width: 100%;
+    max-width: none;
     height: auto;
 }
 
@@ -499,6 +569,18 @@ pre code {
     font-size: 0.85rem;
     color: var(--text-muted);
     text-align: center;
+}
+
+.docs-body.docs-wide {
+    --content-max: 54rem;
+}
+
+.docs-ext-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.85rem;
+    margin: 0.5rem 0 1.25rem;
+    font-size: 0.95rem;
 }
 
 .docs-article h2 {

@@ -65,7 +65,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/style.css?v=20260815-mermaid">
+    <link rel="stylesheet" href="/style.css?v=20260815-overview">
 </head>
 <body class="docs-body">
     <header class="docs-header">
@@ -88,11 +88,13 @@
             <div class="docs-nav-label">Docs</div>
             <nav class="docs-nav">
                 <a href="/"><span class="lang-ja">ホーム</span><span class="lang-en">Home</span></a>
+                <a href="/overview/"><span class="lang-ja">機能概要</span><span class="lang-en">Overview</span></a>
                 <a href="/faq/">FAQ</a>
                 <a href="/troubleshooting/"><span class="lang-ja">トラブルシューティング</span><span class="lang-en">Troubleshooting</span></a>
                 <a href="/commands/"><span class="lang-ja">コマンド</span><span class="lang-en">Commands</span></a>
                 <a href="/terms/"><span class="lang-ja">利用規約</span><span class="lang-en">Terms</span></a>
                 <a href="/privacy/" class="active"><span class="lang-ja">プライバシー</span><span class="lang-en">Privacy</span></a>
+                <a href="https://deepwiki.com/coffin299/ProjectMOMOKA" target="_blank" rel="noopener noreferrer">DeepWiki</a>
             </nav>
         </aside>
 
@@ -100,65 +102,8 @@
             <article class="docs-article">
                 <h1 class="lang-ja">プライバシーポリシー</h1>
                 <h1 class="lang-en">Privacy Policy</h1>
-                <p class="docs-lede lang-ja">最終更新: 2026-08-15。本ポリシーは、公開運用中の MOMOKA（PLANA / ARONA）が取り扱う情報について説明します。日英で差異がある場合は日本語を優先します。</p>
-                <p class="docs-lede lang-en">Last updated: 2026-08-15. This policy describes information handled by the hosted MOMOKA bots (PLANA / ARONA). If Japanese and English differ, Japanese takes priority.</p>
-
-                <h2 id="overview">
-                    <span class="lang-ja">データの流れ（概要）</span>
-                    <span class="lang-en">Data flow overview</span>
-                </h2>
-                <p class="lang-ja">ボット本体（webpage / ダッシュボードを除く）における、利用者データと外部サービスの関係の概要です。詳細は以降の各節を参照してください。</p>
-                <p class="lang-en">High-level view of how user-related data moves through the bot host (excluding this website and the dashboard). See the sections below for details.</p>
-
-                <figure class="docs-mermaid lang-ja" data-mermaid-lang="ja" aria-label="MOMOKA のデータ流れ図">
-                    <pre class="mermaid">flowchart TB
-  U["Discord ユーザー"] --> D["Discord"]
-  D &lt;--&gt; BOT["MOMOKA ホスト&lt;br/&gt;PLANA / ARONA"]
-
-  BOT --> MEM["メモリ&lt;br/&gt;会話履歴・再生状態"]
-  BOT --> DB[("SQLite&lt;br/&gt;ギルド設定・運用データ")]
-  BOT --> TMP["一時ファイル&lt;br/&gt;ダウンロード等"]
-  BOT --> LOCAL["ローカル処理&lt;br/&gt;TTS / 画像生成"]
-
-  BOT -->|"本文・画像"| LLM["AI プロバイダ"]
-  BOT -->|"検索クエリ"| SEARCH["Web 検索"]
-  BOT -->|"URL / 検索"| MEDIA["動画サイト&lt;br/&gt;yt-dlp"]
-  TMP --> CF["Cloudflare Tunnel&lt;br/&gt;期限付き共有"]
-  CF --> D
-  BOT --> TW["Twitch API"]
-  BOT --> EQ["地震情報 API"]
-  BOT -->|"プレイヤー名等"| GAME["ゲーム戦績 API"]
-  BOT -->|"書き換え URL"| D
-  D -.->|"プレビュー時"| FIX["Link Fix プロキシ"]
-  BOT --> IMG["画像 API"]
-  BOT -->|"サーバー数のみ"| LIST["Bot 掲載サイト&lt;br/&gt;任意"]</pre>
-                    <figcaption>利用者 → Discord → ボットホスト → メモリ / SQLite / 外部 API</figcaption>
-                </figure>
-
-                <figure class="docs-mermaid lang-en" data-mermaid-lang="en" aria-label="MOMOKA data flow diagram">
-                    <pre class="mermaid">flowchart TB
-  U["Discord user"] --> D["Discord"]
-  D &lt;--&gt; BOT["MOMOKA host&lt;br/&gt;PLANA / ARONA"]
-
-  BOT --> MEM["Memory&lt;br/&gt;chat history / playback"]
-  BOT --> DB[("SQLite&lt;br/&gt;guild settings / ops data")]
-  BOT --> TMP["Temp files&lt;br/&gt;downloads, etc."]
-  BOT --> LOCAL["Local processing&lt;br/&gt;TTS / image gen"]
-
-  BOT -->|"text / images"| LLM["AI providers"]
-  BOT -->|"search queries"| SEARCH["Web search"]
-  BOT -->|"URLs / search"| MEDIA["Media sites&lt;br/&gt;via yt-dlp"]
-  TMP --> CF["Cloudflare Tunnel&lt;br/&gt;time-limited share"]
-  CF --> D
-  BOT --> TW["Twitch API"]
-  BOT --> EQ["Earthquake API"]
-  BOT -->|"player names, etc."| GAME["Game stats APIs"]
-  BOT -->|"rewritten URLs"| D
-  D -.->|"on preview"| FIX["Link Fix proxies"]
-  BOT --> IMG["Image APIs"]
-  BOT -->|"server count only"| LIST["Bot listing sites&lt;br/&gt;optional"]</pre>
-                    <figcaption>User → Discord → bot host → memory / SQLite / external APIs</figcaption>
-                </figure>
+                <p class="docs-lede lang-ja">最終更新: 2026-08-15。本ポリシーは、公開運用中の MOMOKA（PLANA / ARONA）が取り扱う情報について説明します。日英で差異がある場合は日本語を優先します。機能の流れ図は <a href="/overview/">機能概要</a> を参照してください。</p>
+                <p class="docs-lede lang-en">Last updated: 2026-08-15. This policy describes information handled by the hosted MOMOKA bots (PLANA / ARONA). If Japanese and English differ, Japanese takes priority. For feature flow diagrams, see the <a href="/overview/">Feature overview</a>.</p>
 
                 <h2 id="collect">
                     <span class="lang-ja">取得しうる情報</span>
@@ -214,8 +159,8 @@
                     <li class="lang-en">getloli (page-view counter on the official website)</li>
                     <li class="lang-ja">Google Fonts（フォント配信）</li>
                     <li class="lang-en">Google Fonts (font delivery)</li>
-                    <li class="lang-ja">jsDelivr / Mermaid（プライバシーページの概要図表示）</li>
-                    <li class="lang-en">jsDelivr / Mermaid (overview diagram on the privacy page)</li>
+                    <li class="lang-ja">jsDelivr / Mermaid（機能概要ページのフロー図表示）</li>
+                    <li class="lang-en">jsDelivr / Mermaid (flow diagrams on the feature overview page)</li>
                 </ul>
 
                 <h2 id="purpose">
@@ -236,8 +181,8 @@
                     <span class="lang-ja">本ウェブサイト</span>
                     <span class="lang-en">This website</span>
                 </h2>
-                <p class="lang-ja">テーマ・言語の設定はブラウザの <code>localStorage</code> に保存します。また、アクセス解析のため Google Analytics（測定 ID: <code>G-46J394MX23</code>）を利用し、Cookie 等により利用状況が Google に送信されることがあります。全ページで Google Fonts を読み込むため、フォント配信のために Google へ接続情報が送信されます。本プライバシーページでは概要図表示のため jsDelivr 経由で Mermaid を読み込みます。トップページでは getloli のページビューカウンター画像を読み込みます。詳細は <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google のプライバシーポリシー</a> を参照してください。ホスティング側のアクセスログも別途発生する可能性があります。</p>
-                <p class="lang-en">Theme and language preferences are stored in browser <code>localStorage</code>. We also use Google Analytics (measurement ID: <code>G-46J394MX23</code>) for traffic analysis; cookies and related data may be sent to Google. All pages load Google Fonts, so connection metadata is sent to Google for font delivery. This privacy page loads Mermaid via jsDelivr to render the overview diagram. The landing page loads a getloli page-view counter image. See <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google’s Privacy Policy</a>. The host may also collect access logs.</p>
+                <p class="lang-ja">テーマ・言語の設定はブラウザの <code>localStorage</code> に保存します。また、アクセス解析のため Google Analytics（測定 ID: <code>G-46J394MX23</code>）を利用し、Cookie 等により利用状況が Google に送信されることがあります。全ページで Google Fonts を読み込むため、フォント配信のために Google へ接続情報が送信されます。<a href="/overview/">機能概要</a> ページではフロー図表示のため jsDelivr 経由で Mermaid を読み込みます。トップページでは getloli のページビューカウンター画像を読み込みます。詳細は <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google のプライバシーポリシー</a> を参照してください。ホスティング側のアクセスログも別途発生する可能性があります。</p>
+                <p class="lang-en">Theme and language preferences are stored in browser <code>localStorage</code>. We also use Google Analytics (measurement ID: <code>G-46J394MX23</code>) for traffic analysis; cookies and related data may be sent to Google. All pages load Google Fonts, so connection metadata is sent to Google for font delivery. The <a href="/overview/">feature overview</a> page loads Mermaid via jsDelivr for diagrams. The landing page loads a getloli page-view counter image. See <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google’s Privacy Policy</a>. The host may also collect access logs.</p>
 
                 <h2 id="contact">
                     <span class="lang-ja">連絡先</span>
@@ -270,92 +215,6 @@
         </aside>
     </div>
 
-    <script src="/script.js?v=20260815-mermaid"></script>
-    <script type="module">
-      // Mermaid 図: テーマ / 言語切替に追従して再描画する
-      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.esm.min.mjs";
-
-      var sources = new Map();
-      var renderTimer = null;
-      var renderSeq = 0;
-
-      function cacheSources() {
-        // 初回だけ定義テキストを保持する（描画後は SVG に置き換わるため）
-        document.querySelectorAll(".docs-mermaid .mermaid").forEach(function (el) {
-          if (!sources.has(el)) {
-            sources.set(el, (el.textContent || "").trim());
-          }
-        });
-      }
-
-      function scheduleRender() {
-        // 連続切替時のチラつきを抑える
-        if (renderTimer) {
-          clearTimeout(renderTimer);
-        }
-        renderSeq += 1;
-        var seq = renderSeq;
-        renderTimer = setTimeout(function () {
-          renderMermaid(seq);
-        }, 40);
-      }
-
-      async function renderMermaid(seq) {
-        cacheSources();
-        var theme =
-          document.documentElement.getAttribute("data-theme") === "dark"
-            ? "dark"
-            : "neutral";
-        var lang =
-          document.documentElement.getAttribute("data-lang") === "en"
-            ? "en"
-            : "ja";
-
-        mermaid.initialize({
-          startOnLoad: false,
-          theme: theme,
-          securityLevel: "strict",
-          flowchart: { htmlLabels: true, curve: "basis" },
-        });
-
-        var figures = document.querySelectorAll(".docs-mermaid");
-        var nodes = [];
-        figures.forEach(function (fig) {
-          var match = fig.getAttribute("data-mermaid-lang") === lang;
-          // 非表示言語は描画対象外（サイズ計測の誤動作を避ける）
-          fig.hidden = !match;
-          var host = fig.querySelector(".mermaid");
-          if (!host || !match) {
-            return;
-          }
-          var src = sources.get(host);
-          if (!src) {
-            return;
-          }
-          // 再描画用に要素を作り直す
-          var fresh = document.createElement("pre");
-          fresh.className = "mermaid";
-          fresh.textContent = src;
-          host.replaceWith(fresh);
-          sources.set(fresh, src);
-          sources.delete(host);
-          nodes.push(fresh);
-        });
-
-        if (!nodes.length || seq !== renderSeq) {
-          return;
-        }
-        await mermaid.run({ nodes: nodes });
-      }
-
-      cacheSources();
-      scheduleRender();
-
-      // テーマ・言語属性の変化を監視（script.js のトグルと同期）
-      new MutationObserver(scheduleRender).observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ["data-theme", "data-lang"],
-      });
-    </script>
+    <script src="/script.js?v=20260815-overview"></script>
 </body>
 </html>

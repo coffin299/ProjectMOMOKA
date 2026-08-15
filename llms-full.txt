@@ -12,8 +12,10 @@ MOMOKA is an open-source, multi-functional Discord bot project operated as free 
 
 - Website: https://momoka-project.com/
 - GitHub: https://github.com/coffin299/ProjectMOMOKA
+- DeepWiki: https://deepwiki.com/coffin299/ProjectMOMOKA
 - Support server: https://discord.gg/H79HKKqx3s
 - Operator Discord profile: https://discord.com/users/270446628622696449 (coffin299)
+- Feature overview: https://momoka-project.com/overview/
 - Terms: https://momoka-project.com/terms/
 - Privacy: https://momoka-project.com/privacy/
 
@@ -58,6 +60,7 @@ Message content and IDs may be processed for features, logging, and third-party 
 ## Key pages
 
 - https://momoka-project.com/
+- https://momoka-project.com/overview/
 - https://momoka-project.com/faq/
 - https://momoka-project.com/troubleshooting/
 - https://momoka-project.com/commands/
