@@ -97,6 +97,7 @@ class MusicControllerView(discord.ui.LayoutView):
         cog: MusicCog,
         guild_id: int,
         finished_message: Optional[str] = None,
+        finished_title: Optional[str] = None,
     ):
         # タイムアウトなしで初期化する
         super().__init__(timeout=None)
@@ -104,8 +105,10 @@ class MusicControllerView(discord.ui.LayoutView):
         self.cog = cog
         # 対象のギルドIDを保持する
         self.guild_id = guild_id
-        # 停止/終了時に表示するカスタム文言（無ければデフォルト文）
+        # 停止/終了時にメタ欄へ出す詳細文言（無ければデフォルト文）
         self.finished_message = finished_message
+        # 停止/終了時の見出し（Now Playing 相当。無ければデフォルト）
+        self.finished_title = finished_title
         # UI（V2コンポーネント）の構築処理を実行する
         self.rebuild_ui()
 
@@ -121,49 +124,8 @@ class MusicControllerView(discord.ui.LayoutView):
             if state:
                 # 確認ダイアログ状態を解除する
                 state.confirming_stop = False
-            # グレーのアクセントカラーでコンテナを生成する
-            container = discord.ui.Container(accent_color=discord.Color.light_grey())
-            # 呼び出し元指定の終了文言があれば使い、無ければ停止用のデフォルト文を使う
-            stopped_text = self.finished_message or (
-                "⏹️ **Playback Stopped**\n"
-                "Playback was stopped or the queue has finished."
-            )
-            # /play が URL だった場合は見出しの直下に履歴 URL を差し込む
-            if state and state.last_history_url:
-                # サムネなし・テキストのみで履歴を載せる
-                stopped_text = self.cog._inject_history_url(
-                    stopped_text,
-                    state.last_history_url,
-                )
-            # Section は accessory 必須のため、停止メッセージは TextDisplay のみ使う
-            container.add_item(discord.ui.TextDisplay(stopped_text))
-
-            # 無効化されたボタンを配置するアクション行を作成する
-            action_row = discord.ui.ActionRow()
-            # 一時停止ボタンを無効状態で追加する
-            action_row.add_item(discord.ui.Button(label="⏸️ Pause", style=discord.ButtonStyle.secondary, disabled=True))
-            # スキップボタンを無効状態で追加する
-            action_row.add_item(discord.ui.Button(label="⏭️ Skip", style=discord.ButtonStyle.secondary, disabled=True))
-            # 停止ボタンを無効状態で追加する
-            action_row.add_item(discord.ui.Button(label="⏹️ Stop", style=discord.ButtonStyle.secondary, disabled=True))
-            # コンテナにアクション行を追加する
-            container.add_item(action_row)
-
-            # ループ系は2行目にまとめる（再生中レイアウトと揃える）
-            loop_row = discord.ui.ActionRow()
-            # 曲ループボタンを無効状態で追加する
-            loop_row.add_item(discord.ui.Button(label="🔂 Loop", style=discord.ButtonStyle.secondary, disabled=True))
-            # キューループボタンを無効状態で追加する
-            loop_row.add_item(discord.ui.Button(label="🔁 QLoop", style=discord.ButtonStyle.secondary, disabled=True))
-            # キューシャッフルボタンを無効状態で追加する
-            loop_row.add_item(
-                discord.ui.Button(label="🔀 QShuffle", style=discord.ButtonStyle.secondary, disabled=True)
-            )
-            # コンテナにループ行を追加する
-            container.add_item(loop_row)
-
-            # ビュー自体にコンテナを追加して完了する
-            self.add_item(container)
+            # 再生中と同型の終了パネルを組み立てる
+            self._build_finished_ui(state)
             # 処理を終了する
             return
 
@@ -435,6 +397,106 @@ class MusicControllerView(discord.ui.LayoutView):
         self._append_load_error_banner(container, state)
 
         # ビューに構築したコンテナをアタッチする
+        self.add_item(container)
+
+    def _resolve_finished_copy(self) -> tuple[str, str]:
+        """終了パネルの見出しとメタ欄文言を決める。"""
+        # 明示タイトルがあればそれを見出しにする
+        title = (self.finished_title or "").strip()
+        # 詳細文言（メタ欄 / ログ相当）
+        detail = (self.finished_message or "").strip()
+        # 旧形式「見出し\\n本文」だけ渡された場合は分割する
+        if not title and detail and "\n" in detail:
+            # 先頭行を見出し、残りを詳細にする
+            head, rest = detail.split("\n", 1)
+            # 太字マークを除いて見出し化する
+            title = head.replace("**", "").strip()
+            # 残りの本文を詳細にする
+            detail = rest.strip()
+        # 見出しが無ければ停止用デフォルトにする
+        if not title:
+            # Now Playing と同型の見出しにする
+            title = "⏹️ Playback Stopped"
+        # ### が無ければ見出しレベルを揃える
+        if not title.startswith("#"):
+            # 再生中の Now Playing と同じ ### にする
+            title = f"### {title}"
+        # 詳細が無ければ停止用デフォルトにする
+        if not detail:
+            # Requested By / Loop 欄相当の短いステータス
+            detail = "Playback stopped."
+        # 見出しと詳細を返す
+        return title, detail
+
+    def _build_finished_ui(self, state: Optional[GuildState]):
+        """再生終了時のグレーアウト V2 パネル（再生中レイアウト準拠）を組み立てる。"""
+        # グレーのアクセントで終了状態を示す
+        container = discord.ui.Container(accent_color=discord.Color.light_grey())
+        # 見出しとメタ欄文言を解決する
+        title_text, detail_text = self._resolve_finished_copy()
+        # URL 再生履歴があれば見出し直下に載せる
+        if state and state.last_history_url:
+            # 見出し → URL の2行にする
+            title_text = f"{title_text}\n{state.last_history_url}"
+        # Now Playing 相当の見出しを TextDisplay で載せる
+        container.add_item(discord.ui.TextDisplay(title_text))
+
+        # 再生中の Loop/Queue 欄相当：区切り線の下に終了ログを置く
+        container.add_item(discord.ui.Separator())
+        # 複数行の再起動案内などはプレーン、短文はログ風コードブロック
+        if "\n" in detail_text:
+            # 長文はそのままメタ欄に出す
+            container.add_item(discord.ui.TextDisplay(detail_text))
+        else:
+            # ロード失敗バナーと同型のログ風表示にする
+            container.add_item(discord.ui.TextDisplay(f"```\n{detail_text}\n```"))
+
+        # Row1: Pause / Skip / Stop（すべて無効）
+        action_row = discord.ui.ActionRow()
+        # 一時停止を無効化する
+        action_row.add_item(
+            discord.ui.Button(label="⏸️ Pause", style=discord.ButtonStyle.secondary, disabled=True)
+        )
+        # スキップを無効化する
+        action_row.add_item(
+            discord.ui.Button(label="⏭️ Skip", style=discord.ButtonStyle.secondary, disabled=True)
+        )
+        # 停止を無効化する
+        action_row.add_item(
+            discord.ui.Button(label="⏹️ Stop", style=discord.ButtonStyle.secondary, disabled=True)
+        )
+        # コントロール行を載せる
+        container.add_item(action_row)
+
+        # Row2: Loop / QLoop / QShuffle（すべて無効）
+        loop_row = discord.ui.ActionRow()
+        # 曲ループを無効化する
+        loop_row.add_item(
+            discord.ui.Button(label="🔂 Loop", style=discord.ButtonStyle.secondary, disabled=True)
+        )
+        # キューループを無効化する
+        loop_row.add_item(
+            discord.ui.Button(label="🔁 QLoop", style=discord.ButtonStyle.secondary, disabled=True)
+        )
+        # シャッフルを無効化する
+        loop_row.add_item(
+            discord.ui.Button(label="🔀 QShuffle", style=discord.ButtonStyle.secondary, disabled=True)
+        )
+        # ループ行を載せる
+        container.add_item(loop_row)
+
+        # donation だけは有効なリンクボタンのまま残す
+        donation_btn = make_subtle_link_button(donation_from_bot(self.cog.bot))
+        # 有効設定のときだけ行を追加する
+        if donation_btn is not None:
+            # 寄付専用行を作る
+            donation_row = discord.ui.ActionRow()
+            # リンクボタンを載せる（disabled にしない）
+            donation_row.add_item(donation_btn)
+            # コンテナに寄付行を追加する
+            container.add_item(donation_row)
+
+        # ビューにコンテナをアタッチする
         self.add_item(container)
 
     def _append_load_error_banner(self, container: discord.ui.Container, state: Optional[GuildState]):

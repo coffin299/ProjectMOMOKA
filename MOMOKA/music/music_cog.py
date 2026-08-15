@@ -308,6 +308,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # Now Playing を再起動文言付きグレーアウト UI に更新する
                 await self._update_now_playing_message_ui(
                     guild_id,
+                    finished_title="🔄 Restarting",
                     finished_message=restart_notice,
                 )
             except Exception as e:
@@ -994,22 +995,6 @@ class MusicCog(commands.Cog, name="music_cog"):
             state.last_history_url = query
 
     @staticmethod
-    def _inject_history_url(message: str, history_url: Optional[str]) -> str:
-        """終了メッセージの1行目の直後に履歴 URL を差し込む。"""
-        # 履歴が無ければ原文のまま返す
-        if not history_url:
-            # 差し込みなし
-            return message
-        # 先頭行と残りに分割する
-        parts = message.split("\n", 1)
-        # 本文がある場合は見出し→URL→本文の順にする
-        if len(parts) == 2:
-            # 指定レイアウトで結合する
-            return f"{parts[0]}\n{history_url}\n{parts[1]}"
-        # 1行だけの場合は末尾に URL を付ける
-        return f"{message}\n{history_url}"
-
-    @staticmethod
     async def _to_durable_message(
         message: Optional[discord.Message],
     ) -> Optional[discord.Message]:
@@ -1581,10 +1566,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # V2 LayoutView のグレーアウト UI に切り替える（旧 Embed 編集は使わない）
                 await self._update_now_playing_message_ui(
                     guild_id,
-                    finished_message=(
-                        "⏹️ **Queue Finished**\n"
-                        "All songs in the queue have been played."
-                    ),
+                    finished_title="⏹️ Queue Finished",
+                    finished_message="Queue has finished.",
                 )
             else:
                 # メッセージが無い場合のみテキスト通知を送る
@@ -2279,10 +2262,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # V2 LayoutView で Playback Ended 表示に切り替える
                 await self._update_now_playing_message_ui(
                     guild_id,
-                    finished_message=(
-                        "⏹️ **Playback Ended**\n"
-                        "The bot has disconnected from the voice channel."
-                    ),
+                    finished_title="⏹️ Playback Ended",
+                    finished_message="Disconnected from the voice channel.",
                 )
         # ギルド状態を辞書から取り出す
         state = self.guild_states.pop(guild_id, None)
@@ -3261,6 +3242,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         self,
         guild_id: int,
         finished_message: Optional[str] = None,
+        finished_title: Optional[str] = None,
     ):
         # ギルドの再生状態オブジェクトを取得する
         state = self.get_existing_guild_state(guild_id)
@@ -3274,6 +3256,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             self,
             guild_id,
             finished_message=finished_message,
+            finished_title=finished_title,
         )
         # 編集対象メッセージをローカル変数に保持する
         target_message = state.last_now_playing_message
