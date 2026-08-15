@@ -13,6 +13,12 @@ const API_BASE = `http://${GUI_HOST}:${GUI_PORT}/host-gui/api`;
 /** 外部ブラウザで開いてよいスキーム */
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["https:"]);
 
+/** Host API 生存監視用 */
+let apiSeenOk = false;
+let apiFailStreak = 0;
+/** @type {ReturnType<typeof setInterval> | null} */
+let apiWatchTimer = null;
+
 /**
  * window.open 由来 URL を検証し、許可時のみ openExternal する。
  * @param {string} rawUrl
@@ -86,6 +92,43 @@ function stopLogSse() {
   }
 }
 
+function quitHostGui() {
+  stopLogSse();
+  if (apiWatchTimer) {
+    clearInterval(apiWatchTimer);
+    apiWatchTimer = null;
+  }
+  app.quit();
+}
+
+/**
+ * Bot / Host API 停止後にウィンドウが残らないよう生存監視する。
+ */
+function startApiWatchdog() {
+  if (apiWatchTimer) return;
+  apiWatchTimer = setInterval(async () => {
+    try {
+      const headers = {};
+      if (GUI_TOKEN) {
+        headers.Authorization = `Bearer ${GUI_TOKEN}`;
+      }
+      const res = await net.fetch(`${API_BASE}/status`, { headers });
+      if (res.ok) {
+        apiSeenOk = true;
+        apiFailStreak = 0;
+        return;
+      }
+      apiFailStreak += 1;
+    } catch {
+      apiFailStreak += 1;
+    }
+    // 一度成功したあと連続失敗なら Bot 側停止とみなして終了
+    if (apiSeenOk && apiFailStreak >= 3) {
+      quitHostGui();
+    }
+  }, 1000);
+}
+
 /**
  * ログ SSE を main で購読し、renderer へ転送する。
  * @param {Electron.WebContents} sender
@@ -155,6 +198,10 @@ function registerIpc() {
     stopLogSse();
     return { ok: true };
   });
+  ipcMain.handle("momoka:quit", async () => {
+    quitHostGui();
+    return { ok: true };
+  });
 }
 
 function createWindow() {
@@ -174,6 +221,7 @@ function createWindow() {
 
   win.once("ready-to-show", () => {
     if (!win.isDestroyed()) win.show();
+    startApiWatchdog();
   });
 
   win.on("closed", () => {
@@ -221,4 +269,8 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   stopLogSse();
+  // macOS 以外はウィンドウ無しで常駐させない（シャットダウン残留防止）
+  if (process.platform !== "darwin") {
+    quitHostGui();
+  }
 });

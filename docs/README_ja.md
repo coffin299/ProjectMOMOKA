@@ -248,6 +248,7 @@ TTS / 読み上げ設定のロードに失敗した場合、Cog unload 時の空
 - Host GUI のログマスクはファイル原子置換 + ライブログ `event_id` / `content_hash` 反映。`all` 削除は strict bool
 - Host GUI Bearer は Electron **main process のみ**保持（renderer / preload に渡さない。API・SSE は IPC 代理）
 - Host GUI API ready は `/status` ヘルス確認後に Electron 起動。起動停止は世代ロックで競合回避
+- Bot シャットダウン時は Electron を確実に終了する（PID 追跡・gui-electron 配下の孤児掃討・API 断検知での `app.quit`）
 - status / VC / guilds メトリクスは Bot イベントループ上でスナップショット（API スレッドから直接触らない）
 - Discord 転送ログから `[USER_INPUT]` / `[LLM_RESPONSE]` を除外
 - `channel_llm_models` / `response_time_samples` は bot_id・model 単位 UPSERT（二体 Bot の消し合い防止）
@@ -273,6 +274,7 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
 - Host GUI のログ配信は **main process 経由の Bearer SSE**（renderer に token を渡さない）と `/logs/history` ポーリング。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
+- Bot / GUI シャットダウン後に Electron ウィンドウが残らないよう、Python 側の PID 掃討と Electron 側の API 断検知終了を併用する
 - LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証・peer IP 確認）
 - 画像生成パラメータは steps/CFG 範囲制限・キュー上限あり。モデルは safetensors のみ
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない

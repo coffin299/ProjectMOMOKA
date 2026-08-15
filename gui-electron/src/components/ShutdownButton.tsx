@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiPost } from "../api";
+import { apiPost, getHostConfig } from "../api";
 
 export function ShutdownButton() {
   const [armed, setArmed] = useState(false);
@@ -14,6 +14,11 @@ export function ShutdownButton() {
     setBusy(true);
     try {
       await apiPost("/shutdown");
+      // Bot 停止要求後にウィンドウ自身も閉じる（Python 側 taskkill の保険）
+      const quit = getHostConfig().quitApp;
+      if (quit) {
+        await quit();
+      }
     } catch {
       setBusy(false);
       setArmed(false);

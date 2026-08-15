@@ -13,6 +13,8 @@ export type HostConfig = {
   }) => Promise<{ ok: boolean; status: number; json: unknown; text: string }>;
   startLogSse?: () => Promise<{ ok: boolean }>;
   stopLogSse?: () => Promise<{ ok: boolean }>;
+  /** Shutdown 後に Electron を終了する */
+  quitApp?: () => Promise<{ ok: boolean }>;
   onLogSse?: (handler: (data: unknown) => void) => () => void;
   onLogSseEnd?: (handler: () => void) => () => void;
 };

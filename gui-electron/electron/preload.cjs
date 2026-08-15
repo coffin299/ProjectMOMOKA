@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("momokaHost", {
   apiRequest: (opts) => ipcRenderer.invoke("momoka:api", opts),
   startLogSse: () => ipcRenderer.invoke("momoka:sse-start"),
   stopLogSse: () => ipcRenderer.invoke("momoka:sse-stop"),
+  quitApp: () => ipcRenderer.invoke("momoka:quit"),
   onLogSse: (handler) => {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on("momoka:sse-log", listener);

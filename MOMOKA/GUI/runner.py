@@ -20,6 +20,8 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _GUI_ELECTRON_DIR = _REPO_ROOT / "gui-electron"
 # 起動中の Electron（または npm）プロセス
 _electron_proc: Optional[subprocess.Popen] = None
+# Popen ラッパーが先に死んでも追跡できるよう PID を別保持
+_electron_pid: Optional[int] = None
 # start / stop を直列化する（Popen 代入レース防止）
 _lifecycle_lock = threading.Lock()
 # atexit 登録済みか
@@ -32,45 +34,183 @@ _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _DETACHED_PROCESS = 0x00000008
 
 
+def _electron_dist_exe() -> Path:
+    """gui-electron 同梱の electron.exe / electron バイナリパス。"""
+    # Windows は dist/electron.exe
+    if os.name == "nt":
+        # パスを組み立てる
+        return (
+            _GUI_ELECTRON_DIR
+            / "node_modules"
+            / "electron"
+            / "dist"
+            / "electron.exe"
+        )
+    # POSIX は electron 実行ファイル
+    return _GUI_ELECTRON_DIR / "node_modules" / "electron" / "dist" / "electron"
+
+
+def _kill_pid_tree(pid: int) -> None:
+    """指定 PID とその子孫を終了する。"""
+    try:
+        # Windows は taskkill でツリーごと落とす
+        if os.name == "nt":
+            # /T で子プロセスも含める
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            # ここで終了
+            return
+        # POSIX: プロセスグループごと送る（失敗時は単体）
+        try:
+            # 負の PID でプロセスグループへ
+            os.killpg(pid, 15)
+        except Exception:
+            # グループ不可なら単体へ SIGTERM
+            os.kill(pid, 15)
+    except Exception as e:
+        # 個別 PID の失敗は警告のみ（孤児掃討へ続く）
+        print(f"WARNING: Failed to stop host Electron PID {pid}: {e}")
+
+
+def _kill_gui_electron_orphans() -> None:
+    """gui-electron 配下の残留 electron を落とす（ラッパー先行終了対策）。"""
+    # 正規化したターゲット実行ファイル
+    target = _electron_dist_exe()
+    # ファイルが無ければ掃討不能
+    if not target.is_file():
+        # 何もしない
+        return
+    # 比較用の解決済みパス
+    try:
+        # 実パスへ
+        target_resolved = str(target.resolve()).lower()
+    except OSError:
+        # 解決失敗時は文字列化のみ
+        target_resolved = str(target).lower()
+    # Windows: Win32_Process から ExecutablePath 一致を探す
+    if os.name == "nt":
+        try:
+            # PID とパスをタブ区切りで列挙
+            completed = subprocess.run(
+                [
+                    "powershell",
+                    "-NoProfile",
+                    "-Command",
+                    (
+                        "Get-CimInstance Win32_Process "
+                        "-Filter \"Name='electron.exe'\" "
+                        "| ForEach-Object { "
+                        "'{0}`t{1}' -f $_.ProcessId, $_.ExecutablePath "
+                        "}"
+                    ),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+        except Exception:
+            # 列挙失敗は諦める
+            return
+        # 1 行ずつ処理
+        for line in completed.stdout.splitlines():
+            # 空行スキップ
+            raw = line.strip()
+            # 空なら次へ
+            if not raw:
+                continue
+            # PID とパスを分割
+            parts = raw.split("\t", 1)
+            # 形式不正はスキップ
+            if len(parts) != 2:
+                continue
+            # 文字列を取り出す
+            pid_s, exe_path = parts[0].strip(), parts[1].strip()
+            # パスが無ければスキップ（権限不足等）
+            if not exe_path:
+                continue
+            # 大文字小文字を無視して比較
+            if exe_path.lower().replace("/", "\\") != target_resolved.replace(
+                "/", "\\"
+            ):
+                # 不一致は別アプリの Electron
+                continue
+            try:
+                # PID を整数化
+                orphan_pid = int(pid_s)
+            except ValueError:
+                # 壊れた行は無視
+                continue
+            # ツリーごと終了
+            _kill_pid_tree(orphan_pid)
+        # Windows 掃討完了
+        return
+    # POSIX: pgrep で同パスを探す
+    try:
+        # 実行中の electron を列挙
+        completed = subprocess.run(
+            ["pgrep", "-f", str(target)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        # 失敗時は何もしない
+        return
+    # 見つかった PID を落とす
+    for line in completed.stdout.splitlines():
+        # 空白除去
+        pid_s = line.strip()
+        # 空なら次
+        if not pid_s:
+            continue
+        try:
+            # 整数化
+            orphan_pid = int(pid_s)
+        except ValueError:
+            # 壊れた行は無視
+            continue
+        # 終了
+        _kill_pid_tree(orphan_pid)
+
+
 def stop_host_gui() -> None:
     """Electron ホスト GUI プロセスツリーを終了する。"""
     # グローバル参照
-    global _electron_proc, _start_generation
+    global _electron_proc, _electron_pid, _start_generation
     # 多重実行を直列化
     with _lifecycle_lock:
         # 進行中の start を無効化
         _start_generation += 1
         # 現在のプロセスを取る
         proc = _electron_proc
+        # 別保持 PID を取る
+        pid = _electron_pid
         # 参照を先に外す
         _electron_proc = None
-    # 無ければ何もしない
-    if proc is None:
-        return
-    # 既に終了済み
-    if proc.poll() is not None:
-        return
-    try:
-        # Windows はツリーごと強制終了（npm 経由の子も含む）
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        else:
-            # POSIX: まず terminate
-            proc.terminate()
-            try:
-                # 短い猶予
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                # だめなら kill
-                proc.kill()
-    except Exception as e:
-        # 終了失敗は警告のみ
-        print(f"WARNING: Failed to stop host Electron GUI: {e}")
+        # PID もクリア
+        _electron_pid = None
+    # 終了対象 PID を集める
+    pids: list[int] = []
+    # 明示 PID があれば優先
+    if pid is not None:
+        # 追加
+        pids.append(pid)
+    # Popen の PID も念のため（ラッパー含む）
+    if proc is not None and proc.pid not in pids:
+        # 追加
+        pids.append(proc.pid)
+    # 既知 PID を順に落とす（poll 済みでも taskkill する）
+    for target_pid in pids:
+        # ツリー終了
+        _kill_pid_tree(target_pid)
+    # npm/.cmd ラッパー先行終了で孤児化した electron も掃討
+    _kill_gui_electron_orphans()
 
 
 def _register_atexit() -> None:
@@ -202,7 +342,7 @@ def _start_api_server(log_queue) -> tuple[int, str]:
 def _launch_electron(port: int, token: str, generation: int) -> Optional[subprocess.Popen]:
     """gui-electron を subprocess 起動。失敗時は None。"""
     # グローバルに保持
-    global _electron_proc
+    global _electron_proc, _electron_pid
     # ディレクトリ無ければ諦める
     if not _GUI_ELECTRON_DIR.is_dir():
         print(
@@ -223,13 +363,7 @@ def _launch_electron(port: int, token: str, generation: int) -> Optional[subproc
         / ("electron.cmd" if os.name == "nt" else "electron")
     )
     # Windows では .cmd より electron.exe を優先（DETACHED と相性）
-    electron_exe = (
-        _GUI_ELECTRON_DIR
-        / "node_modules"
-        / "electron"
-        / "dist"
-        / "electron.exe"
-    )
+    electron_exe = _electron_dist_exe()
     # dist の有無
     dist_index = _GUI_ELECTRON_DIR / "dist" / "index.html"
     # npm
@@ -254,24 +388,20 @@ def _launch_electron(port: int, token: str, generation: int) -> Optional[subproc
         def _adopt(proc: subprocess.Popen) -> Optional[subprocess.Popen]:
             """世代が一致するときだけグローバルへ登録する。"""
             with _lifecycle_lock:
-                # stop 済み世代なら即終了
-                if generation != _start_generation:
-                    try:
-                        if os.name == "nt":
-                            subprocess.run(
-                                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL,
-                                check=False,
-                            )
-                        else:
-                            proc.kill()
-                    except Exception:
-                        pass
-                    return None
-                # 正常採用
-                _electron_proc = proc
-                return proc
+                # 世代一致なら採用して返す
+                if generation == _start_generation:
+                    # Popen 参照を保持
+                    _electron_proc = proc
+                    # ラッパー死対策で PID も保持
+                    _electron_pid = proc.pid
+                    # 採用成功
+                    return proc
+            # stop 済み世代: ツリー終了＋孤児掃討
+            _kill_pid_tree(proc.pid)
+            # 残留も落とす
+            _kill_gui_electron_orphans()
+            # 不採用
+            return None
 
         # 1) electron.exe 直接
         if os.name == "nt" and electron_exe.is_file():
@@ -282,7 +412,16 @@ def _launch_electron(port: int, token: str, generation: int) -> Optional[subproc
                     env=env,
                 )
             )
-        # 2) node_modules/.bin/electron
+        # 2) POSIX 同梱バイナリ
+        if os.name != "nt" and electron_exe.is_file():
+            return _adopt(
+                _popen_detached(
+                    [str(electron_exe), "."],
+                    cwd=str(_GUI_ELECTRON_DIR),
+                    env=env,
+                )
+            )
+        # 3) node_modules/.bin/electron
         if electron_bin.exists():
             return _adopt(
                 _popen_detached(
@@ -291,7 +430,7 @@ def _launch_electron(port: int, token: str, generation: int) -> Optional[subproc
                     env=env,
                 )
             )
-        # 3) npm run electron:prod フォールバック
+        # 4) npm run electron:prod フォールバック
         if npm and (_GUI_ELECTRON_DIR / "package.json").is_file():
             return _adopt(
                 _popen_detached(
