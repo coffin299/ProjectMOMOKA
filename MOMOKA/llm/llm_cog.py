@@ -4030,8 +4030,8 @@ class LLMCog(commands.Cog, name="llm"):
             )
             # 終了する
             return
-        # 応答を遅延する
-        await interaction.response.defer(ephemeral=True)
+        # 応答を遅延する（結果はチャンネルに公開表示する）
+        await interaction.response.defer(ephemeral=False)
         try:
             # 再読込と全 Bot への反映を行う
             summary = self._reload_llm_config_all_bots()
@@ -4043,7 +4043,7 @@ class LLMCog(commands.Cog, name="llm"):
                 f"❌ Reload failed (`{type(e).__name__}`). Current settings are kept.\n"
                 "再読込に失敗しました。現在の設定のまま動作しています。\n"
                 "Check `configs/llm_config.yaml` and the bot log.",
-                ephemeral=True,
+                ephemeral=False,
             )
             # 終了する
             return
@@ -4058,7 +4058,7 @@ class LLMCog(commands.Cog, name="llm"):
             f"- default model: `{summary['default_model']}`\n"
             f"- available models: {summary['available_models']}\n"
             f"**API keys per provider**\n{key_lines}",
-            ephemeral=True,
+            ephemeral=False,
         )
         # 運用ログに残す
         logger.info(
