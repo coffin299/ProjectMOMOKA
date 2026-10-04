@@ -18,6 +18,13 @@ let apiSeenOk = false;
 let apiFailStreak = 0;
 /** @type {ReturnType<typeof setInterval> | null} */
 let apiWatchTimer = null;
+/** 前回の生存確認が未完了なら次を撃たない（ハング時の Promise 蓄積防止） */
+let apiWatchInFlight = false;
+
+/** 生存確認 1 回あたりのタイムアウト */
+const API_WATCH_TIMEOUT_MS = 3000;
+/** renderer 代理 API 呼び出しのタイムアウト */
+const PROXY_API_TIMEOUT_MS = 15000;
 
 /**
  * window.open 由来 URL を検証し、許可時のみ openExternal する。
@@ -56,7 +63,12 @@ async function proxyApi(opts) {
     headers.Authorization = `Bearer ${GUI_TOKEN}`;
   }
   /** @type {RequestInit} */
-  const init = { method, headers };
+  const init = {
+    method,
+    headers,
+    // Bot ハング時に IPC 応答待ちが溜まり続けないよう打ち切る
+    signal: AbortSignal.timeout(PROXY_API_TIMEOUT_MS),
+  };
   if (opts.body !== undefined && method !== "GET" && method !== "HEAD") {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
     init.body =
@@ -107,12 +119,20 @@ function quitHostGui() {
 function startApiWatchdog() {
   if (apiWatchTimer) return;
   apiWatchTimer = setInterval(async () => {
+    // 前回分が終わっていなければスキップ（応答待ちの多重化を防ぐ）
+    if (apiWatchInFlight) return;
+    apiWatchInFlight = true;
     try {
       const headers = {};
       if (GUI_TOKEN) {
         headers.Authorization = `Bearer ${GUI_TOKEN}`;
       }
-      const res = await net.fetch(`${API_BASE}/status`, { headers });
+      const res = await net.fetch(`${API_BASE}/status`, {
+        headers,
+        signal: AbortSignal.timeout(API_WATCH_TIMEOUT_MS),
+      });
+      // 本文は使わないので破棄し、接続とバッファを即解放する
+      void res.body?.cancel().catch(() => undefined);
       if (res.ok) {
         apiSeenOk = true;
         apiFailStreak = 0;
@@ -121,6 +141,8 @@ function startApiWatchdog() {
       apiFailStreak += 1;
     } catch {
       apiFailStreak += 1;
+    } finally {
+      apiWatchInFlight = false;
     }
     // 一度成功したあと連続失敗なら Bot 側停止とみなして終了
     if (apiSeenOk && apiFailStreak >= 3) {
@@ -180,7 +202,11 @@ async function startLogSse(sender) {
     } catch {
       /* aborted or network */
     } finally {
-      if (!sender.isDestroyed()) {
+      // 意図的な停止 / 差し替え済みの古いストリームは通知しない
+      // （新しい購読の終了と誤認され再接続ループになるため）
+      const isCurrent = sseAbort === ac;
+      if (isCurrent) sseAbort = null;
+      if (isCurrent && !sender.isDestroyed()) {
         sender.send("momoka:sse-end");
       }
     }

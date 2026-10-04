@@ -6,7 +6,7 @@ import logging
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from MOMOKA.services.log_sanitize import sanitize_log_message
 
@@ -27,6 +27,10 @@ _LINE_RE = re.compile(
 )
 # 追記とマスク書換えで共有するロック（H-10）
 LOG_FILE_LOCK = threading.RLock()
+# 履歴パース結果の直近キャッシュ（ポーリング毎の再パース回避）
+_HISTORY_CACHE_LOCK = threading.Lock()
+# (path, size, mtime_ns, max_lines) → items の 1 件のみ保持
+_history_cache: Tuple[Tuple[str, int, int, int], List[Dict[str, Any]]] | None = None
 
 
 class SanitizingFormatter(logging.Formatter):
@@ -185,7 +189,31 @@ def read_log_tail_lines(
 def load_log_history(
     max_lines: int = DEFAULT_HISTORY_LINES,
 ) -> List[Dict[str, Any]]:
-    """起動復元用: .log 末尾をパースしたエントリ一覧。"""
+    """起動復元用: .log 末尾をパースしたエントリ一覧。
+
+    ファイルが前回から変わっていなければパース済み結果を再利用する。
+    戻り値は共有されるため呼び出し側で変更しないこと。
+    """
+    # キャッシュに使うファイルの状態キー
+    global _history_cache
+    try:
+        # サイズと更新時刻で変化を検出する（マスク書換えも検出される）
+        stat = _LOG_LOG.stat()
+        key: Tuple[str, int, int, int] | None = (
+            str(_LOG_LOG),
+            stat.st_size,
+            stat.st_mtime_ns,
+            int(max_lines),
+        )
+    except OSError:
+        # ファイルが無いなどの場合はキャッシュを使わない
+        key = None
+    # 変化なしならキャッシュを返す
+    if key is not None:
+        with _HISTORY_CACHE_LOCK:
+            cached = _history_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
     # 末尾行
     lines = read_log_tail_lines(max_lines=max_lines)
     # 結果
@@ -197,5 +225,9 @@ def load_log_history(
         # 成功分だけ
         if parsed is not None:
             items.append(parsed)
+    # 最新結果だけを保持する（上限 1 件なので増え続けない）
+    if key is not None:
+        with _HISTORY_CACHE_LOCK:
+            _history_cache = (key, items)
     # 返す
     return items

@@ -272,7 +272,7 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 #### Host ops GUI (Electron) vs future guild dashboard
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
-- Host GUI log delivery uses **main-process Bearer SSE** (token never reaches the renderer) plus `/logs/history` polling. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
+- Host GUI log delivery uses **main-process Bearer SSE** (token never reaches the renderer) plus `/logs/history` polling (every 10 s as a gap filler while SSE is live, every 1 s otherwise; no new request while one is pending). Live log lines are batched into the UI every 100 ms. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
 - After Bot/GUI shutdown, Electron is not left behind: **shutdown logs are flushed and briefly drained first**, then Python sweeps tracked/orphan PIDs; Electron also quits when the Host API becomes unreachable (Shutdown does not close the window immediately)
 - LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.

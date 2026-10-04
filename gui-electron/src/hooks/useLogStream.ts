@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiGet, getHostConfig, hostHasAuth } from "../api";
 
 export type LogEntry = {
@@ -20,10 +20,18 @@ const LEVEL_RANK: Record<string, number> = {
   CRITICAL: 50,
 };
 
-/** 履歴ポーリング間隔（SSE 不通時でも必ず追従） */
+/** 履歴ポーリング間隔（SSE 不通時） */
 const HISTORY_POLL_MS = 1000;
+/** 履歴ポーリング間隔（SSE 接続中は取りこぼし補完のみ） */
+const HISTORY_POLL_LIVE_MS = 10000;
+/** 追従ポーリング 1 回で取る行数（SSE 不通時） */
+const HISTORY_APPEND_LINES = 1000;
+/** 追従ポーリング 1 回で取る行数（SSE 接続中） */
+const HISTORY_APPEND_LINES_LIVE = 300;
 /** SSE 再接続間隔 */
 const LIVE_RETRY_MS = 1500;
+/** ライブログをまとめて state へ反映する間隔 */
+const LIVE_FLUSH_MS = 100;
 
 let seq = 0;
 
@@ -90,6 +98,28 @@ export function useLogStream(maxLines = 10000) {
     let closed = false;
     let retry: number | undefined;
     let pollTimer: number | undefined;
+    let flushTimer: number | undefined;
+    // 1 行ごとに 10000 件走査しないよう、ライブ行は溜めてまとめて反映する
+    let pending: Omit<LogEntry, "id">[] = [];
+
+    const flushPending = () => {
+      flushTimer = undefined;
+      if (closed || !pending.length) return;
+      const batch = pending;
+      pending = [];
+      setEntries((prev) => appendFresh(prev, batch, maxLines));
+    };
+
+    const pushLive = (row: Omit<LogEntry, "id">) => {
+      pending.push(row);
+      // 未反映が上限を超えたら古いものを捨てる（state 側も maxLines で切る）
+      if (pending.length > maxLines) {
+        pending = pending.slice(pending.length - maxLines);
+      }
+      if (flushTimer === undefined) {
+        flushTimer = window.setTimeout(flushPending, LIVE_FLUSH_MS);
+      }
+    };
 
     const loadHistory = async (
       mode: "replace" | "append",
@@ -143,7 +173,7 @@ export function useLogStream(maxLines = 10000) {
           const offData = live.onLogSse((raw) => {
             const row = raw as Omit<LogEntry, "id"> & { type?: string };
             if (row && typeof row.message === "string") {
-              setEntries((prev) => appendFresh(prev, [row], maxLines));
+              pushLive(row);
             }
           });
           const offEnd = live.onLogSseEnd
@@ -219,7 +249,7 @@ export function useLogStream(maxLines = 10000) {
                 "id"
               >;
               if (data && typeof data.message === "string") {
-                setEntries((prev) => appendFresh(prev, [data], maxLines));
+                pushLive(data);
               }
             } catch {
               /* ignore */
@@ -248,36 +278,74 @@ export function useLogStream(maxLines = 10000) {
       await loadHistory("replace");
       if (closed) return;
       void connectSse();
-      pollTimer = window.setInterval(() => {
+      // 前回の応答を待ってから次を予約する（Bot ハング時に要求が積み上がらない）
+      const schedulePoll = () => {
         if (closed) return;
-        void loadHistory("append", liveRef.current ? 500 : maxLines);
-      }, HISTORY_POLL_MS);
+        const live = liveRef.current;
+        pollTimer = window.setTimeout(
+          async () => {
+            if (closed) return;
+            await loadHistory(
+              "append",
+              Math.min(
+                maxLines,
+                liveRef.current
+                  ? HISTORY_APPEND_LINES_LIVE
+                  : HISTORY_APPEND_LINES
+              )
+            );
+            schedulePoll();
+          },
+          live ? HISTORY_POLL_LIVE_MS : HISTORY_POLL_MS
+        );
+      };
+      schedulePoll();
     })();
 
     return () => {
       closed = true;
       if (retry) window.clearTimeout(retry);
-      if (pollTimer) window.clearInterval(pollTimer);
+      if (pollTimer) window.clearTimeout(pollTimer);
+      if (flushTimer) window.clearTimeout(flushTimer);
+      pending = [];
       teardownSse();
     };
   }, [maxLines]);
 
-  const clear = () => setEntries([]);
+  const clear = useCallback(() => setEntries([]), []);
 
-  const filterBy = (category: string, minLevel: string): LogEntry[] => {
-    const min = LEVEL_RANK[minLevel] ?? 20;
-    return entries.filter((e) => {
-      if (category === "error") {
-        return (
-          e.category === "error" ||
-          e.level === "ERROR" ||
-          e.level === "CRITICAL"
-        );
-      }
-      if (e.category !== category) return false;
-      return (LEVEL_RANK[e.level] ?? 20) >= min;
-    });
-  };
+  return { entries, connected, restored, clear };
+}
 
-  return { entries, connected, restored, clear, filterBy };
+/** カテゴリ / 最低レベルでログを絞り込む（呼び出し側で useMemo する前提） */
+export function filterLogEntries(
+  entries: LogEntry[],
+  category: string,
+  minLevel: string
+): LogEntry[] {
+  const min = LEVEL_RANK[minLevel] ?? 20;
+  return entries.filter((e) => {
+    if (category === "error") {
+      return (
+        e.category === "error" ||
+        e.level === "ERROR" ||
+        e.level === "CRITICAL"
+      );
+    }
+    if (e.category !== category) return false;
+    return (LEVEL_RANK[e.level] ?? 20) >= min;
+  });
+}
+
+/** 末尾から走査して条件一致を最大 limit 件返す（古い→新しい順） */
+export function takeLastMatching(
+  entries: LogEntry[],
+  limit: number,
+  predicate: (e: LogEntry) => boolean
+): LogEntry[] {
+  const out: LogEntry[] = [];
+  for (let i = entries.length - 1; i >= 0 && out.length < limit; i -= 1) {
+    if (predicate(entries[i])) out.push(entries[i]);
+  }
+  return out.reverse();
 }

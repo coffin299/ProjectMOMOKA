@@ -44,6 +44,23 @@ export function useStatus(pollMs = 1000) {
     let inFlight = false;
     let generation = 0;
     let timer: number | undefined;
+    // 前回値の直列化。変化が無ければ state を更新せず毎秒の再描画を省く
+    let lastKey = "";
+
+    const commit = (
+      s: StatusPayload | null,
+      v: VcItem[],
+      g: GuildItem[],
+      l: number | null
+    ) => {
+      const key = JSON.stringify([s, v, g, l]);
+      if (key === lastKey) return;
+      lastKey = key;
+      setStatus(s);
+      setVc(v);
+      setGuilds(g);
+      setAvgLatency(l);
+    };
 
     const tick = async () => {
       if (cancelled || inFlight) return;
@@ -57,17 +74,11 @@ export function useStatus(pollMs = 1000) {
           apiGet<{ average_seconds: number | null }>("/llm/stats"),
         ]);
         if (cancelled || myGen !== generation) return;
-        setStatus(s);
-        setVc(v.items || []);
-        setGuilds(g.items || []);
-        setAvgLatency(l.average_seconds);
+        commit(s, v.items || [], g.items || [], l.average_seconds);
       } catch {
         if (cancelled || myGen !== generation) return;
         // 失敗時は切断状態へ倒す
-        setStatus(null);
-        setVc([]);
-        setGuilds([]);
-        setAvgLatency(null);
+        commit(null, [], [], null);
       } finally {
         inFlight = false;
         if (!cancelled) {

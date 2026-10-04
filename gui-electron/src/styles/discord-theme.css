@@ -200,6 +200,12 @@ body,
   margin: 0 0 2px;
 }
 
+/* 画面外の行はレイアウト / 描画を省略（大量行の負荷対策） */
+.log-panel > .log-line {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 16px;
+}
+
 .log-line.level-error {
   color: var(--log-error);
 }

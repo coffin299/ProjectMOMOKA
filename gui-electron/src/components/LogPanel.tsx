@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { LogEntry } from "../hooks/useLogStream";
 
 type Props = {
@@ -88,14 +88,21 @@ export function LogPanel({
       </div>
       <div className="log-panel" ref={ref} onScroll={onScroll}>
         {entries.map((e) => (
-          <p key={e.id} className={`log-line ${lineClass(e)}`}>
-            {renderMessage(e.message)}
-          </p>
+          <LogLine key={e.id} entry={e} />
         ))}
       </div>
     </div>
   );
 }
+
+/** 同一エントリは再描画しない（最大 10000 行の再レンダー負荷対策） */
+const LogLine = memo(function LogLine({ entry }: { entry: LogEntry }) {
+  return (
+    <p className={`log-line ${lineClass(entry)}`}>
+      {renderMessage(entry.message)}
+    </p>
+  );
+});
 
 function lineClass(e: LogEntry): string {
   if (e.message.includes("[USER_INPUT]")) return "user-input";

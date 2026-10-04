@@ -275,7 +275,7 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 #### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
-- Host GUI のログ配信は **main process 経由の Bearer SSE**（renderer に token を渡さない）と `/logs/history` ポーリング。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
+- Host GUI のログ配信は **main process 経由の Bearer SSE**（renderer に token を渡さない）と `/logs/history` ポーリング（SSE 接続中は 10 秒ごとの取りこぼし補完、未接続時は 1 秒ごと。応答待ち中は次を送らない）。ライブログは 100ms 単位でまとめて画面へ反映する。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
 - Bot / GUI シャットダウン後に Electron ウィンドウが残らないよう、**シャットダウンログの flush と短い drain のあと** Python 側が PID 掃討し、Electron 側の API 断検知終了も併用する（GUI の Shutdown 直後にウィンドウを落とさない）
 - LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証・peer IP 確認）
 - 画像生成パラメータは steps/CFG 範囲制限・キュー上限あり。モデルは safetensors のみ
