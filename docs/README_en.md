@@ -337,10 +337,12 @@ llm:
 | `/chat <message>` | Chat without mention (no history; no history hint in DMs) |
 | `/clear_history` | Reset history |
 | `/switch-models` | Per-channel model |
+| `/hotreload_llm_api_keys_and_models` | Reload `configs/llm_config.yaml` and apply API keys / models to both bots without restart (bot operators only: `admin_user_ids` or `support.developer_user_id`) |
 
 \* `debate` / `cross_check` / `feedback` are LLM tools (multi-round debate + judge / light 3-step check / developer feedback form).
 \* `max_tool_iterations` (default 5) caps tool round-trips; if exceeded, the bot generates a final answer from existing tool results without further tools.
 \* LLM replies (waiting, body, split continuations, debate posts) are sent `@silent` (suppress notifications) by default.
+\* `/hotreload_llm_api_keys_and_models` applies the whole `llm_config.yaml` (API keys, models, fallbacks, router, prompts, error_msg, search settings, etc.). In-flight replies finish with the old settings; new requests use the new ones. If the YAML is broken, nothing is replaced and current settings are kept. Adding/removing `active_tools` and `concurrency` still require a restart.
 
 ### Music
 
@@ -348,9 +350,9 @@ llm:
 |---------|-------------|
 | `/play` `/pause` `/resume` `/stop` `/skip` | Playback |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | Queue & volume |
-| `/reload_yt_cookies` | Reload YouTube cookies (bot operators only: `admin_user_ids` or `support.developer_user_id`) |
+| `/hotreload_yt_cookies` | Reload YouTube cookies (bot operators only: `admin_user_ids` or `support.developer_user_id`) |
 
-YouTube cookies use a project-root source file (`youtube_cookies.txt`, `youtube_cookie.txt`, or `music.youtube_cookie_file`). **On startup, any non-empty match is loaded automatically** into `data/youtube_cookies.runtime.txt` so yt-dlp write-back cannot wipe the original. `/reload_yt_cookies` refreshes that copy after you replace the file while the bot is running.
+YouTube cookies use a project-root source file (`youtube_cookies.txt`, `youtube_cookie.txt`, or `music.youtube_cookie_file`). **On startup, any non-empty match is loaded automatically** into `data/youtube_cookies.runtime.txt` so yt-dlp write-back cannot wipe the original. `/hotreload_yt_cookies` refreshes that copy after you replace the file while the bot is running.
 
 Now Playing panel (Components V2): title (##) with channel under it; progress as one inline-code line (`bar time / total`). Position is based on real PCM frames. Audio is primed before Discord `play` so startup silence does not shift the audible start by a few seconds. Pause / Skip / Stop (Confirm/Cancel) / Loop / QLoop / QShuffle (in-place queue shuffle; does not replace the Queue object). Queue list (up to 5 + paging) only when upcoming tracks exist. URL `/play` queries are kept as history on the stopped panel. When the queue ends, playback stops, or the bot disconnects, the panel keeps the same layout with the header swapped to `Queue Finished` / `Playback Stopped` / `Playback Ended`, retains the last track’s title (URL link), channel name, thumbnail, and Requested By, shows a short status in the bottom error banner code block, and greys out all controls except the `Buy me a coffee...` donation link.
 Playlist fetch limit is `music.max_playlist_items` (default 10000).

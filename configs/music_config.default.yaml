@@ -21,7 +21,7 @@ music:
   ffmpeg_options: -vn
   # YouTube 用 cookies.txt のパス（年齢制限・ログイン必須動画向け。無ければ空運用可）
   # 原本は yt-dlp に直接渡さず data/youtube_cookies.runtime.txt へコピーして使用する
-  # 再読込: 運用者向け /reload_yt_cookies
+  # 再読込: 運用者向け /hotreload_yt_cookies
   youtube_cookie_file: youtube_cookies.txt
   # ニコニコ動画ログイン（任意。プレミアム／制限コンテンツ用）
   niconico:

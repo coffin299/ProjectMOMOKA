@@ -107,6 +107,37 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     return data
 
 
+def _category_path(base: Path, category: str) -> Path:
+    """カテゴリの読込対象パス（実行用 yaml、無ければ default）を返す。"""
+    # default 直読みカテゴリは常に *.default.yaml
+    if category in DEFAULT_ONLY_CATEGORIES:
+        return base / f"{category}_config.default.yaml"
+    # 実行用パス
+    runtime_path = base / f"{category}_config.yaml"
+    # 無ければ default を返す
+    if not runtime_path.exists():
+        return base / f"{category}_config.default.yaml"
+    # 実行用パスを返す
+    return runtime_path
+
+
+def load_category_config(
+    category: str, root: Optional[Path] = None
+) -> Dict[str, Any]:
+    """1カテゴリの yaml だけを読み直して返す（ホットリロード用）。"""
+    # 読込対象パスを確定する
+    path = _category_path(configs_dir(root), category)
+    # どちらも無ければ呼び出し側で扱えるよう例外にする
+    if not path.exists():
+        raise FileNotFoundError(f"Config not found for category '{category}'")
+    # YAML を読み込む（構文エラーは yaml.YAMLError のまま送出）
+    data = _load_yaml(path)
+    # 読込ログ
+    logger.info("Reloaded config category '%s' from %s", category, path.name)
+    # 読み込んだ dict を返す
+    return data
+
+
 def load_merged_config(root: Optional[Path] = None) -> Dict[str, Any]:
     """全カテゴリ yaml をマージして返す。先に ensure_default_configs を呼ぶ。"""
     # 不足分をコピーする
@@ -117,15 +148,8 @@ def load_merged_config(root: Optional[Path] = None) -> Dict[str, Any]:
     base = configs_dir(root)
     # カテゴリ順に読み込む
     for category in CATEGORIES:
-        # default 直読みカテゴリは常に *.default.yaml
-        if category in DEFAULT_ONLY_CATEGORIES:
-            runtime_path = base / f"{category}_config.default.yaml"
-        else:
-            # 実行用パス
-            runtime_path = base / f"{category}_config.yaml"
-            # 無ければ default を試す
-            if not runtime_path.exists():
-                runtime_path = base / f"{category}_config.default.yaml"
+        # 実行用 yaml（無ければ default）のパスを解決する
+        runtime_path = _category_path(base, category)
         # どちらも無ければスキップ
         if not runtime_path.exists():
             logger.error("Config not found for category '%s'", category)

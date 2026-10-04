@@ -169,6 +169,7 @@ llm:
       # true: commands_i18n のコマンド説明データをプロンプトに供給する
       feed_commands_i18n: true
   # LLM プロバイダ別接続設定（モデル ID の provider プレフィックスと対応）
+  # 編集後は運用者向け /hotreload_llm_api_keys_and_models で再起動なしに反映できます
   providers:
     # OpenAI 公式 API
     openai:

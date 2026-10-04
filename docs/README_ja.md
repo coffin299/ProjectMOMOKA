@@ -361,10 +361,12 @@ music:
 | `/chat <メッセージ>` | メンションなしで対話（履歴なし。DM でも履歴ヒントは出さない） |
 | `/clear_history` | 会話履歴リセット |
 | `/switch-models` | チャンネル専用モデル切替 |
+| `/hotreload_llm_api_keys_and_models` | `configs/llm_config.yaml` を再読込し、API キー・モデル等を再起動なしで両 Bot に反映（Bot 運用者のみ。`admin_user_ids` または `support.developer_user_id`） |
 
 ※ feedback は LLM ツールとして呼び出されます。コマンド実行は Agent の command モードが担当します。
 ※ `max_tool_iterations`（既定 5）はツール往復の上限です。超過時は手元の検索結果などからツールなしで最終回答を生成します。
 ※ LLM 応答（待機・本文・分割続き・討論投稿）は既定で `@silent`（通知抑制）送信。
+※ `/hotreload_llm_api_keys_and_models` は `llm_config.yaml` 全体（API キー・モデル・フォールバック・ルーター・プロンプト・error_msg・search 設定など）を反映します。生成中の応答は旧設定のまま完了し、次のリクエストから新設定を使います。YAML が壊れている場合は差し替えず現行設定を維持します。`active_tools` の追加削除と `concurrency` は再起動が必要です。
 
 ### 音楽
 
@@ -372,9 +374,9 @@ music:
 |---------|------|
 | `/play` `/pause` `/resume` `/stop` `/skip` | 再生制御 |
 | `/seek` `/volume` `/queue` `/shuffle` `/clear` `/remove` `/nowplaying` `/loop` | キュー・音量など |
-| `/reload_yt_cookies` | YouTube cookie 再読込（Bot 運用者のみ。`admin_user_ids` または `support.developer_user_id`） |
+| `/hotreload_yt_cookies` | YouTube cookie 再読込（Bot 運用者のみ。`admin_user_ids` または `support.developer_user_id`） |
 
-YouTube cookie はプロジェクト直下の `youtube_cookies.txt`（または `youtube_cookie.txt` / `music.youtube_cookie_file`）を原本とし、**起動時に非空なら自動ロード**して `data/youtube_cookies.runtime.txt` へコピーします（原本の書き戻し破壊を防ぐ）。起動後にファイルを置き直したとき用に `/reload_yt_cookies`（Bot 運用者のみ）もあります。
+YouTube cookie はプロジェクト直下の `youtube_cookies.txt`（または `youtube_cookie.txt` / `music.youtube_cookie_file`）を原本とし、**起動時に非空なら自動ロード**して `data/youtube_cookies.runtime.txt` へコピーします（原本の書き戻し破壊を防ぐ）。起動後にファイルを置き直したとき用に `/hotreload_yt_cookies`（Bot 運用者のみ）もあります。
 
 Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル、Progress はインラインコード1行（`バー 時間 / 総時間`）。位置は実 PCM フレーム基準。再生開始前に実音フレームをプライムしてから Discord へ流す（起動無音で数秒ズレるのを防止）。Pause / Skip / Stop（Confirm/Cancel）/ Loop / QLoop / QShuffle（待ちキューは Queue 差し替えなしの in-place シャッフル）。次曲があるときだけ下部にキュー（最大5曲＋ページング）を表示。URL 指定の `/play` は停止パネルに履歴 URL を残す。キュー終了・停止・切断時は再生中と同型レイアウトのまま見出しを `Queue Finished` / `Playback Stopped` / `Playback Ended` に差し替え、最後に流した曲のタイトル（URLリンク）・チャンネル名・サムネ・Requested By を維持し、パネル最下部のエラー表示欄（コードブロック）に短いステータスを出し、操作ボタンはグレーアウト（`Buy me a coffee...` の寄付リンクのみ有効）。
 プレイリスト取得上限は `music.max_playlist_items`（既定 10000）。

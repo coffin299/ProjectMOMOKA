@@ -189,27 +189,11 @@ class MusicCog(commands.Cog, name="music_cog"):
 
     def _is_bot_operator(self, user_id: int) -> bool:
         """Bot 運用者か判定する（admin_user_ids または support.developer_user_id）。"""
-        # Bot に is_admin があれば先に見る
-        is_admin_fn = getattr(self.bot, "is_admin", None)
-        # 呼び出し可能なら admin_user_ids を確認する
-        if callable(is_admin_fn):
-            try:
-                # 管理者リストに入っていれば許可
-                if bool(is_admin_fn(user_id)):
-                    return True
-            except Exception:
-                # 判定失敗時は developer_user_id へフォールバック
-                pass
-        # /shutdown と同じ developer_user_id も許可する
-        from MOMOKA.utilities.restart_notice import shutdown_allowed_user_id
+        # 共通判定へ委譲する
+        from MOMOKA.utilities.restart_notice import is_bot_operator
 
-        # 設定から許可 UID を取る
-        allowed = shutdown_allowed_user_id(getattr(self.bot, "config", None))
-        # 未設定なら不可
-        if allowed is None:
-            return False
-        # ID 一致で許可
-        return int(user_id) == int(allowed)
+        # 判定結果を返す
+        return is_bot_operator(self.bot, user_id)
 
     def _load_bot_config(self) -> dict:
         # bot.config（configs/ マージ結果）のみ使う。ルート config.yaml は非対応。
@@ -2516,10 +2500,10 @@ class MusicCog(commands.Cog, name="music_cog"):
             state.auto_leave_task.cancel()
 
     @app_commands.command(
-        name="reload_yt_cookies",
+        name="hotreload_yt_cookies",
         description="Reload YouTube cookies from disk (bot operator only).",
     )
-    async def reload_yt_cookies(self, interaction: discord.Interaction):
+    async def hotreload_yt_cookies(self, interaction: discord.Interaction):
         """原本 cookie を再読込し、yt-dlp 用 runtime コピーを作り直す。"""
         # Bot 運用者以外は拒否する
         if not self._is_bot_operator(interaction.user.id):
@@ -2570,7 +2554,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         )
         # 運用ログに残す
         logger.info(
-            "/reload_yt_cookies by user=%s ok source=%s size=%s",
+            "/hotreload_yt_cookies by user=%s ok source=%s size=%s",
             interaction.user.id,
             result.get("source"),
             result.get("size"),

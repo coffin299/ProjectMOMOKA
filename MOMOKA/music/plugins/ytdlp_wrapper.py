@@ -193,7 +193,7 @@ def ensure_youtube_cookies_loaded(*, reason: str = "startup") -> Dict[str, Any]:
     プロジェクト直下（および config 指定）の非空 cookie 原本を検出し、
     runtime コピーへロードする。
 
-    `/reload_yt_cookies` 無しでも起動時・再生時に有効になるための共通入口。
+    `/hotreload_yt_cookies` 無しでも起動時・再生時に有効になるための共通入口。
     """
     # 原本を解決する（youtube_cookie.txt / youtube_cookies.txt 両方候補）
     source = resolve_youtube_cookie_source_path()

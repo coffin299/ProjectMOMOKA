@@ -27,9 +27,12 @@ import aiohttp
 import discord
 import httpx
 import openai
+import yaml
 from discord import app_commands
 from discord.ext import commands
 
+from MOMOKA.bots.registry import registry
+from MOMOKA.config.loader import load_category_config
 from MOMOKA.llm.error.errors import (
     LLMExceptionHandler,
     SearchAgentError,
@@ -61,6 +64,7 @@ from MOMOKA.llm.router.mode_runner import (
 )
 from MOMOKA.llm.router.json_extract import extract_completion_text
 from MOMOKA.utilities.locale import resolve_guild_lang, resolve_interaction_lang
+from MOMOKA.utilities.restart_notice import is_bot_operator
 from MOMOKA.utilities.url_safety import UnsafeURLError, get_with_ssrf_protection
 from MOMOKA.storage import NS_CHANNEL_LLM_MODELS, resolve_settings_db
 from MOMOKA.utilities.feedback import (
@@ -877,6 +881,25 @@ class LLMCog(commands.Cog, name="llm"):
         # Google API 向けアダプタは google プロバイダー限定
         return provider_name.lower() == "google" and "gemini" in model_name.lower()
 
+    @staticmethod
+    def _collect_provider_api_keys(provider_config: Dict[str, Any]) -> List[str]:
+        """プロバイダー設定から api_key1, api_key2, ...（無ければ api_key）を順に集める。"""
+        # 収集先
+        api_keys: List[str] = []
+        # 連番の開始位置
+        i = 1
+        # 空き番号が出るまで api_key{i} を読む
+        while provider_config.get(f'api_key{i}'):
+            # キーを追加する
+            api_keys.append(provider_config[f'api_key{i}'])
+            # 次の番号へ進む
+            i += 1
+        # 連番が無ければ単独の api_key を見る
+        if not api_keys and provider_config.get('api_key'):
+            api_keys.append(provider_config['api_key'])
+        # 収集結果を返す
+        return api_keys
+
     def _initialize_llm_client(self, model_string: Optional[str]) -> Optional[openai.AsyncOpenAI]:
         if not model_string or '/' not in model_string:
             logger.error(f"Invalid model format: '{model_string}'. Expected 'provider_name/model_name'.")
@@ -906,13 +929,7 @@ class LLMCog(commands.Cog, name="llm"):
                 logger.info(f"🔧 [KoboldCPP] Detected KoboldCPP provider. Applying KoboldCPP-specific settings.")
             
             if provider_name not in self.provider_api_keys:
-                api_keys, i = [], 1
-                while True:
-                    if provider_config.get(f'api_key{i}'):
-                        api_keys.append(provider_config[f'api_key{i}']); i += 1
-                    else:
-                        break
-                if not api_keys and provider_config.get('api_key'): api_keys.append(provider_config['api_key'])
+                api_keys = self._collect_provider_api_keys(provider_config)
                 if not api_keys:
                     logger.info(
                         f"No API keys found for provider '{provider_name}'. Assuming local model or keyless API.")
@@ -1224,7 +1241,6 @@ class LLMCog(commands.Cog, name="llm"):
         # 在籍確認
         mention = "PLANA"
         try:
-            from MOMOKA.bots.registry import registry
             plana_uid = registry.user_id("plana")
             if guild is not None and plana_uid is not None:
                 # 同期的にキャッシュを見る（詳細確認は呼び出し側で可）
@@ -2670,6 +2686,77 @@ class LLMCog(commands.Cog, name="llm"):
         # 作成結果（失敗時は None）を返す
         return client
 
+    def _reset_llm_runtime_state(self) -> None:
+        """llm_config 差し替え後に API キー・クライアント等のキャッシュを作り直す。"""
+        # 古い API キーを保持したクライアントを破棄する（生成中の応答は旧クライアントで完走）
+        self.llm_clients.clear()
+        # プロバイダー別 API キー一覧を破棄する（次回クライアント生成時に再収集）
+        self.provider_api_keys.clear()
+        # キーローテーション位置を先頭に戻す
+        self.provider_key_index.clear()
+        # error_msg は初期化時にコピーされるため例外ハンドラを作り直す
+        self.exception_handler = LLMExceptionHandler(self.llm_config)
+        # 言語プロンプトを取り直す
+        self.language_prompt = self.llm_config.get('language_prompt')
+        # 検索設定は初期化時にコピーされるため SearchAgent を作り直す（有効時のみ）
+        if self.search_agent is not None and SearchAgent:
+            self.search_agent = SearchAgent(self.bot, self.llm_config)
+        # デフォルトモデルを解決する
+        default_model_string = self._persona_default_model()
+        # 設定があればクライアントを先行生成する
+        if default_model_string:
+            self._get_or_create_llm_client(default_model_string)
+        # 反映をログに残す
+        logger.info(
+            f"[{self._bot_tag()}] LLM runtime state reset "
+            f"(default model: '{default_model_string}')."
+        )
+
+    def _reload_llm_config_all_bots(self) -> Dict[str, Any]:
+        """llm_config.yaml を読み直し、全 Bot の LLMCog へ反映して要約を返す。"""
+        # llm カテゴリだけ読み直す（ファイル/構文エラーは例外で現行設定を維持）
+        new_llm = load_category_config("llm").get("llm")
+        # llm セクションが無い・不正なら差し替えない
+        if not isinstance(new_llm, dict):
+            raise ValueError("The 'llm' section in llm_config.yaml is missing or invalid.")
+        # 登録済み全 Bot から LLMCog を集める
+        cogs = [
+            cog for cog in (bot.get_cog(self.qualified_name) for bot in registry.all_bots())
+            if isinstance(cog, LLMCog)
+        ]
+        # レジストリ未登録（単体起動など）でも自分は必ず含める
+        if self not in cogs:
+            cogs.append(self)
+        # 共有 dict を二重に書き換えないよう更新済み id を記録する
+        updated_ids: set = set()
+        # 各 Cog に反映する
+        for cog in cogs:
+            # まだ書き換えていない dict なら中身を入れ替える
+            if id(cog.llm_config) not in updated_ids:
+                # 参照を保ったまま中身を差し替える（bot.config['llm'] / ルーター等も追従）
+                cog.llm_config.clear()
+                # 新しい設定を流し込む
+                cog.llm_config.update(new_llm)
+                # 更新済みとして記録する
+                updated_ids.add(id(cog.llm_config))
+            # キャッシュを作り直す
+            cog._reset_llm_runtime_state()
+        # プロバイダー設定を取り出す
+        providers = new_llm.get("providers") or {}
+        # キー本体は出さず、プロバイダー別の件数だけ集計する
+        key_counts = {
+            name: len(self._collect_provider_api_keys(cfg))
+            for name, cfg in providers.items()
+            if isinstance(cfg, dict)
+        }
+        # 要約を返す
+        return {
+            "bots": [cog.display_name for cog in cogs],
+            "default_model": new_llm.get("model"),
+            "available_models": len(new_llm.get("available_models") or []),
+            "key_counts": key_counts,
+        }
+
     def _ensure_messages_for_model(
         self, messages: List[Dict[str, Any]], model_string: Optional[str]
     ) -> List[Dict[str, Any]]:
@@ -3927,6 +4014,59 @@ class LLMCog(commands.Cog, name="llm"):
         available_models = self.llm_config.get('available_models', [])
         return [app_commands.Choice(name=model, value=model) for model in available_models if
                 current.lower() in model.lower()][:25]
+
+    @app_commands.command(
+        name="hotreload_llm_api_keys_and_models",
+        description="Reload API keys and models from llm_config.yaml (bot operator only).",
+    )
+    async def hotreload_llm_api_keys_and_models(self, interaction: discord.Interaction):
+        """llm_config.yaml を再読込し、API キー・モデル設定を両 Bot へ即時反映する。"""
+        # Bot 運用者以外は拒否する
+        if not is_bot_operator(self.bot, interaction.user.id):
+            # ephemeral で権限エラーを返す
+            await interaction.response.send_message(
+                "❌ You are not allowed to use this command.",
+                ephemeral=True,
+            )
+            # 終了する
+            return
+        # 応答を遅延する
+        await interaction.response.defer(ephemeral=True)
+        try:
+            # 再読込と全 Bot への反映を行う
+            summary = self._reload_llm_config_all_bots()
+        except (OSError, yaml.YAMLError, ValueError) as e:
+            # 失敗時は差し替え前に止まるため現行設定のまま動き続ける
+            logger.error(f"[{self._bot_tag()}] LLM config reload failed: {e}", exc_info=True)
+            # パス露出を避けるため例外種別のみ返す
+            await interaction.followup.send(
+                f"❌ Reload failed (`{type(e).__name__}`). Current settings are kept.\n"
+                "再読込に失敗しました。現在の設定のまま動作しています。\n"
+                "Check `configs/llm_config.yaml` and the bot log.",
+                ephemeral=True,
+            )
+            # 終了する
+            return
+        # プロバイダー別キー件数を1行ずつ整形する
+        key_lines = "\n".join(
+            f"- `{name}`: {count}" for name, count in summary["key_counts"].items()
+        ) or "- (none)"
+        # 成功応答
+        await interaction.followup.send(
+            "✅ LLM API keys and models reloaded. / LLM の API キーとモデルを再読込しました。\n"
+            f"- bots: {', '.join(summary['bots'])}\n"
+            f"- default model: `{summary['default_model']}`\n"
+            f"- available models: {summary['available_models']}\n"
+            f"**API keys per provider**\n{key_lines}",
+            ephemeral=True,
+        )
+        # 運用ログに残す
+        logger.info(
+            "/hotreload_llm_api_keys_and_models by user=%s ok bots=%s default_model=%s",
+            interaction.user.id,
+            summary["bots"],
+            summary["default_model"],
+        )
 
     @app_commands.command(name="switch-models",
                           description="Switches the AI model used for this channel.")

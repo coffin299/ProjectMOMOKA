@@ -101,6 +101,28 @@ def shutdown_allowed_user_id(config: Optional[Mapping[str, Any]]) -> Optional[in
     return load_support_links(config).developer_user_id
 
 
+def is_bot_operator(bot: Any, user_id: int) -> bool:
+    """Bot 運用者か判定する（admin_user_ids または support.developer_user_id）。"""
+    # Bot に is_admin があれば先に見る
+    is_admin_fn = getattr(bot, "is_admin", None)
+    # 呼び出し可能なら admin_user_ids を確認する
+    if callable(is_admin_fn):
+        try:
+            # 管理者リストに入っていれば許可
+            if bool(is_admin_fn(user_id)):
+                return True
+        except Exception:
+            # 判定失敗時は developer_user_id へフォールバック
+            pass
+    # /shutdown と同じ developer_user_id も許可する
+    allowed = shutdown_allowed_user_id(getattr(bot, "config", None))
+    # 未設定なら不可
+    if allowed is None:
+        return False
+    # ID 一致で許可
+    return int(user_id) == int(allowed)
+
+
 # 後方互換: 設定無し時の最小文言（個人リンクなし）
 RESTART_NOTICE_TEXT = format_restart_notice()
 
