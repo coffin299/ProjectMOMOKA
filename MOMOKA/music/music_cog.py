@@ -587,6 +587,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                     channel.connect(timeout=30.0, reconnect=True, self_deaf=False),
                     timeout=35.0,
                 )
+                # 接続中に状態が外れていれば登録し直す
+                self._reattach_guild_state(guild_id, state)
                 # Companion は接続直後に Primary 同居を再点検する
                 if await self._leave_if_partner_coexists(guild_id, channel, notify=True):
                     # 同居解消のため切断済み
@@ -915,6 +917,30 @@ class MusicCog(commands.Cog, name="music_cog"):
         # コールバック・クリーンアップから状態を復活させないため辞書を直接参照する
         return self.guild_states.get(guild_id)
 
+    def _reattach_guild_state(self, guild_id: int, state: GuildState) -> None:
+        """接続完了時に state が guild_states から外れていれば登録し直す。"""
+        # 登録中の状態を取得する
+        registered = self.guild_states.get(guild_id)
+        # 同じオブジェクトなら何もしない
+        if registered is state:
+            return
+        # 外れたまま再生すると Active VC 集計や /play 判定から見えなくなる
+        if registered is None:
+            # 外れていたことをログに残す
+            logger.warning(
+                "Guild %s: guild state was detached during voice connect; re-attaching",
+                guild_id,
+            )
+            # 接続済みの状態を登録し直す
+            self.guild_states[guild_id] = state
+            # 終了する
+            return
+        # 別の状態が既にある場合は上書きせず記録だけ残す
+        logger.warning(
+            "Guild %s: another guild state was registered during voice connect",
+            guild_id,
+        )
+
     def get_active_vc_guild_count(self) -> int:
         """VC に接続中のギルド数を返す（GUI 稼働モニタ用）。"""
         # 接続済み voice_client を持つギルドだけを数える
@@ -1173,6 +1199,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                             timeout=30.0, reconnect=True, self_deaf=False),
                         timeout=35.0
                     )
+                    # 接続中に状態が外れていれば登録し直す
+                    self._reattach_guild_state(ctx.guild.id, state)
                     # Companion は接続直後に Primary 同居を再点検する
                     if await self._leave_if_partner_coexists(
                         ctx.guild.id,
@@ -2426,6 +2454,18 @@ class MusicCog(commands.Cog, name="music_cog"):
                                     after: discord.VoiceState):
         # 自BotがVCから切断されたらギルド状態を破棄する
         if member.id == self.bot.user.id and before.channel and not after.channel:
+            # 接続処理中の状態を取得する
+            connecting_state = self.get_existing_guild_state(member.guild.id)
+            # 再起動直後は旧セッションの切断イベントが接続中に届くため、ここで破棄すると
+            # 再生中の状態が guild_states から外れて Active VC に出なくなる
+            if connecting_state and connecting_state.connection_lock.locked():
+                # 接続処理側に任せて無視する
+                logger.info(
+                    "Guild %s: ignoring self voice disconnect event during connect",
+                    member.guild.id,
+                )
+                # 破棄しない
+                return
             # 再生状態・VoiceClient・自動退出タスクをまとめて掃除
             await self._cleanup_guild_state(member.guild.id)
             # 以降の無人判定は不要
