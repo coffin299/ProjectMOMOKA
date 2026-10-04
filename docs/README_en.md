@@ -337,12 +337,12 @@ llm:
 | `/chat <message>` | Chat without mention (no history; no history hint in DMs) |
 | `/clear_history` | Reset history |
 | `/switch-models` | Per-channel model |
-| `/hotreload_llm_api_keys_and_models` | Reload `configs/llm_config.yaml` and apply API keys / models to both bots without restart (bot operators only: `admin_user_ids` or `support.developer_user_id`) |
+| `/hotreload_llm_apikeys_and_models` | Reload `configs/llm_config.yaml` and apply API keys / models to both bots without restart (bot operators only: `admin_user_ids` or `support.developer_user_id`) |
 
 \* `debate` / `cross_check` / `feedback` are LLM tools (multi-round debate + judge / light 3-step check / developer feedback form).
 \* `max_tool_iterations` (default 5) caps tool round-trips; if exceeded, the bot generates a final answer from existing tool results without further tools.
 \* LLM replies (waiting, body, split continuations, debate posts) are sent `@silent` (suppress notifications) by default.
-\* `/hotreload_llm_api_keys_and_models` applies the whole `llm_config.yaml` (API keys, models, fallbacks, router, prompts, error_msg, search settings, etc.). In-flight replies finish with the old settings; new requests use the new ones. If the YAML is broken, nothing is replaced and current settings are kept. Adding/removing `active_tools` and `concurrency` still require a restart.
+\* `/hotreload_llm_apikeys_and_models` applies the whole `llm_config.yaml` (API keys, models, fallbacks, router, prompts, error_msg, search settings, etc.). In-flight replies finish with the old settings; new requests use the new ones. If the YAML is broken, nothing is replaced and current settings are kept. Adding/removing `active_tools` and `concurrency` still require a restart.
 
 ### Music
 

@@ -361,12 +361,12 @@ music:
 | `/chat <メッセージ>` | メンションなしで対話（履歴なし。DM でも履歴ヒントは出さない） |
 | `/clear_history` | 会話履歴リセット |
 | `/switch-models` | チャンネル専用モデル切替 |
-| `/hotreload_llm_api_keys_and_models` | `configs/llm_config.yaml` を再読込し、API キー・モデル等を再起動なしで両 Bot に反映（Bot 運用者のみ。`admin_user_ids` または `support.developer_user_id`） |
+| `/hotreload_llm_apikeys_and_models` | `configs/llm_config.yaml` を再読込し、API キー・モデル等を再起動なしで両 Bot に反映（Bot 運用者のみ。`admin_user_ids` または `support.developer_user_id`） |
 
 ※ feedback は LLM ツールとして呼び出されます。コマンド実行は Agent の command モードが担当します。
 ※ `max_tool_iterations`（既定 5）はツール往復の上限です。超過時は手元の検索結果などからツールなしで最終回答を生成します。
 ※ LLM 応答（待機・本文・分割続き・討論投稿）は既定で `@silent`（通知抑制）送信。
-※ `/hotreload_llm_api_keys_and_models` は `llm_config.yaml` 全体（API キー・モデル・フォールバック・ルーター・プロンプト・error_msg・search 設定など）を反映します。生成中の応答は旧設定のまま完了し、次のリクエストから新設定を使います。YAML が壊れている場合は差し替えず現行設定を維持します。`active_tools` の追加削除と `concurrency` は再起動が必要です。
+※ `/hotreload_llm_apikeys_and_models` は `llm_config.yaml` 全体（API キー・モデル・フォールバック・ルーター・プロンプト・error_msg・search 設定など）を反映します。生成中の応答は旧設定のまま完了し、次のリクエストから新設定を使います。YAML が壊れている場合は差し替えず現行設定を維持します。`active_tools` の追加削除と `concurrency` は再起動が必要です。
 
 ### 音楽
 

@@ -4016,10 +4016,10 @@ class LLMCog(commands.Cog, name="llm"):
                 current.lower() in model.lower()][:25]
 
     @app_commands.command(
-        name="hotreload_llm_api_keys_and_models",
+        name="hotreload_llm_apikeys_and_models",
         description="Reload API keys and models from llm_config.yaml (bot operator only).",
     )
-    async def hotreload_llm_api_keys_and_models(self, interaction: discord.Interaction):
+    async def hotreload_llm_apikeys_and_models(self, interaction: discord.Interaction):
         """llm_config.yaml を再読込し、API キー・モデル設定を両 Bot へ即時反映する。"""
         # Bot 運用者以外は拒否する
         if not is_bot_operator(self.bot, interaction.user.id):
@@ -4062,7 +4062,7 @@ class LLMCog(commands.Cog, name="llm"):
         )
         # 運用ログに残す
         logger.info(
-            "/hotreload_llm_api_keys_and_models by user=%s ok bots=%s default_model=%s",
+            "/hotreload_llm_apikeys_and_models by user=%s ok bots=%s default_model=%s",
             interaction.user.id,
             summary["bots"],
             summary["default_model"],
