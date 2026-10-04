@@ -341,6 +341,7 @@ llm:
 
 \* `debate` / `cross_check` / `feedback` are LLM tools (multi-round debate + judge / light 3-step check / developer feedback form).
 \* `max_tool_iterations` (default 5) caps tool round-trips; if exceeded, the bot generates a final answer from existing tool results without further tools.
+\* `tool_status` (enabled by default): when a web search starts, the text so far is flushed to Discord with a localized "🔍 Searching...." line (with the query) below it; the post-search answer continues in a new paragraph.
 \* LLM replies (waiting, body, split continuations, debate posts) are sent `@silent` (suppress notifications) by default.
 \* `/hotreload_llm_apikeys_and_models` applies the whole `llm_config.yaml` (API keys, models, fallbacks, router, prompts, error_msg, search settings, etc.). In-flight replies finish with the old settings; new requests use the new ones. If the YAML is broken, nothing is replaced and current settings are kept. Adding/removing `active_tools` and `concurrency` still require a restart.
 

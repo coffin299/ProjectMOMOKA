@@ -256,6 +256,16 @@ llm:
   - feedback
   # ツール往復（tool call ↔ 結果）の上限回数。超過時はツールなしで最終回答を 1 回生成する
   max_tool_iterations: 5
+  # ツール実行中ステータス（検索開始時にそれまでの本文を確定し、下に「検索中....」を表示）
+  tool_status:
+    # false で表示しない
+    enabled: true
+    # 検索語を併記するか
+    show_query: true
+    # 言語別文言（省略時は ja/en/ko/vi/zh-CN/zh-TW の既定値）
+    search:
+      ja: 🔍 検索中....
+      en: 🔍 Searching....
   # 同時実行（インフライト）制御
   concurrency:
     # ボット全体で同時処理できるチャット数の上限

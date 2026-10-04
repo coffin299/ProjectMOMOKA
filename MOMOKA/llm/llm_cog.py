@@ -49,6 +49,7 @@ from MOMOKA.llm.llm_views import ThreadCreationView
 from MOMOKA.llm.message_utils import split_message_smartly
 from MOMOKA.llm.utils.waiting_view import WaitingLayoutView
 from MOMOKA.llm.utils.language import response_matches_lang
+from MOMOKA.llm.utils.tool_status import format_tool_status
 from MOMOKA.llm.router.mode_runner import (
     coding_attach_settings,
     coding_output_prompt,
@@ -2333,6 +2334,57 @@ class LLMCog(commands.Cog, name="llm"):
                     estimate_model=estimate_model or new_model,
                 )
 
+            # ツール実行後の最初のチャンク前に改行区切りを入れるか
+            pending_tool_separator = False
+            # coding のプレビュー抑止フラグ（試行ループ内で確定する）
+            skip_stream_preview = False
+            # ストリーム表示の初回フラグ（試行ループ内で初期化する）
+            is_first_update = True
+
+            async def _on_tool_start(calls: List[Tuple[str, Dict[str, Any]]]) -> None:
+                """ツール実行直前に、それまでの本文と実行中ステータスを表示する。"""
+                nonlocal sent_message, waiting_v2_cleared, last_update
+                nonlocal last_displayed_length, pending_tool_separator, is_first_update
+                # 検索後の本文は前段と改行で区切る
+                pending_tool_separator = bool(full_response_text)
+                # 検索後の最初のチャンクで即ステータスを消すため次回更新を強制する
+                is_first_update = True
+                # coding は本文プレビューを出さない／シャットダウン中は編集しない
+                if skip_stream_preview or self._shutting_down:
+                    return
+                # 言語に合わせたステータス行を作る
+                status = format_tool_status(self.llm_config, calls, route_lang)
+                # 表示対象のツールでなければ何もしない
+                if not status:
+                    return
+                # 本文に使える残り文字数を計算する
+                body_limit = (
+                    SAFE_MESSAGE_LENGTH - len(emoji_prefix) - len(emoji_suffix) - len(status) - 10
+                )
+                # それまでの本文を末尾空白を除いて切り詰める
+                body = full_response_text.rstrip()[:max(body_limit, 0)]
+                # 本文の有無で表示を組み立てる
+                display_text = (
+                    f"{emoji_prefix}{body}{emoji_suffix}\n\n{status}" if body else status
+                )
+                try:
+                    # 待機 V2 表示中なら通常 content へ切り替える
+                    if not waiting_v2_cleared:
+                        sent_message = await self._replace_waiting_with_content(
+                            sent_message, channel, display_text, track_active=True
+                        )
+                        waiting_v2_cleared = True
+                    else:
+                        await sent_message.edit(content=display_text, view=None)
+                    # 表示済み位置を本文末尾に揃える
+                    last_update, last_displayed_length = time.time(), len(full_response_text)
+                except discord.HTTPException as e:
+                    # 表示失敗はログのみ（ツール実行は継続）
+                    logger.warning(
+                        f"⚠️ Failed to show tool status (ID: {sent_message.id}): "
+                        f"{e.status} - {getattr(e, 'text', str(e))}"
+                    )
+
             stream_messages = messages_for_api
             # 言語フォローアップ設定（未設定時は有効）
             lang_follow_cfg = self.llm_config.get("language_followup") or {}
@@ -2359,6 +2411,8 @@ class LLMCog(commands.Cog, name="llm"):
                 full_response_text, last_update, last_displayed_length, chunk_count = "", 0.0, 0, 0
                 # ストリーム表示の初回フラグを試行ごとに戻す
                 is_first_update = True
+                # 前試行のツール区切り待ちを持ち越さない
+                pending_tool_separator = False
                 logger.debug(
                     f"Starting LLM stream for message {sent_message.id} "
                     f"(lang_attempt={lang_attempt + 1}/{max_lang_attempts})"
@@ -2371,6 +2425,7 @@ class LLMCog(commands.Cog, name="llm"):
                     user.id,
                     on_model_fallback=_on_model_fallback if waiting_view is not None else None,
                     route_mode=route_mode,
+                    on_tool_start=_on_tool_start,
                 )
                 # coding は生成中に本文を流さず、完了後に要約+.md 添付へ
                 coding_cfg = (
@@ -2388,6 +2443,12 @@ class LLMCog(commands.Cog, name="llm"):
                         break
                     if not content_chunk:
                         continue
+                    # ツール実行後の続きは前段本文と段落を分ける
+                    if pending_tool_separator:
+                        pending_tool_separator = False
+                        # 既に改行で終わっていれば区切りを足さない
+                        if full_response_text and not full_response_text.endswith("\n"):
+                            content_chunk = "\n\n" + content_chunk.lstrip()
                     chunk_count += 1
                     full_response_text += content_chunk
                     if chunk_count % 100 == 0: logger.debug(
@@ -3032,6 +3093,7 @@ class LLMCog(commands.Cog, name="llm"):
         user_id: int,
         on_model_fallback: Optional[Callable[..., Awaitable[None]]] = None,
         route_mode: Optional[str] = None,
+        on_tool_start: Optional[Callable[..., Awaitable[None]]] = None,
     ) -> AsyncGenerator[str, None]:
         # 呼び出し元クライアント参照を保持（フォールバック後のメタ書き戻し用）
         request_client = client
@@ -3559,11 +3621,36 @@ class LLMCog(commands.Cog, name="llm"):
                     )
                 ) for tc in tool_calls_buffer
             ]
+            # ツール実行前に呼び出し元へ通知する（本文確定＋実行中表示用）
+            if on_tool_start is not None:
+                try:
+                    await on_tool_start(self._summarize_tool_calls(tool_calls_buffer))
+                except Exception as callback_error:
+                    # 表示更新失敗でツール実行自体は止めない
+                    logger.debug("on_tool_start callback failed: %s", callback_error)
             await self._process_tool_calls(tool_calls_obj, current_messages, channel_id, user_id)
 
         logger.warning(f"⚠️ Tool processing exceeded max iterations ({max_iterations})")
         yield self.llm_config.get('error_msg', {}).get('tool_loop_timeout',
                                                        "Tool processing exceeded max iterations.\nツールの処理が最大反復回数を超えました.")
+
+    @staticmethod
+    def _summarize_tool_calls(
+        tool_calls_buffer: List[Dict[str, Any]],
+    ) -> List[Tuple[str, Dict[str, Any]]]:
+        """ツール呼び出しバッファを（正規化名, 引数）の一覧へ変換する。"""
+        summary: List[Tuple[str, Dict[str, Any]]] = []
+        for tc in tool_calls_buffer:
+            # "default_api.search" などを末尾名へ正規化する
+            name = str(tc["function"]["name"] or "").split(".")[-1]
+            # 引数 JSON を解釈する（壊れていれば空扱い）
+            try:
+                args = json.loads(tc["function"]["arguments"] or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            # 辞書以外の引数は表示に使わない
+            summary.append((name, args if isinstance(args, dict) else {}))
+        return summary
 
     @staticmethod
     def _messages_have_tool_results(messages: List[Dict[str, Any]]) -> bool:
