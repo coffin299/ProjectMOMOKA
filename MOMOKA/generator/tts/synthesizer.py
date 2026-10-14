@@ -413,6 +413,17 @@ class StyleBertVITS2Synthesizer:
         # モデル状態をリセット（次回 load_model() で再ロード可能）
         self._model_ready = False
 
+        # load_model() が読み込んだ日本語 BERT（約 1.3GB）はモジュール側に常駐し続けるため一緒に解放する
+        import sys
+        bert_models = sys.modules.get("style_bert_vits2.nlp.bert_models")
+        if bert_models is not None:
+            try:
+                from style_bert_vits2.constants import Languages
+                bert_models.unload_model(Languages.JP)
+                bert_models.unload_tokenizer(Languages.JP)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Error while unloading BERT model: %s", exc)
+
         # CUDAキャッシュをクリア
         if torch is not None and torch.cuda.is_available():
             torch.cuda.empty_cache()

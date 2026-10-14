@@ -10,6 +10,9 @@ tts:
   default_model_dir: null
   # OpenJTalk 辞書ディレクトリ。null ならパッケージ既定
   pyopenjtalk_dict_dir: null
+  # 合成は別プロセスで行う。最後の読み上げからこの秒数でそのプロセスを終了し、
+  # モデル（日本語 BERT 含む）のメモリを解放する。0 なら毎回終了（毎回起動し直すので遅い）
+  model_idle_unload_seconds: 60
   # 出力サンプルレート（Discord 音声は通常 48000）
   sample_rate: 48000
   # 合成ノイズ（大きいほど抑揚・ゆらぎが増える）

@@ -6,20 +6,35 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Optional, Callable
+from typing import TYPE_CHECKING, Any, Optional, Callable
 
 import torch
-from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline
-
-try:  # diffusers>=0.27 removed SCHEDULER_MAP
-    from diffusers.schedulers import SCHEDULER_MAP
-except ImportError:  # pragma: no cover - fallback when map is unavailable
-    SCHEDULER_MAP = {}
 from PIL import Image
 
 from .model_registry import ImageModelInfo
 
+if TYPE_CHECKING:
+    from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline
+
 logger = logging.getLogger(__name__)
+
+# 最後の生成からこの秒数使われなければパイプラインを解放する（0 以下で常駐）
+DEFAULT_IDLE_UNLOAD_SECONDS = 300.0
+
+
+def _diffusers_pipeline_classes():
+    """diffusers（transformers を連鎖 import する重いモジュール）を初回生成時まで読み込まない。"""
+    from diffusers import StableDiffusionPipeline, StableDiffusionXLPipeline
+
+    return StableDiffusionPipeline, StableDiffusionXLPipeline
+
+
+def _scheduler_map() -> dict:
+    try:  # diffusers>=0.27 removed SCHEDULER_MAP
+        from diffusers.schedulers import SCHEDULER_MAP
+    except ImportError:  # pragma: no cover - fallback when map is unavailable
+        return {}
+    return SCHEDULER_MAP
 
 
 @dataclass
@@ -45,8 +60,13 @@ class LocalTxt2ImgPipeline:
         enable_vae_slicing: bool = True,
         enable_vae_tiling: bool = False,
         attention_slicing: Optional[str] = "max",
+        idle_unload_seconds: float = DEFAULT_IDLE_UNLOAD_SECONDS,
     ) -> None:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        # CPU オフロード時は重みが RAM に常駐するため、未使用が続いたら解放する
+        self.idle_unload_seconds = float(idle_unload_seconds)
+        self._idle_unload_task: Optional[asyncio.Task] = None
+        self._active_generations = 0
         # LRUキャッシュ: OrderedDictで実装（最近使用したものが最後に移動）
         self._pipeline_cache: OrderedDict[str, StableDiffusionPipeline | StableDiffusionXLPipeline] = OrderedDict()
         self._lock = asyncio.Lock()
@@ -204,6 +224,7 @@ class LocalTxt2ImgPipeline:
             oldest_model = next(iter(self._pipeline_cache))
             self._unload_pipeline(oldest_model)
 
+        StableDiffusionPipeline, StableDiffusionXLPipeline = _diffusers_pipeline_classes()
         is_sdxl = self._is_sdxl_model(model)
         pipeline_class = StableDiffusionXLPipeline if is_sdxl else StableDiffusionPipeline
         
@@ -265,6 +286,29 @@ class LocalTxt2ImgPipeline:
             self._unload_pipeline(model_name)
         logger.info("All cached models cleared")
     
+    def _cancel_idle_unload(self) -> None:
+        task = self._idle_unload_task
+        self._idle_unload_task = None
+        if task and not task.done():
+            task.cancel()
+
+    def _schedule_idle_unload(self) -> None:
+        if self.idle_unload_seconds <= 0 or self._active_generations > 0 or not self._pipeline_cache:
+            return
+        self._cancel_idle_unload()
+        self._idle_unload_task = asyncio.create_task(self._idle_unload_after_delay())
+
+    async def _idle_unload_after_delay(self) -> None:
+        await asyncio.sleep(self.idle_unload_seconds)
+        async with self._lock:
+            if self._active_generations > 0 or not self._pipeline_cache:
+                return
+            logger.info(
+                "No image generation for %.0fs; releasing cached pipelines",
+                self.idle_unload_seconds,
+            )
+            await asyncio.to_thread(self.clear_cache)
+
     def get_cache_info(self) -> dict[str, Any]:
         """キャッシュ情報を返す"""
         return {
@@ -282,7 +326,7 @@ class LocalTxt2ImgPipeline:
             return
 
         normalized = sampler_name.replace(" ", "").lower()
-        for key, scheduler_cls in SCHEDULER_MAP.items():
+        for key, scheduler_cls in _scheduler_map().items():
             if normalized == key.replace(" ", "").lower():
                 logger.info("Switching scheduler to '%s'", key)
                 pipeline.scheduler = scheduler_cls.from_config(pipeline.scheduler.config)
@@ -294,6 +338,21 @@ class LocalTxt2ImgPipeline:
         model: ImageModelInfo,
         params: GenerationParams,
         progress_callback: Optional[Callable[[int, int, object], None]] = None,
+    ) -> bytes:
+        async with self._lock:
+            self._cancel_idle_unload()
+            self._active_generations += 1
+        try:
+            return await self._generate_locked_load(model, params, progress_callback)
+        finally:
+            self._active_generations -= 1
+            self._schedule_idle_unload()
+
+    async def _generate_locked_load(
+        self,
+        model: ImageModelInfo,
+        params: GenerationParams,
+        progress_callback: Optional[Callable[[int, int, object], None]],
     ) -> bytes:
         async with self._lock:
             pipeline = self._load_pipeline(model)

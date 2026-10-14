@@ -36,7 +36,7 @@ const LOG_TITLES: Record<LogNavId, string> = {
 export default function App() {
   const [nav, setNav] = useState<NavId>("overview");
   const { status, vc, guilds, format } = useStatus(1000);
-  const { entries, clear, connected } = useLogStream(10000);
+  const { entries, clear, connected } = useLogStream(5000);
   const [levels, setLevels] = useState({
     general: "INFO",
     llm: "INFO",

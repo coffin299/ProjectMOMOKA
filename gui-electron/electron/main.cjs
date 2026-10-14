@@ -1,6 +1,13 @@
 const { app, BrowserWindow, shell, ipcMain, net } = require("electron");
 const path = require("path");
 
+// ログ表示主体の UI なので GPU プロセスを起こさずソフトウェア描画にする（常駐メモリ削減）
+app.disableHardwareAcceleration();
+// 先読み用の予備 renderer プロセスを作らせない
+app.commandLine.appendSwitch("disable-features", "SpareRendererForSitePerProcess");
+// renderer の V8 ヒープ上限（ログ保持が暴走しても OS 全体を圧迫しない）
+app.commandLine.appendSwitch("js-flags", "--max-old-space-size=256");
+
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
 
@@ -240,6 +247,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // 入力欄はほぼ無いので辞書をロードしない
+      spellcheck: false,
     },
     show: false,
   });

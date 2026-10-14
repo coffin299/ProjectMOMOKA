@@ -23,7 +23,7 @@ const LEVEL_RANK: Record<string, number> = {
 /** 履歴ポーリング間隔（SSE 不通時） */
 const HISTORY_POLL_MS = 1000;
 /** 履歴ポーリング間隔（SSE 接続中は取りこぼし補完のみ） */
-const HISTORY_POLL_LIVE_MS = 10000;
+const HISTORY_POLL_LIVE_MS = 30000;
 /** 追従ポーリング 1 回で取る行数（SSE 不通時） */
 const HISTORY_APPEND_LINES = 1000;
 /** 追従ポーリング 1 回で取る行数（SSE 接続中） */
@@ -285,6 +285,11 @@ export function useLogStream(maxLines = 10000) {
         pollTimer = window.setTimeout(
           async () => {
             if (closed) return;
+            // 非表示中は補完取得を休む（SSE は継続して受信する）
+            if (document.hidden) {
+              schedulePoll();
+              return;
+            }
             await loadHistory(
               "append",
               Math.min(

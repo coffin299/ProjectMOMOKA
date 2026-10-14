@@ -11,6 +11,8 @@ image_generator:
   save_directory: data/image
   # メモリ上に保持する生成結果キャッシュ上限（枚数イメージ）
   max_cache_size: 1
+  # 最後の生成からこの秒数でモデルを RAM / VRAM から解放する。0 なら常駐
+  idle_unload_seconds: 300
   # この GB を超える VRAM 使用が見込まれる／達したら生成を抑止・警告する閾値
   vram_usage_threshold_gb: 5.0
   # ローカル diffusers 向けメモリ節約

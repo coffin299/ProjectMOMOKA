@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import logging
+import threading
 from typing import Optional
 
 from MOMOKA.notifications.earthquake_constants import (
@@ -13,64 +15,72 @@ from MOMOKA.notifications.earthquake_constants import (
 
 logger = logging.getLogger("EarthquakeTsunamiCog")
 
-# 依存ライブラリが無い環境でも通知機能自体を起動できるようにする
-MATPLOTLIB_AVAILABLE = False
-CARTOPY_AVAILABLE = False
+# matplotlib / cartopy（shapely・pyproj を含む）は常駐メモリが大きいため、
+# 起動時はインストール有無だけ確認し、実際の import は最初の地図描画まで遅らせる
+MATPLOTLIB_AVAILABLE = importlib.util.find_spec("matplotlib") is not None
+CARTOPY_AVAILABLE = MATPLOTLIB_AVAILABLE and importlib.util.find_spec("cartopy") is not None
+if not CARTOPY_AVAILABLE:
+    logger.warning("⚠️ Matplotlib / Cartopy が見つかりません。地図機能は無効になります。")
 plt = None
 ccrs = None
 cfeature = None
+_import_lock = threading.Lock()
 
-try:
-    import matplotlib
 
-    # ヘッドレス実行で描画できるバックエンドを選ぶ
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    MATPLOTLIB_AVAILABLE = True
-    logger.info("✅ Matplotlibが正常にインポートされました。")
-
-    try:
-        import japanize_matplotlib  # noqa: F401
-
-        logger.info("✅ japanize_matplotlibが正常にインポートされました。")
-    except ImportError:
-        logger.info("ℹ️ japanize_matplotlibなし。代替フォントを設定します。")
+def _ensure_map_libraries() -> bool:
+    """地図描画ライブラリを初回だけ読み込む。利用不可なら False。"""
+    global plt, ccrs, cfeature, CARTOPY_AVAILABLE
+    if plt is not None and ccrs is not None:
+        return True
+    if not CARTOPY_AVAILABLE:
+        return False
+    with _import_lock:
+        if plt is not None and ccrs is not None:
+            return True
         try:
-            import matplotlib.font_manager as fm
+            import matplotlib
 
-            japanese_fonts = [
-                "MS Gothic",
-                "Yu Gothic",
-                "Meiryo",
-                "MS UI Gothic",
-                "DejaVu Sans",
-            ]
-            available_fonts = [font.name for font in fm.fontManager.ttflist]
-            for font in japanese_fonts:
-                if font in available_fonts:
-                    plt.rcParams["font.family"] = font
-                    logger.info("✅ 日本語フォント設定: %s", font)
-                    break
-            else:
-                plt.rcParams["font.sans-serif"] = ["DejaVu Sans"]
-                logger.warning("⚠️ 日本語フォントが見つかりません。")
+            # ヘッドレス実行で描画できるバックエンドを選ぶ
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as pyplot
+
+            try:
+                import japanize_matplotlib  # noqa: F401
+            except ImportError:
+                logger.info("ℹ️ japanize_matplotlibなし。代替フォントを設定します。")
+                try:
+                    import matplotlib.font_manager as fm
+
+                    japanese_fonts = [
+                        "MS Gothic",
+                        "Yu Gothic",
+                        "Meiryo",
+                        "MS UI Gothic",
+                        "DejaVu Sans",
+                    ]
+                    available_fonts = [font.name for font in fm.fontManager.ttflist]
+                    for font in japanese_fonts:
+                        if font in available_fonts:
+                            pyplot.rcParams["font.family"] = font
+                            logger.info("✅ 日本語フォント設定: %s", font)
+                            break
+                    else:
+                        pyplot.rcParams["font.sans-serif"] = ["DejaVu Sans"]
+                        logger.warning("⚠️ 日本語フォントが見つかりません。")
+                except Exception as error:  # noqa: BLE001
+                    logger.debug("フォント設定エラー（続行）: %s", error)
+
+            import cartopy.crs as cartopy_crs
+            import cartopy.feature as cartopy_feature
         except Exception as error:  # noqa: BLE001
-            logger.debug("フォント設定エラー（続行）: %s", error)
-
-    try:
-        import cartopy.crs as ccrs
-        import cartopy.feature as cfeature
-
-        CARTOPY_AVAILABLE = True
-        logger.info("✅ Cartopyが正常にインポートされました。地図機能が有効です。")
-    except ImportError as error:
-        logger.warning("⚠️ Cartopyが見つかりません。地図機能は無効になります。")
-        logger.error("詳細エラー: %s", error, exc_info=True)
-except ImportError as error:
-    logger.error("❌ Matplotlibのインポートに失敗しました: %s", error)
-except Exception as error:  # noqa: BLE001
-    logger.error("❌ 予期しないエラーが発生しました: %s", error, exc_info=True)
+            # 以降は地図機能を無効扱いにする
+            CARTOPY_AVAILABLE = False
+            logger.error("❌ 地図描画ライブラリの読み込みに失敗しました: %s", error, exc_info=True)
+            return False
+        ccrs, cfeature = cartopy_crs, cartopy_feature
+        plt = pyplot
+        logger.info("✅ Matplotlib / Cartopy を読み込みました。地図機能が有効です。")
+        return True
 
 
 def calculate_smart_map_extent(
@@ -163,7 +173,7 @@ def _add_base_features(ax) -> None:
 def generate_single_map_sync(quake: dict, info_type: str) -> io.BytesIO:
     """単一の地震の位置を地図に表示する。"""
     # 依存ライブラリがない場合は明確に失敗させる
-    if not CARTOPY_AVAILABLE or plt is None:
+    if not _ensure_map_libraries():
         raise RuntimeError("地図機能は現在利用できません。")
     # 必須の震源情報を取り出す
     lat, lon = quake["lat"], quake["lon"]
@@ -305,7 +315,7 @@ def generate_map_sync(
 ) -> io.BytesIO:
     """複数の地震マップ画像を生成する。"""
     # 依存ライブラリがない場合は明確に失敗させる
-    if not CARTOPY_AVAILABLE or plt is None:
+    if not _ensure_map_libraries():
         raise RuntimeError("地図機能は現在利用できません。")
     # 既存と同じ台風風デザインの描画面を作る
     fig = plt.figure(figsize=(16, 16), dpi=150, facecolor="#2c3e50")

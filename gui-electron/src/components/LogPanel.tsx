@@ -14,6 +14,8 @@ type Props = {
 };
 
 const LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"];
+/** DOM に載せる最大行数（数千行の <p> がメモリとレイアウトの大半を占めるため末尾だけ描画） */
+const RENDER_LIMIT = 1500;
 
 export function LogPanel({
   title,
@@ -27,6 +29,8 @@ export function LogPanel({
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState(true);
+  const hiddenCount = Math.max(0, entries.length - RENDER_LIMIT);
+  const visible = hiddenCount > 0 ? entries.slice(hiddenCount) : entries;
 
   useEffect(() => {
     if (!autoScroll || !stick) return;
@@ -87,7 +91,12 @@ export function LogPanel({
         </button>
       </div>
       <div className="log-panel" ref={ref} onScroll={onScroll}>
-        {entries.map((e) => (
+        {hiddenCount > 0 && (
+          <p className="log-line level-debug">
+            … 古い {hiddenCount} 行は省略中（全文は data/momoka_gui.log）
+          </p>
+        )}
+        {visible.map((e) => (
           <LogLine key={e.id} entry={e} />
         ))}
       </div>

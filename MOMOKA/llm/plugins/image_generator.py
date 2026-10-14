@@ -102,7 +102,10 @@ class ImageGenerator:
             return
 
         self.model_registry = ImageModelRegistry.from_default_root()
-        self.pipeline = LocalTxt2ImgPipeline(device=self.image_gen_config.get("device"))
+        self.pipeline = LocalTxt2ImgPipeline(
+            device=self.image_gen_config.get("device"),
+            idle_unload_seconds=self.image_gen_config.get("idle_unload_seconds", 300),
+        )
 
         discovered_models = sorted(self.model_registry.names())
         if not discovered_models:

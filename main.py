@@ -808,6 +808,8 @@ if __name__ == "__main__":
 
     # メンション設定を作成する
     allowed_mentions = discord.AllowedMentions(everyone=False, users=True, roles=False, replied_user=True)
+    # Bot ごとのメッセージキャッシュ件数（既定 1000）。編集・削除イベントは使っていないため小さくする
+    message_cache_size = 100
 
     # --- PLANA（プライマリボット）の作成 ---
     # PLANA の設定ブロックを取得する
@@ -842,6 +844,7 @@ if __name__ == "__main__":
         intents=intents,
         help_command=None,
         allowed_mentions=allowed_mentions,
+        max_messages=message_cache_size,
         config=merged_config,
         bot_id='plana',
         bot_role='primary',
@@ -872,6 +875,7 @@ if __name__ == "__main__":
         intents=intents,
         help_command=None,
         allowed_mentions=allowed_mentions,
+        max_messages=message_cache_size,
         config=merged_config,
         bot_id='arona',
         bot_role='companion',

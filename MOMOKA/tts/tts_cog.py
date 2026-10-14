@@ -64,8 +64,9 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self.bot = bot
         self.config = bot.config.get('tts', {})
 
-        # Internal TTS synthesizer configuration
-        from MOMOKA.generator.tts import StyleBertVITS2Synthesizer, SynthesizerConfig
+        # 合成は別プロセスで行い、Bot のイベントループとメモリから切り離す
+        from MOMOKA.generator.tts.synthesizer import SynthesizerConfig
+        from MOMOKA.generator.tts.worker import TTSWorkerClient
         tts_cfg = SynthesizerConfig(
             model_root=self.config.get('model_root', 'models/tts-models'),
             model_name=self.config.get('default_model_dir'),
@@ -75,9 +76,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
             noise_w=float(self.config.get('noise_w', 0.8)),
             length_scale=float(self.config.get('length_scale', 1.0)),
         )
-        self.synthesizer = StyleBertVITS2Synthesizer(tts_cfg)
-        # ギルド横断で共有 synthesizer を守るグローバルロック
-        self._synthesizer_lock = asyncio.Lock()
+        # 最後の合成からこの秒数でワーカーを終了し、モデル（BERT 含む）のメモリを OS へ返す。0 なら合成ごとに終了
+        self.tts_worker = TTSWorkerClient(
+            tts_cfg,
+            idle_shutdown_seconds=float(self.config.get('model_idle_unload_seconds', 60)),
+        )
         self.api_url = self.config.get('api_server_url')  # optional legacy
         self.api_key = self.config.get('api_key')
 
@@ -188,11 +191,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
         # 辞書も同様にガード付き保存
         self._save_dictionary()
         
-        # TTSモデルをアンロードしてVRAMを解放
+        # TTS ワーカープロセスを終了してモデルのメモリを解放
         try:
-            self.synthesizer.unload_model()
+            await self.tts_worker.close()
         except Exception as e:  # noqa: BLE001
-            logging.getLogger(__name__).warning("[TTSCog] モデルアンロードエラー: %s", e)
+            logging.getLogger(__name__).warning("[TTSCog] TTS ワーカー停止エラー: %s", e)
         
         # aiohttpセッションのクローズ
         if self.session and not self.session.closed:
@@ -925,30 +928,18 @@ class TTSCog(commands.Cog, name="tts_cog"):
     async def _api_call_to_audio_data(self, text: str, model_id: int, style: str, style_weight: float, speed: float) -> Optional[bytes]:
         # 内製シンセサイザーを優先。失敗時はレガシーHTTP APIにフォールバック
         try:
-            # synthesizer は Cog 共有のためギルド横断ロックで守る
-            async with self._synthesizer_lock:
-                # synthesize_to_wav 内で未ロード時は自動ロードされる
-                wav = self.synthesizer.synthesize_to_wav(
-                    text=text,
-                    style=style,
-                    style_weight=style_weight,
-                    speed=speed,
-                    noise_scale=self.config.get('noise_scale', 0.667),
-                    noise_w=self.config.get('noise_w', 0.8),
-                    length_scale=self.config.get('length_scale', 1.0),
-                )
-                # 合成完了後、モデルをアンロードしてVRAMを解放
-                self.synthesizer.unload_model()
-                return wav
+            # ワーカーは 1 件ずつ直列に処理する（未起動なら起動、モデルも初回に自動ロード）
+            return await self.tts_worker.synthesize(
+                text=text,
+                style=style,
+                style_weight=style_weight,
+                speed=speed,
+                noise_scale=self.config.get('noise_scale', 0.667),
+                noise_w=self.config.get('noise_w', 0.8),
+                length_scale=self.config.get('length_scale', 1.0),
+            )
         except Exception as e:
             logging.getLogger(__name__).error("[TTSCog] 内製TTS処理エラー: %s", e)
-            # エラー時もVRAM解放を試みる
-            try:
-                # ロック下で unload する
-                async with self._synthesizer_lock:
-                    self.synthesizer.unload_model()
-            except Exception:  # noqa: BLE001
-                pass
 
         if not self.api_url:
             return None

@@ -64,6 +64,11 @@ export function useStatus(pollMs = 1000) {
 
     const tick = async () => {
       if (cancelled || inFlight) return;
+      // 最小化・非表示中は取得しない（復帰時に visibilitychange で即再開）
+      if (document.hidden) {
+        timer = undefined;
+        return;
+      }
       inFlight = true;
       const myGen = ++generation;
       try {
@@ -86,9 +91,15 @@ export function useStatus(pollMs = 1000) {
         }
       }
     };
+    const onVisibility = () => {
+      if (document.hidden || timer !== undefined) return;
+      void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     tick();
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [pollMs]);
