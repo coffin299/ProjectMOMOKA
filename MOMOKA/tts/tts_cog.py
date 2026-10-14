@@ -427,6 +427,15 @@ class TTSCog(commands.Cog, name="tts_cog"):
         # いずれも無ければ占有なし
         return False
 
+    @staticmethod
+    def _music_mixer_is_live(music_cog, music_state) -> bool:
+        """MusicCog のミキサーが VoiceClient で実際に再生され続けているか。"""
+        # 判定ヘルパーが無い旧 MusicCog ではソース有無で代用する
+        checker = getattr(music_cog, "_is_mixer_alive", None)
+        if checker is None:
+            return music_state.mixer.has_sources()
+        return checker(music_state)
+
     async def _remove_tts_sources_only(self, guild_id: int) -> None:
         """ミキサー上の TTS ソースだけを除去する（music は残す）。"""
         # MusicCog を取得する
@@ -903,12 +912,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
         music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
         music_state = music_cog._get_guild_state(guild.id) if music_cog else None
 
-        # 音楽が再生中（ミキサーあり & is_playing）ならミキサーでオーバーレイ
-        if music_state and music_state.mixer and music_state.is_playing:
-            return await self._overlay_tts_with_mixer(guild, converted_text, model_id, style, style_weight, speed, volume, interaction)
-
-        # ミキサーが存在するがソースが残っている場合（TTS等）もミキサーを使う
-        if music_state and music_state.mixer and music_state.mixer.has_sources():
+        # 音楽再生中、またはミキサーがまだ再生され続けている（TTS 読み上げ中など）ならオーバーレイ。
+        # プレイヤー停止済みのミキサーに足すと二度と読まれず、音楽終了後の VC 退出も妨げる
+        if music_state and music_state.mixer and (
+            music_state.is_playing or self._music_mixer_is_live(music_cog, music_state)
+        ):
             return await self._overlay_tts_with_mixer(guild, converted_text, model_id, style, style_weight, speed, volume, interaction)
 
         # それ以外は直接再生（voice_clientから直接play）

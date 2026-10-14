@@ -86,6 +86,10 @@ class GuildState:
         self.vc_status_permission_denied: bool = False
         # Bot が管理対象としている VC チャンネル ID
         self.vc_status_channel_id: Optional[int] = None
+        # キュー終了後の VC 退出が未完了か（TTS 読み上げ中などで即退出できなかった場合に再試行する）
+        self.leave_after_queue_end: bool = False
+        # キュー終了後の退出再試行タスク（未起動時は None）
+        self.queue_end_leave_task: Optional[asyncio.Task] = None
 
     def update_activity(self):
         self.last_activity = datetime.now()
@@ -266,6 +270,16 @@ class GuildState:
         # タスク参照をクリアする
         self.progress_update_task = None
 
+    def cancel_queue_end_leave(self):
+        # 退出待ちを解除する
+        self.leave_after_queue_end = False
+        # 再試行タスクが自分以外で動いていれば止める
+        task = self.queue_end_leave_task
+        if task and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+        # タスク参照をクリアする
+        self.queue_end_leave_task = None
+
     async def cleanup_voice_client(self):
         if self.cleanup_in_progress:
             return
@@ -283,8 +297,8 @@ class GuildState:
                 try:
                     if self.voice_client.is_playing():
                         self.voice_client.stop()
-                    if self.voice_client.is_connected():
-                        await asyncio.wait_for(self.voice_client.disconnect(force=True), timeout=5.0)
+                    # 音声再接続中で is_connected() が False でも Discord 側に残るため常に force 切断する
+                    await asyncio.wait_for(self.voice_client.disconnect(force=True), timeout=5.0)
                 except Exception as e:
                     guild = self.bot.get_guild(self.guild_id)
                     logger.warning(f"Guild {self.guild_id} ({guild.name if guild else ''}): Voice cleanup error: {e}")

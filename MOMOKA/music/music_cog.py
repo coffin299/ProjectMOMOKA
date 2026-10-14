@@ -80,6 +80,8 @@ QUEUE_PAGE_SIZE = 5
 PROGRESS_BAR_LENGTH = 28
 # Discord VC ステータス文字数上限
 VC_STATUS_MAX_LEN = 500
+# キュー終了後に TTS 読み上げ中で退出できなかったときの再試行間隔（秒）
+QUEUE_END_LEAVE_RETRY_INTERVAL = 3.0
 
 
 def parse_time_to_seconds(time_str: str) -> Optional[int]:
@@ -226,6 +228,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                     )
                 if state.auto_leave_task and not state.auto_leave_task.done():
                     state.auto_leave_task.cancel()
+                state.cancel_queue_end_leave()
             except Exception as e:
                 guild = self.bot.get_guild(guild_id)
                 logger.warning(f"Guild {guild_id} ({guild.name if guild else ''}) unload cleanup error: {e}")
@@ -854,6 +857,15 @@ class MusicCog(commands.Cog, name="music_cog"):
                         # 無人なので自動退出を予約
                         self._schedule_auto_leave(gid)
                     # このギルドは disconnect 待ちなのでメモリ掃除リストには入れない
+                    continue
+                # キュー終了後の退出が取りこぼされていれば再試行する（保険）
+                if (
+                    state.leave_after_queue_end
+                    and state.voice_client
+                    and not state.is_playing
+                    and (not state.queue_end_leave_task or state.queue_end_leave_task.done())
+                ):
+                    await self._leave_vc_on_queue_empty(gid)
                     continue
                 # 長時間非アクティブかつ未接続の状態を破棄対象にする
                 if (
@@ -1520,26 +1532,89 @@ class MusicCog(commands.Cog, name="music_cog"):
         # ミキサーを停止（read()がb''を返す→voice_clientのプレイヤーが停止）
         mixer.stop()
 
+    @staticmethod
+    def _is_mixer_alive(state: GuildState) -> bool:
+        """state.mixer が VoiceClient の AudioPlayer で実際に読まれ続けているか。"""
+        # ミキサーか VoiceClient が無ければ再生されていない
+        mixer = state.mixer
+        voice_client = state.voice_client
+        if mixer is None or voice_client is None:
+            return False
+        # 別ソース再生中、またはプレイヤー終了済みなら mixer は二度と read() されない
+        return voice_client.source is mixer and (
+            voice_client.is_playing() or voice_client.is_paused()
+        )
+
+    def _schedule_queue_end_leave(self, guild_id: int) -> None:
+        """キュー終了後の VC 退出を少し待って再試行する。"""
+        # 状態が無ければ何もしない
+        state = self.get_existing_guild_state(guild_id)
+        if not state:
+            return
+        # 既に待機中なら二重起動しない
+        task = state.queue_end_leave_task
+        if task and not task.done():
+            return
+        # 再試行タスクを起動する
+        state.queue_end_leave_task = asyncio.create_task(
+            self._queue_end_leave_retry(guild_id),
+            name=f"music_queue_end_leave_{guild_id}",
+        )
+
+    async def _queue_end_leave_retry(self, guild_id: int) -> None:
+        # TTS 読み上げ等が終わるのを待つ
+        await asyncio.sleep(QUEUE_END_LEAVE_RETRY_INTERVAL)
+        # 待機中に状態が消えた／新しい再生で解除されたなら終了する
+        state = self.get_existing_guild_state(guild_id)
+        if not state or not state.leave_after_queue_end:
+            return
+        # 次回の再スケジュールを許可するため自分の参照を外す
+        if state.queue_end_leave_task is asyncio.current_task():
+            state.queue_end_leave_task = None
+        # 退出条件を再判定する（まだ退出できなければ再度スケジュールされる）
+        await self._leave_vc_on_queue_empty(guild_id)
+
     async def _leave_vc_on_queue_empty(self, guild_id: int) -> None:
-        """キュー終了後、TTS 等がミキサーに残っていなければ VC から退出する。"""
+        """キュー終了後に VC から退出する。TTS 読み上げ中なら終わるまで待って再試行する。"""
         # ギルド状態を取得する（存在しなければ何もしない）
         state = self.get_existing_guild_state(guild_id)
         # 状態が無ければ早期リターン
         if not state:
             return
-        # VC 未接続なら退出不要
-        if not state.voice_client or not state.voice_client.is_connected():
+        # VoiceClient が無ければ退出不要
+        if not state.voice_client:
+            state.cancel_queue_end_leave()
             return
-        # 再生中またはキューに曲が残っていれば退出しない
-        if state.is_playing or not state.queue.empty():
+        # 再生中・/play 読み込み中・キューに曲が残っていれば退出しない
+        if state.is_playing or state.is_loading or not state.queue.empty():
             return
-        # TTS 等のソースがミキサーに残っていれば VC を維持する
+        # 退出が完了するまで再試行対象にする
+        state.leave_after_queue_end = True
+        # TTS 等のソースがミキサーに残っている場合
         if state.mixer and state.mixer.has_sources():
-            return
+            # 読み上げ中なら終わるまで待つ
+            if self._is_mixer_alive(state):
+                self._schedule_queue_end_leave(guild_id)
+                return
+            # プレイヤーが止まったミキサーに後から足された TTS は二度と読まれないため破棄する
+            logger.info(
+                "Guild %s: Discarding stale mixer with orphaned sources %s",
+                guild_id,
+                state.mixer.get_source_names(),
+            )
+            stale_mixer = state.mixer
+            state.mixer = None
+            stale_mixer.on_source_removed_callback = None
+            stale_mixer.stop()
         # Bot が設定した VC ステータスをクリアする（ユーザーロック時は触らない）
         await self._clear_voice_channel_status(guild_id)
+        # ステータス API 待ちの間に新しい再生が始まっていれば退出しない
+        if state.is_playing or state.is_loading or not state.queue.empty():
+            return
         # キュー終了に伴う VC 退出をログに残す
         logger.info("Guild %s: Queue empty, leaving voice channel", guild_id)
+        # 退出待ちを解除する
+        state.cancel_queue_end_leave()
         # 音声接続のみ切断する（Queue Finished UI は維持する）
         await state.cleanup_voice_client()
         # VC 退出後はステータス追跡を初期化する
@@ -1617,10 +1692,13 @@ class MusicCog(commands.Cog, name="music_cog"):
             await self._cleanup_idle_mixer(state)
             # キュー終了に合わせて VC ステータスをクリアする
             await self._clear_voice_channel_status(guild_id)
-            # キューが空になったら VC から退出する（TTS 再生中はミキサー残存でスキップ）
+            # キューが空になったら VC から退出する（TTS 読み上げ中は終わってから退出）
             await self._leave_vc_on_queue_empty(guild_id)
             # 次曲再生処理を終了する
             return
+
+        # 再生対象があるのでキュー終了後の退出待ちを取り消す
+        state.cancel_queue_end_leave()
 
         # 失敗バナーを「次曲の再生中だけ」出すため、
         # バナー表示済みの状態でさらに次の曲へ進むときに消す
@@ -2324,6 +2402,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             ):
                 # 他経路から呼ばれた場合のみタイマーを止める
                 state.auto_leave_task.cancel()
+            # キュー終了後の退出再試行も止める
+            state.cancel_queue_end_leave()
             # キューを空にする
             await state.clear_queue()
             # VC ステータス追跡を初期化する
