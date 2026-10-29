@@ -1789,6 +1789,29 @@ def _track_from_search_entry(entry: dict, source: str, query: str) -> Optional[T
     )
 
 
+def _niconico_user_nickname(user_id: int) -> Optional[str]:
+    """公開プロフィールからニックネームだけ取る。説明文は使わない。"""
+    import json
+    import urllib.request
+
+    req = urllib.request.Request(
+        f"https://nvapi.nicovideo.jp/v1/users/{user_id}",
+        headers={
+            "User-Agent": "ProjectMOMOKA",
+            "X-Frontend-Id": "6",
+            "X-Frontend-Version": "0",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    user = (payload.get("data") or {}).get("user") if isinstance(payload, dict) else None
+    nickname = user.get("nickname") if isinstance(user, dict) else None
+    if not isinstance(nickname, str):
+        return None
+    nickname = " ".join(nickname.split())
+    return nickname or None
+
+
 def _search_niconico_snapshot(query: str, limit: int) -> List[Track]:
     """ニコニコの公開スナップショット検索。HTML 検索は 500 になることがある。"""
     import json
@@ -1799,7 +1822,7 @@ def _search_niconico_snapshot(query: str, limit: int) -> List[Track]:
         {
             "q": query,
             "targets": "title,tags",
-            "fields": "contentId,title,lengthSeconds,thumbnailUrl",
+            "fields": "contentId,title,lengthSeconds,thumbnailUrl,userId",
             "_sort": "-viewCounter",
             "_limit": str(limit),
             "_context": "ProjectMOMOKA",
@@ -1814,6 +1837,23 @@ def _search_niconico_snapshot(query: str, limit: int) -> List[Track]:
     rows = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(rows, list):
         return []
+    # 同じ投稿者は1回だけ引く
+    nicknames: dict[int, Optional[str]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        raw_user_id = row.get("userId")
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            continue
+        if user_id <= 0 or user_id in nicknames:
+            continue
+        try:
+            nicknames[user_id] = _niconico_user_nickname(user_id)
+        except Exception as exc:
+            logger.warning("Niconico user lookup failed for %s: %s", user_id, exc)
+            nicknames[user_id] = None
     tracks: List[Track] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -1821,12 +1861,19 @@ def _search_niconico_snapshot(query: str, limit: int) -> List[Track]:
         content_id = row.get("contentId")
         if not isinstance(content_id, str) or not re.fullmatch(r"(?:sm|so|nm)\d+", content_id):
             continue
+        try:
+            user_id = int(row.get("userId"))
+        except (TypeError, ValueError):
+            user_id = 0
+        nickname = nicknames.get(user_id) if user_id > 0 else None
         entry = {
             "id": content_id,
             "title": row.get("title"),
             "duration": row.get("lengthSeconds"),
             "thumbnail": row.get("thumbnailUrl"),
             "webpage_url": f"https://www.nicovideo.jp/watch/{content_id}",
+            "uploader": nickname,
+            "uploader_url": f"https://www.nicovideo.jp/user/{user_id}" if nickname else None,
         }
         track = _track_from_search_entry(entry, "niconico", query)
         if track is None:

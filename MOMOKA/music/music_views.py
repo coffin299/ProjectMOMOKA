@@ -86,11 +86,16 @@ def _search_result_body(index: int, track: Track) -> str:
         safe_title = safe_title[:77] + "..."
     title_line = f"[{safe_title}]({track.url})" if track.url else safe_title
     uploader = " ".join((track.uploader or "Unknown").split()) or "Unknown"
+    uploader = uploader.replace("[", "［").replace("]", "］")
     if len(uploader) > 60:
         uploader = uploader[:57] + "..."
+    if track.uploader_url and uploader != "Unknown":
+        uploader_line = f"[{uploader}]({track.uploader_url})"
+    else:
+        uploader_line = uploader
     return (
         f"**{index + 1}.** {title_line}\n"
-        f"{uploader} · `{format_duration(track.duration)}`"
+        f"{uploader_line} · `{format_duration(track.duration)}`"
     )
 
 
