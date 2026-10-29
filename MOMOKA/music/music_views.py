@@ -71,6 +71,143 @@ class QueueAddedLayoutView(discord.ui.LayoutView):
         self.add_item(container)
 
 
+_SEARCH_SOURCE_LABELS = {
+    "youtube": "YouTube",
+    "niconico": "Niconico",
+    "soundcloud": "SoundCloud",
+}
+
+
+def _search_result_body(index: int, track: Track) -> str:
+    """候補1件の TextDisplay 本文。"""
+    safe_title = " ".join((track.title or "Untitled").split()) or "Untitled"
+    safe_title = safe_title.replace("[", "［").replace("]", "］")
+    if len(safe_title) > 80:
+        safe_title = safe_title[:77] + "..."
+    title_line = f"[{safe_title}]({track.url})" if track.url else safe_title
+    uploader = " ".join((track.uploader or "Unknown").split()) or "Unknown"
+    if len(uploader) > 60:
+        uploader = uploader[:57] + "..."
+    return (
+        f"**{index + 1}.** {title_line}\n"
+        f"{uploader} · `{format_duration(track.duration)}`"
+    )
+
+
+class SearchPickLayoutView(discord.ui.LayoutView):
+    """タイトル検索の候補。ボタンでキューへ入れる。"""
+
+    def __init__(
+        self,
+        cog: MusicCog,
+        guild_id: int,
+        requester_id: int,
+        query: str,
+        source: str,
+        candidates: list[Track],
+    ):
+        # 放置された候補は3分で押せなくする
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.guild_id = guild_id
+        self.requester_id = requester_id
+        self.query = query
+        self.source = source
+        self.candidates = candidates[:5]
+        self._queued: set[int] = set()
+        self._expired = False
+        self._lock = asyncio.Lock()
+        self._build()
+
+    def _build(self) -> None:
+        """見出しと、各候補の Queue ボタンを組み直す。"""
+        self.clear_items()
+        container = discord.ui.Container(accent_color=discord.Color.from_rgb(79, 194, 255))
+        label = _SEARCH_SOURCE_LABELS.get(self.source, "YouTube")
+        shown_query = " ".join(self.query.split()).replace("`", "'")
+        if len(shown_query) > 80:
+            shown_query = shown_query[:77] + "..."
+        container.add_item(
+            discord.ui.TextDisplay(
+                f"### {label} results\n"
+                f"`{shown_query}`\n"
+                f"Press **Queue** to add a track."
+            )
+        )
+        for index, track in enumerate(self.candidates):
+            queued = index in self._queued
+            button = discord.ui.Button(
+                label="Queued" if queued else "➕ Queue",
+                style=discord.ButtonStyle.success if queued else discord.ButtonStyle.primary,
+                disabled=queued or self._expired,
+            )
+            button.callback = self._bind(index)
+            container.add_item(discord.ui.Separator())
+            container.add_item(
+                discord.ui.Section(
+                    discord.ui.TextDisplay(_search_result_body(index, track)),
+                    accessory=button,
+                )
+            )
+        self.add_item(container)
+
+    def _bind(self, index: int):
+        """候補番号を閉じ込めたボタンコールバック。"""
+
+        async def callback(interaction: discord.Interaction) -> None:
+            await self._pick(interaction, index)
+
+        return callback
+
+    async def _pick(self, interaction: discord.Interaction, index: int) -> None:
+        """選んだ URL をキューに入れる。"""
+        if self._expired:
+            await interaction.response.send_message(
+                "This search expired. Run /play again.",
+                ephemeral=True,
+            )
+            return
+        if interaction.user.id != self.requester_id:
+            await interaction.response.send_message(
+                "Only the person who searched can add these.",
+                ephemeral=True,
+            )
+            return
+        if index in self._queued or not (0 <= index < len(self.candidates)):
+            await interaction.response.send_message("Already in the queue.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        async with self._lock:
+            if index in self._queued or self._expired:
+                return
+            error = await self.cog.enqueue_picked_track(interaction, self.candidates[index].url)
+            # None は成功。空文字は接続失敗など、すでに通知済み。
+            if error is None:
+                pass
+            else:
+                if error:
+                    await interaction.followup.send(error, ephemeral=True)
+                return
+            self._queued.add(index)
+            self._build()
+            try:
+                await interaction.edit_original_response(view=self)
+            except Exception as exc:
+                logger.warning("Failed to mark search result queued: %s", exc)
+
+    async def on_timeout(self) -> None:
+        """期限後はボタンを止める。"""
+        self._expired = True
+        self._build()
+        message = getattr(self, "message", None)
+        if message is None:
+            return
+        try:
+            await message.edit(view=self)
+        except Exception:
+            logger.debug("Search picker expired before the message could be updated")
+
+
 class LoadErrorLayoutView(discord.ui.LayoutView):
     """単発再生のストリーム取得失敗用 Components V2 パネル。"""
 

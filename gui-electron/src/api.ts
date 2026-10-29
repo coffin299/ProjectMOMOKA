@@ -15,6 +15,10 @@ export type HostConfig = {
   stopLogSse?: () => Promise<{ ok: boolean }>;
   /** Shutdown 後に Electron を終了する */
   quitApp?: () => Promise<{ ok: boolean }>;
+  onYoutubeCookieStatus?: (
+    handler: (data: { ok?: boolean; message?: string }) => void
+  ) => () => void;
+  onYoutubeReload?: (handler: () => void) => () => void;
   onLogSse?: (handler: (data: unknown) => void) => () => void;
   onLogSseEnd?: (handler: () => void) => () => void;
 };

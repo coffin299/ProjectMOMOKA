@@ -547,6 +547,67 @@ def create_host_gui_app(
         # 保存後を返す
         return cfg
 
+    @router.get("/youtube-browser-login")
+    def get_youtube_browser_login(_: None = Depends(require_token)) -> Dict[str, Any]:
+        """Web タブの自動入力用。renderer からは IPC で拒否し、Electron main だけが取る。"""
+        # 遅延インポート（音楽プラグインの読み込み失敗でも API 自体は起動する）
+        from MOMOKA.music.plugins.youtube_cookie_fetcher import youtube_account_for_gui
+
+        # メールとパスワード。アクセスログには出さない。
+        return youtube_account_for_gui()
+
+    @router.post("/youtube-cookies")
+    def post_youtube_cookies(
+        body: Dict[str, Any] = Body(default_factory=dict),
+        _: None = Depends(require_token),
+    ) -> Dict[str, Any]:
+        """Web タブの cookie を Netscape 原本へ保存する。"""
+        # 遅延インポート
+        from MOMOKA.music.plugins.youtube_cookie_fetcher import save_browser_cookies
+
+        # cookie 配列
+        cookies = body.get("cookies")
+        # 型
+        if not isinstance(cookies, list):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_cookies",
+            )
+        # 過大な投稿は拒否する
+        if len(cookies) > 800:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="too_many_cookies",
+            )
+        # 保存。未ログインなら原本は触らない。
+        return save_browser_cookies(cookies)
+
+    @router.post("/niconico-cookies")
+    def post_niconico_cookies(
+        body: Dict[str, Any] = Body(default_factory=dict),
+        _: None = Depends(require_token),
+    ) -> Dict[str, Any]:
+        """Web タブのニコニコ cookie を nico_cookies.txt へ保存する。"""
+        # 遅延インポート
+        from MOMOKA.music.plugins.youtube_cookie_fetcher import save_niconico_cookies
+
+        # cookie 配列
+        cookies = body.get("cookies")
+        # 型
+        if not isinstance(cookies, list):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid_cookies",
+            )
+        # 過大な投稿は拒否する
+        if len(cookies) > 800:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="too_many_cookies",
+            )
+        # user_session が無ければ原本は触らない
+        return save_niconico_cookies(cookies)
+
     @router.get("/logs/history")
     def get_logs_history(
         max_lines: int = Query(default=DEFAULT_HISTORY_LINES, ge=1, le=50_000),

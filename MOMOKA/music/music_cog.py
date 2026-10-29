@@ -38,6 +38,11 @@ try:
         COMMON_YTDL_OPTS,
         YOUTUBE_PLAYER_CLIENT_FALLBACK,
         is_youtube_media_url,
+        search_candidates,
+        is_direct_media_query,
+        canonicalize_media_query,
+        normalize_search_source,
+        split_prefix_play_text,
     )
     from MOMOKA.music.error.errors import MusicCogExceptionHandler
     from MOMOKA.music.plugins.audio_mixer import AudioMixer, MusicAudioSource
@@ -46,6 +51,7 @@ try:
         LoadErrorLayoutView,
         MusicControllerView,
         QueueAddedLayoutView,
+        SearchPickLayoutView,
     )
 except ImportError as e:
     logger.error(
@@ -63,6 +69,11 @@ except ImportError as e:
     COMMON_YTDL_OPTS = None
     YOUTUBE_PLAYER_CLIENT_FALLBACK = None
     is_youtube_media_url = None
+    search_candidates = None
+    is_direct_media_query = None
+    canonicalize_media_query = None
+    normalize_search_source = None
+    split_prefix_play_text = None
     MusicCogExceptionHandler = None
     AudioMixer = None
     MusicAudioSource = None
@@ -71,6 +82,7 @@ except ImportError as e:
     LoadErrorLayoutView = None
     MusicControllerView = None
     QueueAddedLayoutView = None
+    SearchPickLayoutView = None
 
 # Now Playing プログレスバーの更新間隔（秒）。Discord rate limit を考慮して 10 秒にする
 PROGRESS_UPDATE_INTERVAL = 10
@@ -126,6 +138,9 @@ class MusicCog(commands.Cog, name="music_cog"):
             LoadErrorLayoutView,
             MusicControllerView,
             QueueAddedLayoutView,
+            SearchPickLayoutView,
+            search_candidates,
+            is_direct_media_query,
         )):
             raise commands.ExtensionFailed(self.qualified_name, "必須コンポーネントのインポート失敗")
         self.config = self._load_bot_config()
@@ -2680,11 +2695,227 @@ class MusicCog(commands.Cog, name="music_cog"):
             result.get("size"),
         )
 
-    @commands.hybrid_command(name="play", description="Play a song or add it to the queue.")
-    @app_commands.describe(query="Song title or URL to play.")
-    async def play(self, ctx: commands.Context, *, query: str):
+    def _coerce_play_args(self, ctx: commands.Context, query: str, source: Optional[str]) -> tuple[str, str]:
+        """スラッシュは引数を使い、プレフィックスは全文から検索語と末尾のサイト名を取る。"""
+        # プレフィックスは *query をやめたので、メッセージ全文を読み直す
+        if ctx.interaction is None and ctx.message is not None and ctx.prefix:
+            raw = ctx.message.content or ""
+            body = raw[len(ctx.prefix):].lstrip() if raw.startswith(ctx.prefix) else raw
+            invoked = ctx.invoked_with or "play"
+            if body.lower().startswith(invoked.lower()):
+                body = body[len(invoked):].lstrip()
+            return split_prefix_play_text(body)
+        # スラッシュの source は Choice の value
+        if hasattr(source, "value"):
+            source = source.value
+        return (query or "").strip(), normalize_search_source(source)
+
+    async def _commit_play_tracks(
+        self,
+        ctx: commands.Context,
+        state: GuildState,
+        tracks: list,
+        *,
+        was_playing: bool,
+        status_message: Optional[discord.Message],
+        announce: bool,
+    ) -> int:
+        """抽出済みトラックをキューへ入れ、止まっていれば再生を始める。"""
+        added_count, first_track = 0, None
+        for track in tracks:
+            if state.queue.qsize() < self.max_queue_size:
+                track.requester_id = ctx.author.id
+                track.stream_url = None
+                await state.put_queue_track(track)
+                if added_count == 0:
+                    first_track = track
+                added_count += 1
+            else:
+                await self._send_ctx_message(
+                    ctx,
+                    content=self.exception_handler.get_message(
+                        "max_queue_size_reached",
+                        max_size=self.max_queue_size,
+                    ),
+                )
+                break
+
+        if announce and was_playing:
+            if added_count > 1:
+                playlist_embed = discord.Embed(
+                    description=self.exception_handler.get_message(
+                        "added_playlist_to_queue",
+                        count=added_count,
+                    ),
+                    color=discord.Color.from_rgb(79, 194, 255),
+                )
+                if status_message:
+                    await status_message.edit(content=None, embed=playlist_embed, view=None)
+                else:
+                    await self._send_ctx_message(ctx, embed=playlist_embed)
+            elif added_count == 1 and first_track:
+                added_view = QueueAddedLayoutView(first_track, ctx.author)
+                if status_message:
+                    await status_message.edit(content=None, embed=None, view=added_view)
+                else:
+                    await self._send_ctx_message(ctx, view=added_view)
+            await self._update_now_playing_message_ui(ctx.guild.id)
+
+        async with state.play_lock:
+            if not state.is_playing:
+                state.stopping = False
+                # URL 再生は検索中メッセージを Now Playing にする。候補パネルは残す。
+                await self._play_next_song(
+                    ctx.guild.id,
+                    play_msg=status_message if announce else None,
+                )
+        return added_count
+
+    async def _show_play_error(
+        self,
+        ctx: commands.Context,
+        status_message: Optional[discord.Message],
+        query: str,
+        error: Exception,
+    ) -> None:
+        """再生・検索の失敗を Components V2 で出す。"""
+        load_error_text = self._format_ui_load_error(url=query, error=error)
+        error_view = LoadErrorLayoutView(load_error_text)
+        if status_message:
+            try:
+                await status_message.edit(content=None, embed=None, view=error_view)
+            except Exception as edit_err:
+                logger.warning(
+                    "Guild %s: Failed to edit play reply into load-error panel: %s",
+                    ctx.guild.id if ctx.guild else "?",
+                    edit_err,
+                )
+                error_message = self.exception_handler.handle_error(error, ctx.guild)
+                wrapped_error_msg = self.exception_handler.get_message(
+                    "error_message_wrapper",
+                    error=error_message,
+                )
+                await status_message.edit(content=wrapped_error_msg)
+        else:
+            await self._send_ctx_message(ctx, view=error_view)
+
+    async def enqueue_picked_track(self, interaction: discord.Interaction, url: str) -> Optional[str]:
+        """検索候補の URL を1本だけキューに入れる。成功は None、通知済みの失敗は空文字。"""
+        if interaction.guild is None:
+            return "This only works in a server."
+        ctx = await commands.Context.from_interaction(interaction)
+        state = self._get_guild_state(interaction.guild.id)
+        if not state:
+            return "サーバーの上限に達しています。"
+        state.is_loading = True
+        try:
+            if not await self._ensure_voice(ctx, connect_if_not_in=True):
+                return ""
+            if state.queue.qsize() >= self.max_queue_size:
+                return self.exception_handler.get_message(
+                    "max_queue_size_reached",
+                    max_size=self.max_queue_size,
+                )
+            was_playing = state.is_playing
+            extracted_media = await extract_audio_data(
+                url,
+                shuffle_playlist=False,
+                max_playlist_items=1,
+                single=True,
+            )
+            if not extracted_media:
+                return self.exception_handler.get_message("search_no_results", query=url)
+            tracks = extracted_media if isinstance(extracted_media, list) else [extracted_media]
+            added = await self._commit_play_tracks(
+                ctx,
+                state,
+                tracks,
+                was_playing=was_playing,
+                status_message=None,
+                announce=False,
+            )
+            if added < 1:
+                return self.exception_handler.get_message(
+                    "max_queue_size_reached",
+                    max_size=self.max_queue_size,
+                )
+            if was_playing:
+                await self._update_now_playing_message_ui(interaction.guild.id)
+            return None
+        except Exception as exc:
+            return self._format_ui_load_error(url=url, error=exc)
+        finally:
+            state.is_loading = False
+
+    async def _play_search(self, ctx: commands.Context, state: GuildState, query: str, source: str) -> None:
+        """タイトル検索の候補を Components V2 で出す。再生はボタンで始める。"""
+        state.is_loading = True
+        searching_msg = None
+        try:
+            searching_msg = await self._send_ctx_message(
+                ctx,
+                content=self.exception_handler.get_message("searching_for_song", query=query),
+            )
+            candidates = await search_candidates(query, source)
+            if not candidates:
+                message = self.exception_handler.get_message("search_no_results", query=query)
+                if searching_msg:
+                    await searching_msg.edit(content=message, embed=None, view=None)
+                else:
+                    await self._send_ctx_message(ctx, content=message)
+                return
+            view = SearchPickLayoutView(
+                self,
+                ctx.guild.id,
+                ctx.author.id,
+                query,
+                source,
+                candidates,
+            )
+            if searching_msg:
+                await searching_msg.edit(content=None, embed=None, view=view)
+                view.message = searching_msg
+            else:
+                view.message = await self._send_ctx_message(ctx, view=view)
+        except Exception as exc:
+            await self._show_play_error(ctx, searching_msg, query, exc)
+        finally:
+            state.is_loading = False
+
+    @commands.hybrid_command(
+        name="play",
+        description="Play a URL, or search YouTube, Niconico, or SoundCloud.",
+    )
+    @app_commands.describe(
+        query="Song title or URL.",
+        source="Search site when the query is not a URL. Defaults to YouTube.",
+    )
+    @app_commands.choices(
+        source=[
+            app_commands.Choice(name="YouTube", value="youtube"),
+            app_commands.Choice(name="Niconico", value="niconico"),
+            app_commands.Choice(name="SoundCloud", value="soundcloud"),
+        ]
+    )
+    async def play(self, ctx: commands.Context, query: str, source: Optional[str] = None):
         # レスポンス送信を保留（defer）にし、処理がタイムアウトしないようにする
         await ctx.defer()
+        try:
+            query, source = self._coerce_play_args(ctx, query, source)
+        except ValueError:
+            await self._send_ctx_message(
+                ctx,
+                content="Choose YouTube, Niconico, or SoundCloud.",
+                ephemeral=True,
+            )
+            return
+        if not query:
+            await self._send_ctx_message(
+                ctx,
+                content="Provide a song title or URL.",
+                ephemeral=True,
+            )
+            return
 
         # ギルド固有の再生状態クラスを取得する
         state = self._get_guild_state(ctx.guild.id)
@@ -2710,6 +2941,12 @@ class MusicCog(commands.Cog, name="music_cog"):
             # コマンドの実行を終了する
             return
 
+        # URL でなければ候補を出して、ボタンでキューに入れる
+        if not is_direct_media_query(query):
+            await self._play_search(ctx, state, query, source)
+            return
+
+        query = canonicalize_media_query(query)
         # コマンド開始時点で実際に再生中かだけを保持し、並行する検索中は再生中と扱わない
         was_playing = state.is_playing
         # 読み込み状態フラグをTrueにする
@@ -2747,118 +2984,20 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # コマンドの実行を終了する
                 return
 
-            # 抽出されたデータがリスト（プレイリスト）であるか判定し、トラックリストに変換する
             tracks = extracted_media if isinstance(extracted_media, list) else [extracted_media]
-            # 追加された曲数と、最初のトラックへの参照を初期化する
-            added_count, first_track = 0, None
-
-            # 抽出されたトラックのリストを走査する
-            for track in tracks:
-                # キューが上限数に達していないか走査のたびに判定する
-                if state.queue.qsize() < self.max_queue_size:
-                    # トラックのリクエストユーザーIDを設定する
-                    track.requester_id = ctx.author.id
-                    # ストリームURLを初期状態としてNoneにする
-                    track.stream_url = None
-                    # トラックオブジェクトを非同期の再生キューに追加する
-                    await state.put_queue_track(track)
-                    # 最初のトラックである（added_countが0）か判定する
-                    if added_count == 0:
-                        # 最初のトラックへの参照を保持する
-                        first_track = track
-                    # 追加曲数のカウントを1加算する
-                    added_count += 1
-                # キュー上限に達したため走査を終了する
-                else:
-                    # すでに曲追加中の場合、キュー上限エラーメッセージを送信する
-                    await self._send_ctx_message(
-                        ctx,
-                        content=self.exception_handler.get_message("max_queue_size_reached",
-                                                                  max_size=self.max_queue_size)
-                    )
-
-                    # ループ処理を終了する
-                    break
-
-            # すでに何らかの音楽が再生中であったか判定する
-            if was_playing:
-                # 複数曲（プレイリスト）がキューに追加されたか判定する
-                if added_count > 1:
-                    # 従来どおりプレイリスト追加は Embed で簡潔に出す
-                    playlist_embed = discord.Embed(
-                        description=self.exception_handler.get_message(
-                            "added_playlist_to_queue",
-                            count=added_count,
-                        ),
-                        color=discord.Color.from_rgb(79, 194, 255),
-                    )
-                    # 検索開始メッセージがあれば Embed に差し替える
-                    if searching_msg:
-                        # 本文を消して Embed のみにする
-                        await searching_msg.edit(content=None, embed=playlist_embed, view=None)
-                    else:
-                        # 新規に Embed を送る（silent）
-                        await self._send_ctx_message(ctx, embed=playlist_embed)
-
-                # 1曲だけが追加され、かつそのトラックオブジェクトが有効か判定する
-                elif added_count == 1 and first_track:
-                    # 単曲追加は小さめの Components V2 パネルにする
-                    added_view = QueueAddedLayoutView(first_track, ctx.author)
-                    # 検索開始メッセージがあれば V2 に差し替える
-                    if searching_msg:
-                        # 本文・Embed を消して LayoutView のみにする
-                        await searching_msg.edit(content=None, embed=None, view=added_view)
-                    else:
-                        # 新規に V2 パネルを送る
-                        await self._send_ctx_message(ctx, view=added_view)
-                # キュー追加後に Now Playing のキュー一覧を更新する
-                await self._update_now_playing_message_ui(ctx.guild.id)
-
-            # 同時 /play でも初回再生を一度だけ開始できるよう、ギルド単位で判定する
-            async with state.play_lock:
-                # キュー追加後も再生が始まっていない場合だけ先頭曲を開始する
-                if not state.is_playing:
-                    # 以前の停止状態を解除して新しい再生を許可する
-                    state.stopping = False
-                    # _play_next_songを実行し、searching_msgを再生メッセージとして流用・編集する
-                    await self._play_next_song(ctx.guild.id, play_msg=searching_msg)
-
-        # 検索または追加処理中に例外が発生した場合のハンドリングを行う
-        except Exception as e:
-            # Video unavailable / DRM 等は Components V2 のエラーパネルで出す
-            load_error_text = self._format_ui_load_error(
-                url=query,
-                error=e,
+            await self._commit_play_tracks(
+                ctx,
+                state,
+                tracks,
+                was_playing=was_playing,
+                status_message=searching_msg,
+                announce=True,
             )
-            # エラー専用 LayoutView を組み立てる
-            error_view = LoadErrorLayoutView(load_error_text)
-            # 検索中メッセージが存在するか判定する
-            if searching_msg:
-                try:
-                    # 検索メッセージをエラー専用 V2 に差し替える
-                    await searching_msg.edit(content=None, embed=None, view=error_view)
-                except Exception as edit_err:
-                    # 編集失敗時はフォールバックでテキスト通知する
-                    logger.warning(
-                        "Guild %s: Failed to edit play reply into load-error panel: %s",
-                        ctx.guild.id if ctx.guild else "?",
-                        edit_err,
-                    )
-                    # 従来のラップ文言へフォールバックする
-                    error_message = self.exception_handler.handle_error(e, ctx.guild)
-                    wrapped_error_msg = self.exception_handler.get_message(
-                        "error_message_wrapper",
-                        error=error_message,
-                    )
-                    # テキストで編集する
-                    await searching_msg.edit(content=wrapped_error_msg)
-            else:
-                # メッセージがない場合は、新規に V2 パネルを送信する
-                await self._send_ctx_message(ctx, view=error_view)
 
-        # 最終的に必ず実行するクリーンアップ処理
+        except Exception as e:
+            await self._show_play_error(ctx, searching_msg, query, e)
+
         finally:
-            # 読み込み状態フラグをFalseに戻す
             state.is_loading = False
 
     @commands.hybrid_command(name="seek", description="Seek to a specified time in the track.")

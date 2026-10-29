@@ -5,6 +5,7 @@ import { ShutdownButton } from "./components/ShutdownButton";
 import { OpsDashboard } from "./components/OpsDashboard";
 import { LogPanel } from "./components/LogPanel";
 import { UserDataPanel } from "./components/UserDataPanel";
+import { WebPanel } from "./components/WebPanel";
 import { useStatus } from "./hooks/useStatus";
 import {
   filterLogEntries,
@@ -14,7 +15,7 @@ import {
 } from "./hooks/useLogStream";
 import "./styles/discord-theme.css";
 
-type LogNavId = Exclude<NavId, "overview" | "privacy">;
+type LogNavId = Exclude<NavId, "overview" | "privacy" | "web">;
 
 /** 概要カードに出す末尾件数 */
 const FEED_ROWS = 80;
@@ -83,32 +84,35 @@ export default function App() {
       </header>
       <div className="body">
         <Sidebar active={nav} onSelect={setNav} />
-        {nav === "overview" ? (
-          <OpsDashboard
-            vc={vc}
-            guilds={guilds}
-            avgLatency={format.avgLatency}
-            llmFeed={llmFeed}
-            guildEvents={guildEvents}
-            uptime={format.uptime}
-            alive={status?.alive}
-          />
-        ) : nav === "privacy" ? (
-          <UserDataPanel />
-        ) : (
-          <LogPanel
-            title={LOG_TITLES[nav as LogNavId]}
-            entries={logEntries}
-            level={levels[nav as LogNavId]}
-            onLevelChange={(lv) =>
-              setLevels((prev) => ({ ...prev, [nav as LogNavId]: lv }))
-            }
-            autoScroll={autoScroll}
-            onAutoScrollChange={setAutoScroll}
-            onClear={clear}
-            live={connected}
-          />
-        )}
+        <div className="content-slot">
+          {nav === "overview" ? (
+            <OpsDashboard
+              vc={vc}
+              guilds={guilds}
+              avgLatency={format.avgLatency}
+              llmFeed={llmFeed}
+              guildEvents={guildEvents}
+              uptime={format.uptime}
+              alive={status?.alive}
+            />
+          ) : nav === "privacy" ? (
+            <UserDataPanel />
+          ) : nav === "web" ? null : (
+            <LogPanel
+              title={LOG_TITLES[nav as LogNavId]}
+              entries={logEntries}
+              level={levels[nav as LogNavId]}
+              onLevelChange={(lv) =>
+                setLevels((prev) => ({ ...prev, [nav as LogNavId]: lv }))
+              }
+              autoScroll={autoScroll}
+              onAutoScrollChange={setAutoScroll}
+              onClear={clear}
+              live={connected}
+            />
+          )}
+          <WebPanel visible={nav === "web"} />
+        </div>
       </div>
     </div>
   );

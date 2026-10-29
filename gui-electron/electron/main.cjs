@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, net } = require("electron");
+const { app, BrowserWindow, shell, ipcMain, net, session } = require("electron");
 const path = require("path");
 
 // ログ表示主体の UI なので GPU プロセスを起こさずソフトウェア描画にする（常駐メモリ削減）
@@ -16,6 +16,33 @@ const GUI_PORT = process.env.MOMOKA_HOST_GUI_PORT || "18765";
 const GUI_HOST = process.env.MOMOKA_HOST_GUI_HOST || "127.0.0.1";
 const GUI_TOKEN = process.env.MOMOKA_HOST_GUI_TOKEN || "";
 const API_BASE = `http://${GUI_HOST}:${GUI_PORT}/host-gui/api`;
+
+/** Web タブ専用の永続セッション（システムの Chrome / Firefox とは別） */
+const YT_PARTITION = "persist:momoka-youtube";
+/** ログイン済みとみなす YouTube cookie 名 */
+const YT_AUTH_COOKIES = new Set([
+  "LOGIN_INFO",
+  "SAPISID",
+  "SID",
+  "__Secure-1PSID",
+  "__Secure-3PSID",
+  "__Secure-1PAPISID",
+  "__Secure-3PAPISID",
+]);
+/** ログイン済みとみなすニコニコ cookie 名 */
+const NICO_AUTH_COOKIES = new Set(["user_session"]);
+/** cookie 変化の連続通知をまとめる */
+const exportTimers = { youtube: null, niconico: null };
+/** YouTube / ニコニコの定期読み直し */
+let ytReloadTimer = null;
+/** 自動入力に使う。renderer へは渡さない。 */
+let ytLogin = {
+  email: "",
+  password: "",
+  reloadMinutes: 60,
+  niconicoEmail: "",
+  niconicoPassword: "",
+};
 
 /** 外部ブラウザで開いてよいスキーム */
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["https:"]);
@@ -65,6 +92,10 @@ async function proxyApi(opts) {
   if (!apiPath.startsWith("/")) {
     throw new Error("invalid_path");
   }
+  // パスワードを含む経路は renderer の汎用 IPC から呼ばせない
+  if (apiPath === "/youtube-browser-login" || apiPath.startsWith("/youtube-browser-login?")) {
+    throw new Error("forbidden");
+  }
   const headers = Object.assign({}, opts.headers || {});
   if (GUI_TOKEN) {
     headers.Authorization = `Bearer ${GUI_TOKEN}`;
@@ -113,6 +144,16 @@ function stopLogSse() {
 
 function quitHostGui() {
   stopLogSse();
+  for (const site of Object.keys(exportTimers)) {
+    if (exportTimers[site]) {
+      clearTimeout(exportTimers[site]);
+      exportTimers[site] = null;
+    }
+  }
+  if (ytReloadTimer) {
+    clearInterval(ytReloadTimer);
+    ytReloadTimer = null;
+  }
   if (apiWatchTimer) {
     clearInterval(apiWatchTimer);
     apiWatchTimer = null;
@@ -221,6 +262,343 @@ async function startLogSse(sender) {
   return { ok: true };
 }
 
+/**
+ * ホストが許可サフィックスか。
+ * @param {string} domain
+ * @param {string[]} suffixes
+ */
+function hostIn(domain, suffixes) {
+  const host = String(domain || "").replace(/^\./, "").toLowerCase();
+  return suffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
+/**
+ * YouTube / Google 系のホストか。
+ * @param {string} domain
+ */
+function ytDomainOk(domain) {
+  return hostIn(domain, [
+    "youtube.com",
+    "youtu.be",
+    "google.com",
+    "gstatic.com",
+    "googleusercontent.com",
+    "ggpht.com",
+    "recaptcha.net",
+  ]);
+}
+
+/**
+ * ニコニコ動画のホストか。
+ * @param {string} domain
+ */
+function nicoDomainOk(domain) {
+  return hostIn(domain, ["nicovideo.jp", "nico.ms"]);
+}
+
+/**
+ * ログイン確認（Turnstile）のホストか。cookie の保存対象にはしない。
+ * @param {string} domain
+ */
+function loginChallengeOk(domain) {
+  return hostIn(domain, ["challenges.cloudflare.com"]);
+}
+
+/**
+ * Web タブで開いてよい URL か。
+ * @param {string} rawUrl
+ */
+function isAllowedWebUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:") return false;
+  return ytDomainOk(parsed.hostname) || nicoDomainOk(parsed.hostname) || loginChallengeOk(parsed.hostname);
+}
+
+/**
+ * Host API を main 自身から呼ぶ（renderer 向け IPC の拒否リストを通さない）。
+ * @param {string} method
+ * @param {string} apiPath
+ * @param {unknown} [body]
+ */
+async function mainApi(method, apiPath, body) {
+  const headers = {};
+  if (GUI_TOKEN) headers.Authorization = `Bearer ${GUI_TOKEN}`;
+  /** @type {RequestInit} */
+  const init = { method, headers, signal: AbortSignal.timeout(PROXY_API_TIMEOUT_MS) };
+  if (body !== undefined && method !== "GET" && method !== "HEAD") {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+  const res = await net.fetch(`${API_BASE}${apiPath}`, init);
+  const text = await res.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  return { ok: res.ok, status: res.status, json };
+}
+
+function sendYtStatus(payload) {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  win.webContents.send("momoka:youtube-cookie-status", payload);
+}
+
+async function loadYtLogin() {
+  try {
+    const res = await mainApi("GET", "/youtube-browser-login");
+    if (!res.ok || !res.json) return;
+    const email = String(res.json.email || "");
+    const password = String(res.json.password || "");
+    const reloadMinutes = Number(res.json.reload_minutes) || 60;
+    ytLogin = {
+      email,
+      password,
+      reloadMinutes,
+      niconicoEmail: String(res.json.niconico_email || ""),
+      niconicoPassword: String(res.json.niconico_password || ""),
+    };
+  } catch (err) {
+    console.error("YouTube login config unavailable:", err);
+  }
+}
+
+const SITE_EXPORT = {
+  youtube: {
+    domainOk: ytDomainOk,
+    auth: YT_AUTH_COOKIES,
+    path: "/youtube-cookies",
+    loggedOut: "YouTube にログインすると cookie を保存します",
+    saved: "YouTube の cookie を保存しました",
+    fresh: "YouTube の cookie は最新です",
+    failed: "YouTube の cookie 保存に失敗しました",
+  },
+  niconico: {
+    domainOk: nicoDomainOk,
+    auth: NICO_AUTH_COOKIES,
+    path: "/niconico-cookies",
+    loggedOut: "ニコニコ動画にログインすると cookie を保存します",
+    saved: "ニコニコの cookie を保存しました",
+    fresh: "ニコニコの cookie は最新です",
+    failed: "ニコニコの cookie 保存に失敗しました",
+  },
+};
+
+/**
+ * 指定サイトの cookie を API へ送る。
+ * @param {"youtube" | "niconico"} site
+ * @param {{ quietIfLoggedOut?: boolean }} [opts]
+ */
+async function exportSiteCookies(site, opts) {
+  const spec = SITE_EXPORT[site];
+  const quietIfLoggedOut = Boolean(opts && opts.quietIfLoggedOut);
+  const ses = session.fromPartition(YT_PARTITION);
+  const all = await ses.cookies.get({});
+  const cookies = all
+    .filter((cookie) => spec.domainOk(cookie.domain))
+    .map((cookie) => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      secure: cookie.secure,
+      expires: cookie.session ? -1 : cookie.expirationDate,
+    }));
+  if (!cookies.some((cookie) => spec.auth.has(cookie.name))) {
+    if (!quietIfLoggedOut) sendYtStatus({ ok: false, message: spec.loggedOut });
+    return;
+  }
+  const res = await mainApi("POST", spec.path, { cookies });
+  if (!res.ok) {
+    sendYtStatus({ ok: false, message: spec.failed });
+    return;
+  }
+  const changed = Array.isArray(res.json?.changed) ? res.json.changed : [];
+  if (res.json?.error === "not_logged_in") {
+    if (!quietIfLoggedOut) sendYtStatus({ ok: false, message: spec.loggedOut });
+    return;
+  }
+  if (!changed.length && res.json?.ok) {
+    sendYtStatus({ ok: true, message: spec.fresh });
+    return;
+  }
+  sendYtStatus({
+    ok: Boolean(res.json?.ok),
+    message: res.json?.ok ? spec.saved : spec.failed,
+  });
+}
+
+/**
+ * @param {"youtube" | "niconico"} site
+ */
+function scheduleSiteExport(site) {
+  if (exportTimers[site]) clearTimeout(exportTimers[site]);
+  exportTimers[site] = setTimeout(() => {
+    exportTimers[site] = null;
+    void exportSiteCookies(site).catch((err) => {
+      console.error(`${site} cookie export failed:`, err && err.message ? err.message : "failed");
+      sendYtStatus({ ok: false, message: SITE_EXPORT[site].failed });
+    });
+  }, 2000);
+}
+
+function bindYtSession() {
+  const ses = session.fromPartition(YT_PARTITION);
+  ses.cookies.on("changed", (_event, cookie) => {
+    if (!cookie) return;
+    if (ytDomainOk(cookie.domain)) scheduleSiteExport("youtube");
+    if (nicoDomainOk(cookie.domain)) scheduleSiteExport("niconico");
+  });
+}
+
+/**
+ * ニコニコのログイン欄へ config のアカウントを入れる。確認画面はタブで続ける。
+ * @param {Electron.WebContents} contents
+ * @param {string} url
+ */
+async function maybeAutofillNiconico(contents, url) {
+  if (!ytLogin.niconicoEmail || !ytLogin.niconicoPassword) return;
+  if (!url.includes("account.nicovideo.jp")) return;
+  const email = JSON.stringify(ytLogin.niconicoEmail);
+  const password = JSON.stringify(ytLogin.niconicoPassword);
+  const script = `(() => {
+    if (window.__momokaNicoWatch) return "watching";
+    window.__momokaNicoWatch = 1;
+    const setValue = (el, value) => {
+      const proto = HTMLInputElement.prototype;
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      if (el._valueTracker) el._valueTracker.setValue("");
+      if (desc && desc.set) desc.set.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const tryFill = () => {
+      const mail = document.querySelector('input[name="mailOrTel"], input[autocomplete="username"]');
+      const pass = document.querySelector('input[name="password"], input[autocomplete="current-password"]');
+      if (!mail || !pass) return false;
+      if (!pass.dataset.momokaFilled) {
+        pass.dataset.momokaFilled = "1";
+        setValue(mail, ${email});
+        setValue(pass, ${password});
+      }
+      const form = pass.closest("form");
+      const button = form && form.querySelector('button[type="submit"]');
+      if (!button || button.disabled || button.dataset.momokaClicked) return false;
+      button.dataset.momokaClicked = "1";
+      button.click();
+      return true;
+    };
+    if (tryFill()) return "submit";
+    const obs = new MutationObserver(() => {
+      if (tryFill()) obs.disconnect();
+    });
+    obs.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
+    setTimeout(() => obs.disconnect(), 20000);
+    return "wait";
+  })()`;
+  try {
+    await contents.executeJavaScript(script, true);
+  } catch {
+    console.error("Niconico login autofill failed");
+  }
+}
+
+async function maybeAutofill(contents) {
+  let url = "";
+  try {
+    url = contents.getURL();
+  } catch {
+    return;
+  }
+  if (url.includes("account.nicovideo.jp")) {
+    await maybeAutofillNiconico(contents, url);
+    return;
+  }
+  if (!ytLogin.email || !ytLogin.password) return;
+  if (!url.includes("accounts.google.com")) return;
+  const email = JSON.stringify(ytLogin.email);
+  const password = JSON.stringify(ytLogin.password);
+  const script = `(() => {
+    const setValue = (el, value) => {
+      const proto = Object.getPrototypeOf(el);
+      const desc = Object.getOwnPropertyDescriptor(proto, "value");
+      if (desc && desc.set) desc.set.call(el, value);
+      else el.value = value;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const emailBox = document.querySelector("#identifierId");
+    if (emailBox && !emailBox.dataset.momokaFilled) {
+      emailBox.dataset.momokaFilled = "1";
+      setValue(emailBox, ${email});
+      const next = document.querySelector("#identifierNext button, #identifierNext");
+      if (next) next.click();
+      return "email";
+    }
+    const pass = document.querySelector('input[name="Passwd"]');
+    if (pass && !pass.dataset.momokaFilled) {
+      pass.dataset.momokaFilled = "1";
+      setValue(pass, ${password});
+      const next = document.querySelector("#passwordNext button, #passwordNext");
+      if (next) next.click();
+      return "password";
+    }
+    return "none";
+  })()`;
+  try {
+    await contents.executeJavaScript(script, true);
+  } catch {
+    console.error("YouTube login autofill failed");
+  }
+}
+
+/**
+ * Web タブの webview を YouTube / Google / ニコニコに制限する。
+ * @param {Electron.WebContents} contents
+ */
+function bindWebview(contents) {
+  contents.on("will-navigate", (event, url) => {
+    if (!isAllowedWebUrl(url)) event.preventDefault();
+  });
+  contents.on("will-redirect", (event, url) => {
+    if (!isAllowedWebUrl(url)) event.preventDefault();
+  });
+  contents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedWebUrl(url)) {
+      void contents.loadURL(url);
+    }
+    return { action: "deny" };
+  });
+  contents.on("did-finish-load", () => {
+    void maybeAutofill(contents);
+  });
+}
+
+function startYtReloadLoop() {
+  if (ytReloadTimer) clearInterval(ytReloadTimer);
+  const minutes = Math.max(15, Number(ytLogin.reloadMinutes) || 60);
+  ytReloadTimer = setInterval(() => {
+    const win = mainWindow;
+    if (!win || win.isDestroyed()) return;
+    win.webContents.send("momoka:youtube-reload");
+    scheduleSiteExport("youtube");
+    scheduleSiteExport("niconico");
+  }, minutes * 60 * 1000);
+}
+
 function registerIpc() {
   ipcMain.handle("momoka:api", async (_event, opts) => proxyApi(opts || {}));
   ipcMain.handle("momoka:has-auth", async () => Boolean(GUI_TOKEN));
@@ -242,11 +620,13 @@ function createWindow() {
     width: 1280,
     height: 800,
     backgroundColor: "#1E1F22",
-    webPreferences: {
+      webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Web タブの <webview>
+      webviewTag: true,
       // 入力欄はほぼ無いので辞書をロードしない
       spellcheck: false,
     },
@@ -296,7 +676,17 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerIpc();
+  bindYtSession();
+  app.on("web-contents-created", (_event, contents) => {
+    if (contents.getType() === "webview") bindWebview(contents);
+  });
+  void loadYtLogin().finally(() => startYtReloadLoop());
   createWindow();
+  // 以前のログインが残っていれば、タブを開く前でも cookie を書き出す
+  setTimeout(() => {
+    void exportSiteCookies("youtube", { quietIfLoggedOut: true }).catch(() => undefined);
+    void exportSiteCookies("niconico", { quietIfLoggedOut: true }).catch(() => undefined);
+  }, 8000);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

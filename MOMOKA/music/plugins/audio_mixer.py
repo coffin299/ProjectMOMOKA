@@ -2,7 +2,9 @@
 import discord
 import asyncio
 import io
+import os
 import shlex
+import signal
 import subprocess
 import tempfile
 import threading
@@ -19,6 +21,98 @@ from MOMOKA.music.plugins.process_log_bridge import (
 )
 
 logger = logging.getLogger(__name__)
+
+# パイプ入力でもハードウェアデコーダを開かせない。
+# probesize を小さくすると moov が末尾の m4a が再生不能になるため、ここには置かない。
+# 映像そのものは yt-dlp 側の音声フォーマットで避ける。
+_FFMPEG_PIPE_GUARD = [
+    "-hwaccel",
+    "none",
+    "-threads",
+    "1",
+    "-thread_queue_size",
+    "8",
+]
+# シーク可能な入力（ローカルファイル等）向け。プローブ上限は掛けない。
+_FFMPEG_FILE_GUARD = [
+    "-hwaccel",
+    "none",
+    "-threads",
+    "1",
+]
+
+
+def _spawn_ytdlp(cmd: list[str]) -> subprocess.Popen:
+    """yt-dlp を起動する。Windows ではコンソール窓を出さない。"""
+    # 標準出力は ffmpeg へ、標準エラーはログポンプへ渡す
+    kwargs: dict = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "stdin": subprocess.DEVNULL,
+        # 親の Python バッファにメディア本体を溜めない
+        "bufsize": 0,
+    }
+    # Windows はコンソールを割り当てない
+    if os.name == "nt":
+        # CREATE_NO_WINDOW。子の deno も窓を出しにくい
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    else:
+        # POSIX はプロセスグループごと殺せるようにする
+        kwargs["start_new_session"] = True
+    # パイプ再生のダウンローダを起動する
+    return subprocess.Popen(cmd, **kwargs)
+
+
+def _terminate_process_tree(proc: Optional[subprocess.Popen]) -> None:
+    """yt-dlp と、それが起動した deno / ffmpeg をまとめて終了する。"""
+    # 未起動なら何もしない
+    if proc is None:
+        # 呼び出し側の後始末を続ける
+        return
+    # ツリー終了に使う PID
+    pid = getattr(proc, "pid", None)
+    # Windows の Process.kill は子（deno や結合用 ffmpeg）を残す
+    if os.name == "nt" and pid:
+        # /T で子孫ごと強制終了する
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        # taskkill が効かなかった場合だけ単体 kill に落とす
+        if proc.poll() is None:
+            try:
+                # 親プロセスが残っていれば止める
+                proc.kill()
+            except Exception:
+                # 終了競合は待機側で回収する
+                pass
+    elif proc.poll() is None:
+        try:
+            # プロセスグループ全体へ SIGKILL
+            os.killpg(pid, signal.SIGKILL)
+        except Exception:
+            try:
+                # グループが取れなければプロセス単体を止める
+                proc.kill()
+            except Exception:
+                # 既に終了していれば無視する
+                pass
+    try:
+        # ゾンビ化を避けるため終了を待つ
+        proc.wait(timeout=3)
+    except Exception:
+        try:
+            # まだ生きていれば最後に単体 kill する
+            if proc.poll() is None:
+                # 待機に失敗したプロセスを止める
+                proc.kill()
+        except Exception:
+            # 終了済みならクリーンアップを続行する
+            pass
+
 
 # Discord PCM: 20ms / 48kHz / 16bit LE / stereo → 960*2*2 = 3840 bytes
 _FRAME_BYTES = 3840
@@ -322,8 +416,12 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             and not Path(source).is_file()
         )
 
-        # FFmpeg 共通の出力引数を組み立てる
+        # FFmpeg 共通の出力引数を組み立てる。
+        # 先頭で音声ストリームだけを選び、映像デコード（VRAM）を避ける。
         out_args: list = [
+            "-map",
+            "0:a:0",
+            "-vn",
             "-f",
             "s16le",
             "-ar",
@@ -351,13 +449,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 format_spec=pipe_format,
                 use_cookies=pipe_use_cookies,
             )
-            # yt-dlp を起動し stdout をパイプする
-            self._ytdlp_proc = subprocess.Popen(
-                ytdlp_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.DEVNULL,
-            )
+            # yt-dlp を起動し stdout をパイプする（停止時は子プロセスもまとめて殺す）
+            self._ytdlp_proc = _spawn_ytdlp(ytdlp_cmd)
             try:
                 # stderrを常時排出してパイプ満杯とread()ブロックを防ぐ。
                 self._ytdlp_stderr_pump = ChildProcessLogPump(
@@ -397,8 +490,14 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                             continue
                         # その他の before オプションはパイプ経路では破棄する。
                         i += 1
-                # -i pipe:0 のあとに -ss と通常 out_args を並べる。
-                ffmpeg_args: list = ["-i", "pipe:0", *seek_out_args, *out_args]
+                # 入力前にハードウェアデコードを切る。映像は yt-dlp の音声指定で入れない。
+                ffmpeg_args: list = [
+                    *_FFMPEG_PIPE_GUARD,
+                    "-i",
+                    "pipe:0",
+                    *seek_out_args,
+                    *out_args,
+                ]
                 # FFmpegAudio を pipe:0 / stdin=ytdlp.stdout で初期化する
                 discord.FFmpegAudio.__init__(
                     self,
@@ -418,8 +517,9 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 # 呼び出し元が再生開始失敗を処理できるよう元の例外を再送出する
                 raise
         else:
-            # ローカルファイルや非 YouTube: 従来どおり直接 -i source
-            ffmpeg_args = []
+            # ローカルファイルや非 YouTube: 従来どおり直接 -i source。
+            # こちらもハードウェアデコードは使わない。
+            ffmpeg_args = list(_FFMPEG_FILE_GUARD)
             # before_options（reconnect / -ss）を先頭へ追加する
             if isinstance(before_options, str) and before_options.strip():
                 # シェル風に分割する
@@ -468,15 +568,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         self._ytdlp_proc = None
         # プロセスが存在する場合だけ終了処理を行う
         if ytdlp_proc is not None:
-            try:
-                # 実行中のyt-dlpを強制終了してパイプ待機を防ぐ
-                if ytdlp_proc.poll() is None:
-                    ytdlp_proc.kill()
-                # 子プロセス終了を短時間待機してゾンビ化を防ぐ
-                ytdlp_proc.wait(timeout=2)
-            except Exception:
-                # 終了待機の失敗は後続リソース解放を妨げない
-                pass
+            # deno や結合用 ffmpeg を残さないようツリーごと終了する
+            _terminate_process_tree(ytdlp_proc)
         # 起動済みのstderrログポンプを停止する
         if self._ytdlp_stderr_pump is not None:
             try:
@@ -508,15 +601,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         ffmpeg_proc = getattr(self, "_process", None)
         # FFmpegプロセスが存在する場合だけ終了処理を行う
         if ffmpeg_proc is not None:
-            try:
-                # 実行中のFFmpegを強制終了して子プロセスを残さない
-                if ffmpeg_proc.poll() is None:
-                    ffmpeg_proc.kill()
-                # 子プロセス終了を短時間待機してゾンビ化を防ぐ
-                ffmpeg_proc.wait(timeout=2)
-            except Exception:
-                # 終了待機の失敗はstderr解放を妨げない
-                pass
+            # 初期化途中の ffmpeg もツリーごと止める
+            _terminate_process_tree(ffmpeg_proc)
         # 初期化時に作成したFFmpeg stderr一時ファイルを閉じる
         if self._stderr_file is not None:
             try:
@@ -787,14 +873,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 # 終了処理用にローカルへ退避する
                 ytdlp_proc = self._ytdlp_proc
                 try:
-                    # まだ生きていれば強制終了する
-                    if ytdlp_proc.poll() is None:
-                        ytdlp_proc.kill()
-                    # 終了を短時間待つ
-                    ytdlp_proc.wait(timeout=2)
-                except Exception:
-                    # 終了待ち失敗は無視する
-                    pass
+                    # yt-dlp だけでなく JS ランタイム等の子も終了する
+                    _terminate_process_tree(ytdlp_proc)
                 finally:
                     # プロセス終了後にstderr読取スレッドを回収する。
                     if self._ytdlp_stderr_pump is not None:

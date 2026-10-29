@@ -19,7 +19,9 @@ from yt_dlp.utils import DownloadError, ExtractorError  # 抽出・ダウンロ�
 from MOMOKA.utilities.url_safety import (
     UnsafeURLError,
     assert_info_urls_safe,
+    assert_safe_http_url,
     assert_user_media_query_safe,
+    has_explicit_uri_scheme,
 )
 
 
@@ -146,11 +148,42 @@ def clear_ytdlp_cache() -> int:
     return cleared
 
 
-NICO_COOKIE_PATH = Path("./nico_cookies.txt")
+# cwd に依存しない。GUI の Web タブも同じファイルへ書く。
+NICO_COOKIE_PATH = _REPO_ROOT / "nico_cookies.txt"
 # ニコニコ動画用クッキーファイルが存在しない場合は作成する
 if not NICO_COOKIE_PATH.exists():
     # 空ファイルを作成する
     NICO_COOKIE_PATH.touch(exist_ok=True)
+
+
+def _nico_cookie_has_session() -> bool:
+    """nico_cookies.txt にログイン済みの user_session があるか。"""
+    try:
+        text = NICO_COOKIE_PATH.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        # yt-dlp は HttpOnly を #HttpOnly_ 付きで書き戻す
+        raw = line[len("#HttpOnly_") :] if line.startswith("#HttpOnly_") else line
+        if not raw or raw.startswith("#"):
+            continue
+        parts = raw.split("\t")
+        if len(parts) >= 7 and parts[5] == "user_session" and parts[6]:
+            return True
+    return False
+
+
+def _configured_niconico_account() -> tuple[str, str]:
+    """music.niconico のメールとパスワード。ログには出さない。"""
+    try:
+        from MOMOKA.config.loader import load_merged_config
+
+        account = (load_merged_config().get("music") or {}).get("niconico") or {}
+    except Exception:
+        return "", ""
+    if not isinstance(account, dict):
+        return "", ""
+    return str(account.get("email") or ""), str(account.get("password") or "")
 
 # YouTube用クッキーの候補パス（ユーザー指定名を優先し、旧名も互換として残す）
 _YOUTUBE_COOKIE_CANDIDATES = (
@@ -414,6 +447,7 @@ def _apply_youtube_cookie(opts: dict) -> dict:
 
 
 # YouTube SABR 対策: format 候補（* はメタデータ不完全な形式も含める）
+# best / best* は最大の映像を選ぶ。抽出の最終手段にだけ残し、再生パイプには渡さない。
 _FORMAT_TRIES: tuple[str, ...] = (
     "bestaudio*/best*",
     "bestaudio/best",
@@ -681,9 +715,64 @@ def _raise_unsupported_media(url_or_query: str, cause: Optional[BaseException] =
     raise UnsupportedMediaError(message)
 
 
-# パイプ再生 CLI の既定 format チェーン（_FORMAT_TRIES を1本に結合した相当品）
-# SABR 等で bestaudio*/best* が全滅しても itag 18 (progressive) まで粘る
-_PIPE_FORMAT_DEFAULT = "bestaudio*/bestaudio/best[acodec!=none]/best/best*/18"
+# パイプ再生は音声コンテナだけを流す。
+# best / best* / 映像+音声の結合（137+251 等）は、非シークのパイプ上で
+# ファイル全体を ffmpeg のメモリに載せ、映像デコーダ経由で VRAM も使う。
+# プログレッシブ映像は、曲尺の 360p 程度に収まるときだけ最後の手段にする。
+_PIPE_AUDIO_CHAIN = (
+    "bestaudio[ext=webm]/"
+    "bestaudio[acodec=opus]/"
+    "bestaudio[ext=m4a]/"
+    "bestaudio[acodec!=none][vcodec=none]/"
+    "bestaudio*"
+)
+_PIPE_SMALL_PROGRESSIVE = (
+    "best[acodec!=none][vcodec!=none][filesize<96M]/"
+    "best[acodec!=none][vcodec!=none][filesize_approx<96M]"
+)
+_PIPE_FORMAT_DEFAULT = f"{_PIPE_AUDIO_CHAIN}/{_PIPE_SMALL_PROGRESSIVE}"
+# 音声だけの長時間配信を落としすぎない上限。映像の数 GB 落ちはここで止める。
+_PIPE_MAX_FILESIZE = "512M"
+
+
+def _is_audio_only_format(fmt: dict) -> bool:
+    """vcodec が無く、音声コーデックがある形式か。"""
+    # 音声コーデックが無ければ再生パイプに使えない
+    acodec = fmt.get("acodec")
+    # none や空は音声なし
+    if not isinstance(acodec, str) or acodec.strip() in ("", "none"):
+        # 音声だけの形式ではない
+        return False
+    # 映像コーデック未設定は音声のみとみなす
+    vcodec = fmt.get("vcodec")
+    # キーが無い、または none なら映像トラックは無い
+    if vcodec is None or (isinstance(vcodec, str) and vcodec.strip() in ("", "none")):
+        # パイプへ渡してよい
+        return True
+    # avc1 / vp9 等はファイル全体のバッファとデコーダ起動の原因になる
+    return False
+
+
+def _sanitize_pipe_format_spec(format_spec: Optional[str]) -> Optional[str]:
+    """抽出結果の format を、単一の音声 ID 以外はパイプへ渡さない。"""
+    # 未指定はそのまま既定チェーンに任せる
+    if not isinstance(format_spec, str):
+        # 追加の優先 ID は無い
+        return None
+    # 前後空白を除いた指定
+    fmt = format_spec.strip()
+    # 空、結合（video+audio）、セレクタ列は既定チェーン側で扱う
+    if not fmt or "+" in fmt or "/" in fmt:
+        # 映像結合や best* の混入を防ぐ
+        return None
+    # 大小を無視して危険なセレクタ名を弾く
+    lowered = fmt.lower()
+    # best / best* は最大映像になる
+    if lowered in {"best", "best*", "b", "b*"} or "bestvideo" in lowered or lowered.startswith("bv"):
+        # パイプの優先 format には使わない
+        return None
+    # 単一の format ID（例: 251）だけを優先指定として返す
+    return fmt
 
 
 def build_ytdlp_pipe_command(
@@ -698,17 +787,27 @@ def build_ytdlp_pipe_command(
     直接 googlevideo URL を FFmpeg に渡すと 403 になるため、yt-dlp 経由で取得する。
     format_spec / player_clients / use_cookies には抽出 API 側で
     実際に成功した組み合わせを渡すことで CLI 再抽出の失敗を防ぐ。
+    映像や video+audio 結合は渡さず、音声コンテナだけを stdout へ流す。
     """
     # 未指定なら一次候補の先頭1件だけを使う（複数client混在を防ぐ）
     clients = player_clients or [_YOUTUBE_PLAYER_CLIENT_PRIMARY[0]]
     # CLI 向けにカンマ区切りへ変換する
     client_arg = ",".join(clients)
-    # format 指定が無ければ広いフォールバックチェーンを使う
-    fmt = format_spec or _PIPE_FORMAT_DEFAULT
-    # 指定 format の全滅に備え、既定チェーンを末尾に連結して保険を掛ける
-    if fmt != _PIPE_FORMAT_DEFAULT:
-        # 成功実績の format を優先しつつ既定チェーンへフォールバックさせる
-        fmt = f"{fmt}/{_PIPE_FORMAT_DEFAULT}"
+    # 抽出が選んだ単一の音声 ID だけを優先し、映像 ID は捨てる
+    safe_format = _sanitize_pipe_format_spec(format_spec)
+    # 捨てた指定は運用ログに残す（best や 137+251 が来ていた証拠）
+    if isinstance(format_spec, str) and format_spec.strip() and safe_format is None:
+        # 再生は続行し、音声チェーンへフォールバックする
+        logger.info(
+            "Ignoring non-audio pipe format %s; using audio-only chain",
+            format_spec.strip(),
+        )
+    # 既定は音声優先。小さなプログレッシブだけ末尾に残す
+    fmt = _PIPE_FORMAT_DEFAULT
+    # 成功した音声 ID があれば先頭で試す
+    if safe_format and safe_format != _PIPE_FORMAT_DEFAULT:
+        # その ID が全滅したときだけ既定チェーンへ進む
+        fmt = f"{safe_format}/{_PIPE_FORMAT_DEFAULT}"
     # PATH 上の JS ランタイム名をカンマ連結する（EJS 解決に必須）
     js_runtime_names = ",".join(_detect_js_runtimes().keys()) or "deno"
     # 現在の Python で yt_dlp モジュールを起動する
@@ -720,6 +819,15 @@ def build_ytdlp_pipe_command(
         "--no-warnings",
         "--no-playlist",
         "--no-part",
+        # 断片の同時取得は 1 本に固定し、断片バッファの並列膨張を防ぐ
+        "--concurrent-fragments",
+        "1",
+        # ダウンローダの書き込みバッファを小さく保つ
+        "--buffer-size",
+        "16K",
+        # Content-Length が分かる巨大ファイルは落とさずに打ち切る
+        "--max-filesize",
+        _PIPE_MAX_FILESIZE,
         # 一時的な HTTP エラーや断片欠落に備えて再試行する
         "--retries",
         "5",
@@ -816,26 +924,36 @@ def _entry_has_playable_url(info: Optional[dict]) -> bool:
     )
 
 
-def _selected_format_spec(entry: dict, fallback: Optional[str]) -> Optional[str]:
-    """抽出済みエントリからCLIで再利用できる実format IDを返す。"""
-    # 単一または結合済みformat IDを最優先する。
+def _selected_format_spec(entry: dict, fallback: Optional[str] = None) -> Optional[str]:
+    """パイプへ渡せる音声だけの format ID。映像や video+audio 結合は返さない。"""
+    # 未使用でも呼び出し互換のため受け取る
+    del fallback
+    # 結合結果に含まれる各形式から、音声だけの ID を探す
+    for item in entry.get("requested_formats") or []:
+        # 辞書以外は format 情報として扱わない
+        if not isinstance(item, dict):
+            # 次の要素へ
+            continue
+        # CLI が単体指定できる ID
+        format_id = item.get("format_id")
+        # 結合記号入り ID は両方ダウンロードしてから mux するため除外する
+        if not format_id or "+" in str(format_id):
+            # この要素はパイプ優先に使わない
+            continue
+        # vcodec が無いものだけ採用する
+        if _is_audio_only_format(item):
+            # 最初の音声 ID を返す（映像 ID は結合しない）
+            return str(format_id).strip()
+    # 単一形式のときだけ、エントリ自身のコーデックを見る
     format_id = entry.get("format_id")
-    # 有効な文字列ならそのまま返す。
-    if isinstance(format_id, str) and format_id.strip():
-        # 前後空白を除去して返す。
-        return format_id.strip()
-    # requested_formatsから実IDを順番どおり集める。
-    requested_ids = [
-        str(item.get("format_id"))
-        for item in (entry.get("requested_formats") or [])
-        if isinstance(item, dict) and item.get("format_id")
-    ]
-    # 複数形式はyt-dlpの結合指定へ変換する。
-    if requested_ids:
-        # 音声・映像形式の組合せを維持する。
-        return "+".join(requested_ids)
-    # IDが無い場合だけ従来selectorへ戻す。
-    return fallback
+    # 文字列かつ結合指定でない場合に限る
+    if isinstance(format_id, str) and format_id.strip() and "+" not in format_id:
+        # 音声のみならその ID をパイプの優先指定にする
+        if _is_audio_only_format(entry):
+            # 前後空白を除いて返す
+            return format_id.strip()
+    # 映像 ID や best* は返さず、パイプ側の音声チェーンに任せる
+    return None
 
 
 def _extract_with_fallbacks(opts: dict, url: str, *, download: bool, resolve_stream: bool = False):
@@ -1040,16 +1158,34 @@ def _is_nico(url_or_query: str) -> bool:
     return ("nicovideo.jp" in url_or_query) or ("nico.ms" in url_or_query)
 
 
+def _usable_nico_cookiefile() -> Optional[str]:
+    """中身のある Netscape cookie だけ返す。空ファイルは yt-dlp が拒否する。"""
+    try:
+        text = NICO_COOKIE_PATH.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        raw = line[len("#HttpOnly_") :] if line.startswith("#HttpOnly_") else line
+        if raw and not raw.startswith("#") and raw.count("\t") >= 6:
+            return str(NICO_COOKIE_PATH)
+    return None
+
+
 def _build_nico_opts(login: bool, nico_email: Optional[str] = None, nico_password: Optional[str] = None) -> dict:
     """ニコニコ動画用のyt-dlpオプションを構築する"""
     opts = COMMON_YTDL_OPTS.copy()
     opts.update({
         "paths": {"home": str(CACHE_DIR)},  # ダウンロードキャッシュの場所
         "outtmpl": {"default": "%(id)s.%(ext)s"},  # ダウンロード時のファイル名テンプレート
-        "cookiefile": str(NICO_COOKIE_PATH),
         "extract_flat": False,  # ニコニコ動画の場合は詳細情報を取得したい
         "noplaylist": True,  # ニコニコ動画のプレイリストは特殊なので、ここでは単体として扱うことが多い
         "skip_download": False,  # ニコニコ動画はダウンロードを基本とする (ストリームURLが不安定な場合があるため)
+    })
+    # 空の nico_cookies.txt を渡すと yt-dlp が検索ごと失敗する
+    nico_cookie = _usable_nico_cookiefile()
+    if nico_cookie:
+        opts["cookiefile"] = nico_cookie
+    opts.update({
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -1308,13 +1444,90 @@ async def ensure_stream(track: Track, ytdl_opts_override: Optional[dict] = None)
     return track
 
 
+# 検索先。空指定は YouTube。
+_SEARCH_SOURCE_ALIASES = {
+    "youtube": "youtube",
+    "yt": "youtube",
+    "niconico": "niconico",
+    "nico": "niconico",
+    "nicovideo": "niconico",
+    "soundcloud": "soundcloud",
+    "sc": "soundcloud",
+}
+# 候補として出す件数
+_SEARCH_RESULT_LIMIT = 5
+# スキーム無しでも URL とみなすホスト
+_DIRECT_MEDIA_HOSTS = ("youtube.com", "youtu.be", "nicovideo.jp", "nico.ms", "soundcloud.com")
+
+
+def normalize_search_source(value: Optional[str]) -> str:
+    """検索先を youtube / niconico / soundcloud に揃える。空は YouTube。"""
+    # 未指定は YouTube
+    if value is None or not str(value).strip():
+        return "youtube"
+    # 大小文字と別名を吸収する
+    found = _SEARCH_SOURCE_ALIASES.get(str(value).strip().lower())
+    # 未知の値は呼び出し側で案内する
+    if not found:
+        raise ValueError(str(value).strip())
+    return found
+
+
+def split_prefix_play_text(text: str) -> tuple[str, str]:
+    """プレフィックスコマンドの残りから検索語とサイトを分ける。末尾がサイト名ならそれを使う。"""
+    # 空白を畳む
+    raw = " ".join((text or "").split())
+    # 空なら YouTube 検索の空クエリ
+    if not raw:
+        return "", "youtube"
+    # 末尾トークンがサイト名か
+    head, sep, tail = raw.rpartition(" ")
+    if sep and tail.lower() in _SEARCH_SOURCE_ALIASES:
+        # 引用符だけ残っている検索語を外す
+        query = head.strip()
+        if len(query) >= 2 and query[0] == query[-1] and query[0] in "\"'":
+            query = query[1:-1].strip()
+        return query, _SEARCH_SOURCE_ALIASES[tail.lower()]
+    # サイト指定が無ければ全文を YouTube 検索語にする
+    query = raw
+    if len(query) >= 2 and query[0] == query[-1] and query[0] in "\"'":
+        query = query[1:-1].strip()
+    return query, "youtube"
+
+
+def is_direct_media_query(query: str) -> bool:
+    """http(s) URL、または既知ホストのパスなら検索ではなく直接再生する。"""
+    # 前後空白を除く
+    text = (query or "").strip()
+    if not text:
+        return False
+    # scheme:// は URL
+    if has_explicit_uri_scheme(text):
+        return True
+    # www. を外してホストだけ見る
+    lowered = text.lower()
+    if lowered.startswith("www."):
+        lowered = lowered[4:]
+    host = lowered.split("/", 1)[0].split("?", 1)[0].split(":", 1)[0]
+    return any(host == suffix or host.endswith("." + suffix) for suffix in _DIRECT_MEDIA_HOSTS)
+
+
+def canonicalize_media_query(query: str) -> str:
+    """スキーム無しの既知ホストに https:// を付ける。"""
+    text = (query or "").strip()
+    if is_direct_media_query(text) and not has_explicit_uri_scheme(text):
+        return "https://" + text
+    return text
+
+
 async def extract(
         query: str,
         *,
         shuffle_playlist: bool = False,
         nico_email: Optional[str] = None,
         nico_password: Optional[str] = None,
-        max_playlist_items: Optional[int] = 10000
+        max_playlist_items: Optional[int] = 10000,
+        single: bool = False,
 ) -> Union[Track, List[Track], None]:
     """
     与えられたクエリ (URLまたは検索語) から音楽情報を抽出する。
@@ -1338,9 +1551,16 @@ async def extract(
     perform_download_for_nico = False
 
     if is_nico_query:
+        # 呼び出し元が渡さなければ config のアカウントを使う
+        if not nico_email or not nico_password:
+            cfg_email, cfg_password = _configured_niconico_account()
+            nico_email = nico_email or cfg_email
+            nico_password = nico_password or cfg_password
+        # user_session がある間はパスワードログインでセッションを上書きしない
+        use_password = bool(nico_email and nico_password) and not _nico_cookie_has_session()
         # ニコニコ動画の場合: ダウンロードを試みる
         ytdl_final_opts = _build_nico_opts(
-            login=bool(not NICO_COOKIE_PATH.stat().st_size or (nico_email and nico_password)),
+            login=use_password,
             nico_email=nico_email,
             nico_password=nico_password
         )
@@ -1364,6 +1584,10 @@ async def extract(
         if max_playlist_items and max_playlist_items > 0:
             # プレイリスト展開の読み込み上限数を設定する
             ytdl_final_opts["playlistend"] = max_playlist_items
+        # 検索候補から選んだ1本はプレイリストへ展開しない
+        if single:
+            ytdl_final_opts["noplaylist"] = True
+            ytdl_final_opts["extract_flat"] = False
 
     extracted_info: Optional[dict] = None
 
@@ -1467,3 +1691,212 @@ async def extract(
         return single_track
 
     return None  # 何も見つからなかった場合
+
+
+def _search_prefix(source: str) -> str:
+    """yt-dlp の検索プレフィックス。"""
+    if source == "niconico":
+        return "nicosearch"
+    if source == "soundcloud":
+        return "scsearch"
+    return "ytsearch"
+
+
+def _host_matches(url: str, suffixes: tuple[str, ...]) -> bool:
+    """URL のホストが指定サフィックスか。"""
+    try:
+        host = url.split("/", 3)[2].lower().split(":")[0]
+    except IndexError:
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    return any(host == suffix or host.endswith("." + suffix) for suffix in suffixes)
+
+
+def _candidate_page_url(entry: dict, source: str) -> Optional[str]:
+    """検索エントリから再生に渡せるページ URL を作る。配信 CDN は使わない。"""
+    # サイトごとの許可ホスト
+    if source == "niconico":
+        suffixes = ("nicovideo.jp", "nico.ms")
+    elif source == "soundcloud":
+        suffixes = ("soundcloud.com",)
+    else:
+        suffixes = ("youtube.com", "youtu.be")
+    # ページ URL を優先する
+    for key in ("webpage_url", "original_url", "url"):
+        raw = entry.get(key)
+        if isinstance(raw, str) and raw.startswith("https://") and _host_matches(raw, suffixes):
+            # googlevideo 等のメディア URL はホストフィルタで落ちる
+            return raw.split("#", 1)[0]
+    # ID からページを組み立てる
+    video_id = entry.get("id")
+    if not isinstance(video_id, str) or not video_id or any(ch in video_id for ch in "/?&# "):
+        return None
+    if source == "niconico":
+        return f"https://www.nicovideo.jp/watch/{video_id}"
+    if source == "youtube":
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return None
+
+
+def _candidate_thumbnail(entry: dict) -> Optional[str]:
+    """サムネイル URL。辞書形式は捨てる。"""
+    thumb = entry.get("thumbnail")
+    if isinstance(thumb, str) and thumb.startswith("https://"):
+        return thumb
+    thumbs = entry.get("thumbnails")
+    if isinstance(thumbs, list):
+        for item in thumbs:
+            if isinstance(item, dict):
+                url = item.get("url")
+                if isinstance(url, str) and url.startswith("https://"):
+                    return url
+    return None
+
+
+def _track_from_search_entry(entry: dict, source: str, query: str) -> Optional[Track]:
+    """フラット検索結果を、まだ再生 URL を持たない Track にする。"""
+    page = _candidate_page_url(entry, source)
+    if not page:
+        return None
+    try:
+        # 内部向け URL は候補に出さない
+        page = assert_safe_http_url(page, resolve_dns=False)
+    except UnsafeURLError:
+        return None
+    title = entry.get("title") or entry.get("id") or "Untitled"
+    if not isinstance(title, str):
+        title = str(title)
+    title = " ".join(title.split())
+    if len(title) > 120:
+        title = title[:117] + "..."
+    try:
+        duration = int(entry.get("duration") or 0)
+    except (TypeError, ValueError):
+        duration = 0
+    uploader = entry.get("uploader") or entry.get("channel") or entry.get("uploader_id")
+    if uploader is not None and not isinstance(uploader, str):
+        uploader = str(uploader)
+    return Track(
+        url=page,
+        title=title or "Untitled",
+        duration=max(0, duration),
+        thumbnail=_candidate_thumbnail(entry),
+        stream_url=None,
+        original_query=query,
+        uploader=uploader,
+        uploader_url=entry.get("uploader_url") or entry.get("channel_url"),
+    )
+
+
+def _search_niconico_snapshot(query: str, limit: int) -> List[Track]:
+    """ニコニコの公開スナップショット検索。HTML 検索は 500 になることがある。"""
+    import json
+    import urllib.parse
+    import urllib.request
+
+    params = urllib.parse.urlencode(
+        {
+            "q": query,
+            "targets": "title,tags",
+            "fields": "contentId,title,lengthSeconds,thumbnailUrl",
+            "_sort": "-viewCounter",
+            "_limit": str(limit),
+            "_context": "ProjectMOMOKA",
+        }
+    )
+    req = urllib.request.Request(
+        "https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search?" + params,
+        headers={"User-Agent": "ProjectMOMOKA"},
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    tracks: List[Track] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        content_id = row.get("contentId")
+        if not isinstance(content_id, str) or not re.fullmatch(r"(?:sm|so|nm)\d+", content_id):
+            continue
+        entry = {
+            "id": content_id,
+            "title": row.get("title"),
+            "duration": row.get("lengthSeconds"),
+            "thumbnail": row.get("thumbnailUrl"),
+            "webpage_url": f"https://www.nicovideo.jp/watch/{content_id}",
+        }
+        track = _track_from_search_entry(entry, "niconico", query)
+        if track is None:
+            continue
+        tracks.append(track)
+        if len(tracks) >= limit:
+            break
+    return tracks
+
+
+async def search_candidates(query: str, source: str, *, limit: int = _SEARCH_RESULT_LIMIT) -> List[Track]:
+    """タイトル検索の候補を返す。ファイルは落とさない。"""
+    # サイト名を正規化する
+    source = normalize_search_source(source)
+    # 改行を潰して検索文法を壊さない
+    text = " ".join((query or "").split())
+    if not text:
+        return []
+    # 長すぎる検索語は切る
+    text = text[:200]
+    count = max(1, min(int(limit), _SEARCH_RESULT_LIMIT))
+    loop = asyncio.get_running_loop()
+    if source == "niconico":
+        try:
+            tracks = await loop.run_in_executor(None, _search_niconico_snapshot, text, count)
+        except Exception as exc:
+            logger.warning("Niconico search failed: %s", exc)
+            return []
+        logger.info("Search niconico returned %s candidates", len(tracks))
+        return tracks
+    # YouTube / SoundCloud はフラット検索でタイトルまで取れる
+    opts: dict = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": False,
+        "ignoreerrors": True,
+        "extract_flat": True,
+        "playlistend": count,
+        "socket_timeout": 20,
+        "source_address": "0.0.0.0",
+        "logger": logger,
+    }
+    if source == "youtube":
+        _apply_youtube_cookie(opts)
+    search_url = f"{_search_prefix(source)}{count}:{text}"
+
+    def _run() -> Optional[dict]:
+        # ダウンロードしない
+        info, _used, _jar = _extract_once(opts, search_url, download=False)
+        return info if isinstance(info, dict) else None
+
+    try:
+        info = await loop.run_in_executor(None, _run)
+    except Exception:
+        logger.warning("Search failed (%s)", source, exc_info=True)
+        return []
+    if not info:
+        return []
+    raw_entries = info.get("entries")
+    entries = list(raw_entries) if raw_entries else []
+    tracks: List[Track] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        track = _track_from_search_entry(entry, source, text)
+        if track is None:
+            continue
+        tracks.append(track)
+        if len(tracks) >= count:
+            break
+    logger.info("Search %s returned %s candidates", source, len(tracks))
+    return tracks

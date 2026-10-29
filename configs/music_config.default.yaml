@@ -23,7 +23,17 @@ music:
   # 原本は yt-dlp に直接渡さず data/youtube_cookies.runtime.txt へコピーして使用する
   # 再読込: 運用者向け /hotreload_yt_cookies
   youtube_cookie_file: youtube_cookies.txt
+  # ホスト GUI の Web タブ用。空なら自動入力しない（タブで手動ログインできる）。
+  # cookie の変化はタブ側が保存する。reload_minutes ごとに YouTube を読み直す。
+  # password に記号があるときは引用符で囲む。実値は music_config.yaml に書く（default は空のまま）。
+  youtube_account:
+    email: ''
+    password: ''
+    # Web タブの YouTube を読み直す間隔（分）
+    reload_minutes: 60
   # ニコニコ動画ログイン（任意。プレミアム／制限コンテンツ用）
+  # Web タブの「ニコニコ」でこのアカウントを自動入力する。空なら手動ログイン。
+  # user_session を nico_cookies.txt に保存し、次の再生から使う。実値は music_config.yaml に書く。
   niconico:
     # ニコニコのメールアドレス
     email: ''

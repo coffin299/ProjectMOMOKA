@@ -15,6 +15,16 @@ contextBridge.exposeInMainWorld("momokaHost", {
   startLogSse: () => ipcRenderer.invoke("momoka:sse-start"),
   stopLogSse: () => ipcRenderer.invoke("momoka:sse-stop"),
   quitApp: () => ipcRenderer.invoke("momoka:quit"),
+  onYoutubeCookieStatus: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on("momoka:youtube-cookie-status", listener);
+    return () => ipcRenderer.removeListener("momoka:youtube-cookie-status", listener);
+  },
+  onYoutubeReload: (handler) => {
+    const listener = () => handler();
+    ipcRenderer.on("momoka:youtube-reload", listener);
+    return () => ipcRenderer.removeListener("momoka:youtube-reload", listener);
+  },
   onLogSse: (handler) => {
     const listener = (_event, data) => handler(data);
     ipcRenderer.on("momoka:sse-log", listener);

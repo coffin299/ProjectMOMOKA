@@ -1,5 +1,6 @@
 type NavId =
   | "overview"
+  | "web"
   | "general"
   | "llm"
   | "tts"
@@ -8,6 +9,7 @@ type NavId =
 
 const ITEMS: { id: NavId; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "web", label: "Web" },
   { id: "general", label: "一般" },
   { id: "llm", label: "LLM" },
   { id: "tts", label: "TTS+Music" },
