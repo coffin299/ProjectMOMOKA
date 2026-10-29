@@ -1827,8 +1827,14 @@ class MusicCog(commands.Cog, name="music_cog"):
                 options=self.ffmpeg_options,
             )
 
-            # Discord play 前に実 PCM 先頭を待つ（無音パディングで 2〜3 秒ズレるのを防ぐ）
-            primed_ok = await asyncio.to_thread(source.prime_until_audio, 20.0)
+            # Discord play 前に実 PCM 先頭を待つ（無音パディングで 2〜3 秒ズレるのを防ぐ）。
+            # YouTube の単一 mp4 は moov が末尾のため、ファイルが揃うまで PCM が出ない。
+            prime_timeout = 20.0
+            if is_youtube_media_url is not None and is_youtube_media_url(
+                getattr(track_to_play, "url", "") or ""
+            ):
+                prime_timeout = 90.0
+            primed_ok = await asyncio.to_thread(source.prime_until_audio, prime_timeout)
             # プライム失敗は NO-audio と同じ扱いでソースを捨てる
             if not primed_ok:
                 # 外側の play_next 早期 return ガードを外す
@@ -2745,6 +2751,7 @@ class MusicCog(commands.Cog, name="music_cog"):
         was_playing: bool,
         status_message: Optional[discord.Message],
         announce: bool,
+        promote_to_player: bool = False,
     ) -> int:
         """抽出済みトラックをキューへ入れ、止まっていれば再生を始める。"""
         added_count, first_track = 0, None
@@ -2790,10 +2797,10 @@ class MusicCog(commands.Cog, name="music_cog"):
         async with state.play_lock:
             if not state.is_playing:
                 state.stopping = False
-                # URL 再生は検索中メッセージを Now Playing にする。候補パネルは残す。
+                # /play の応答を再生パネルにする。候補一覧は残さない。
                 await self._play_next_song(
                     ctx.guild.id,
-                    play_msg=status_message if announce else None,
+                    play_msg=status_message if announce or promote_to_player else None,
                 )
         return added_count
 
@@ -2825,7 +2832,30 @@ class MusicCog(commands.Cog, name="music_cog"):
         else:
             await self._send_ctx_message(ctx, view=error_view)
 
-    async def enqueue_picked_track(self, interaction: discord.Interaction, url: str) -> Optional[str]:
+    async def _show_player_on_message(self, guild_id: int, message: discord.Message) -> None:
+        """指定メッセージを再生パネルにし、古いパネルは残さない。"""
+        state = self.get_existing_guild_state(guild_id)
+        if not state:
+            return
+        view = MusicControllerView(self, guild_id)
+        previous = state.last_now_playing_message
+        durable = await self._to_durable_message(message)
+        await durable.edit(content=None, embed=None, view=view)
+        state.last_now_playing_message = durable
+        if previous is not None and previous.id != durable.id:
+            try:
+                await previous.delete()
+            except Exception:
+                logger.debug("Guild %s: old now-playing message was already gone", guild_id)
+        self._start_progress_updater(guild_id)
+
+    async def enqueue_picked_track(
+        self,
+        interaction: discord.Interaction,
+        url: str,
+        *,
+        panel_message: Optional[discord.Message] = None,
+    ) -> Optional[str]:
         """検索候補の URL を1本だけキューに入れる。成功は None、通知済みの失敗は空文字。"""
         # ボタンは application command ではないので Context.from_interaction は使えない
         ctx = _ComponentPlayContext(interaction)
@@ -2858,16 +2888,18 @@ class MusicCog(commands.Cog, name="music_cog"):
                 state,
                 tracks,
                 was_playing=was_playing,
-                status_message=None,
+                status_message=panel_message,
                 announce=False,
+                promote_to_player=panel_message is not None,
             )
             if added < 1:
                 return self.exception_handler.get_message(
                     "max_queue_size_reached",
                     max_size=self.max_queue_size,
                 )
-            if was_playing:
-                await self._update_now_playing_message_ui(interaction.guild.id)
+            # 再生中だった場合は _play_next_song がメッセージを触らないので、ここでパネルにする
+            if was_playing and panel_message is not None:
+                await self._show_player_on_message(interaction.guild.id, panel_message)
             return None
         except Exception as exc:
             return self._format_ui_load_error(url=url, error=exc)

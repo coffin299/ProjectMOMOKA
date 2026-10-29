@@ -715,10 +715,10 @@ def _raise_unsupported_media(url_or_query: str, cause: Optional[BaseException] =
     raise UnsupportedMediaError(message)
 
 
-# パイプ再生は音声コンテナだけを流す。
-# best / best* / 映像+音声の結合（137+251 等）は、非シークのパイプ上で
+# パイプ再生は音声コンテナを先に流す。
+# best* や映像+音声の結合（137+251 等）は、非シークのパイプ上で
 # ファイル全体を ffmpeg のメモリに載せ、映像デコーダ経由で VRAM も使う。
-# プログレッシブ映像は、曲尺の 360p 程度に収まるときだけ最後の手段にする。
+# 音声 URL が無いときだけ、単一ファイルの 720p 以下を最後の手段にする。
 _PIPE_AUDIO_CHAIN = (
     "bestaudio[ext=webm]/"
     "bestaudio[acodec=opus]/"
@@ -726,9 +726,12 @@ _PIPE_AUDIO_CHAIN = (
     "bestaudio[acodec!=none][vcodec=none]/"
     "bestaudio*"
 )
+# filesize 条件だけだと、サイズ未報告の itag 18 が落ちてパイプが無音になる。
+# 18 を明示し、残りは 720p 以下の単一ファイルに限る。結合（137+251）は含めない。
 _PIPE_SMALL_PROGRESSIVE = (
-    "best[acodec!=none][vcodec!=none][filesize<96M]/"
-    "best[acodec!=none][vcodec!=none][filesize_approx<96M]"
+    "18/"
+    "best[acodec!=none][vcodec!=none][height<=720]/"
+    "best[acodec!=none][vcodec!=none][filesize<512M]"
 )
 _PIPE_FORMAT_DEFAULT = f"{_PIPE_AUDIO_CHAIN}/{_PIPE_SMALL_PROGRESSIVE}"
 # 音声だけの長時間配信を落としすぎない上限。映像の数 GB 落ちはここで止める。
@@ -787,7 +790,8 @@ def build_ytdlp_pipe_command(
     直接 googlevideo URL を FFmpeg に渡すと 403 になるため、yt-dlp 経由で取得する。
     format_spec / player_clients / use_cookies には抽出 API 側で
     実際に成功した組み合わせを渡すことで CLI 再抽出の失敗を防ぐ。
-    映像や video+audio 結合は渡さず、音声コンテナだけを stdout へ流す。
+    音声コンテナを優先し、無いときだけ 720p 以下の単一ファイルへ落とす。
+    video+audio の結合は stdout へ流さない。
     """
     # 未指定なら一次候補の先頭1件だけを使う（複数client混在を防ぐ）
     clients = player_clients or [_YOUTUBE_PLAYER_CLIENT_PRIMARY[0]]
@@ -802,12 +806,14 @@ def build_ytdlp_pipe_command(
             "Ignoring non-audio pipe format %s; using audio-only chain",
             format_spec.strip(),
         )
-    # 既定は音声優先。小さなプログレッシブだけ末尾に残す
+    # 既定は音声優先。単一ファイルのプログレッシブは末尾だけ
     fmt = _PIPE_FORMAT_DEFAULT
-    # 成功した音声 ID があれば先頭で試す
+    # 成功した音声 ID があれば先頭で試す（映像付き ID はここには来ない）
     if safe_format and safe_format != _PIPE_FORMAT_DEFAULT:
         # その ID が全滅したときだけ既定チェーンへ進む
         fmt = f"{safe_format}/{_PIPE_FORMAT_DEFAULT}"
+    # パイプがどの形式を要求したかを残す（cookie は出さない）
+    logger.info("yt-dlp pipe selector format=%s clients=%s", fmt, client_arg)
     # PATH 上の JS ランタイム名をカンマ連結する（EJS 解決に必須）
     js_runtime_names = ",".join(_detect_js_runtimes().keys()) or "deno"
     # 現在の Python で yt_dlp モジュールを起動する

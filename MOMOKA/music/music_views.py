@@ -121,6 +121,7 @@ class SearchPickLayoutView(discord.ui.LayoutView):
         self.candidates = candidates[:5]
         self._queued: set[int] = set()
         self._expired = False
+        self._handing_off = False
         self._lock = asyncio.Lock()
         self._build()
 
@@ -181,27 +182,35 @@ class SearchPickLayoutView(discord.ui.LayoutView):
         if index in self._queued or not (0 <= index < len(self.candidates)):
             await interaction.response.send_message("Already in the queue.", ephemeral=True)
             return
+        # defer のあいだボタンは「…」。再生パネルへ差し替えるまで編集しない。
         await interaction.response.defer()
         async with self._lock:
             if index in self._queued or self._expired:
                 return
-            error = await self.cog.enqueue_picked_track(interaction, self.candidates[index].url)
-            # None は成功。空文字は接続失敗など、すでに通知済み。
+            self._handing_off = True
+            error = await self.cog.enqueue_picked_track(
+                interaction,
+                self.candidates[index].url,
+                panel_message=interaction.message,
+            )
+            # None は成功。メッセージは再生パネルになっている。
             if error is None:
-                pass
-            else:
-                if error:
-                    await interaction.followup.send(error, ephemeral=True)
+                self.stop()
                 return
-            self._queued.add(index)
+            # 失敗したら候補を押し直せるように戻す
+            self._handing_off = False
             self._build()
             try:
                 await interaction.edit_original_response(view=self)
             except Exception as exc:
-                logger.warning("Failed to mark search result queued: %s", exc)
+                logger.warning("Failed to restore search results: %s", exc)
+            if error:
+                await interaction.followup.send(error, ephemeral=True)
 
     async def on_timeout(self) -> None:
-        """期限後はボタンを止める。"""
+        """期限後はボタンを止める。再生パネルへ渡したあとは触らない。"""
+        if self._handing_off:
+            return
         self._expired = True
         self._build()
         message = getattr(self, "message", None)
