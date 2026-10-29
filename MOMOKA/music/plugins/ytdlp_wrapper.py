@@ -456,16 +456,17 @@ _FORMAT_TRIES: tuple[str, ...] = (
     "best/best*",
     "18/bestaudio*/best*",
 )
-# 一次クライアント: 公式推奨のmweb+PO Tokenを最優先にする。
-# tv系はセッション単位の全動画DRM実験対象になるため候補へ含めない。
+# web_embedded は音声だけの https（webm/opus）が取れる。
+# mweb は itag 18（映像付き mp4）に落ちやすく、cookie 付きだと CDN が 403 になる。
+# web_safari は画像しか返さない。tv 系は DRM 実験対象なので候補にしない。
 _YOUTUBE_PLAYER_CLIENT_PRIMARY: list[str] = [
-    "mweb",
-    "android_vr",
     "web_embedded",
+    "mweb",
+    "android",
 ]
-# 403 / NO audio リトライ用の非TV代替クライアント列
+# 403 / NO audio の再試行。画像しか無い web_safari には戻さない。
 _YOUTUBE_PLAYER_CLIENT_FALLBACK: list[str] = [
-    "web_safari",
+    "android",
 ]
 # player_client候補は一括指定せず、1クライアントずつ独立セッションで試す。
 _YOUTUBE_PLAYER_CLIENT_TRIES: tuple[Optional[list[str]], ...] = (
@@ -886,12 +887,15 @@ def build_ytdlp_pipe_command(
                 f"base_url={_bgutil_provider_base_url}",
             ]
         )
-    # クッキー無しで成功した実績がある場合（use_cookies=False）は付与しない
-    if use_cookies is not False:
-        # 有効なクッキーがあれば付与する
+    # PO Token 供給中にログイン cookie を載せると、visitor とトークンがずれて CDN が 403 になる。
+    # 再生パイプはトークン側に任せ、cookie はメタデータ抽出だけに残す。
+    if use_cookies is False or _bgutil_provider_base_url:
+        if use_cookies is not False and _bgutil_provider_base_url:
+            logger.info("yt-dlp pipe skipping cookies; PO token provider is active")
+    else:
+        # トークンが無いときだけクッキーを渡す
         cookie_path = resolve_youtube_cookie_path()
         if cookie_path is not None:
-            # --cookies に絶対パスを渡す
             cmd.extend(["--cookies", str(cookie_path.resolve())])
     # 対象の動画ページ URL を末尾に追加する
     cmd.append(webpage_url)
@@ -1167,7 +1171,7 @@ COMMON_YTDL_OPTS: dict = {
     "skip_download": True,
     # プレイリスト展開を必要時にオンデマンドで読み込む設定
     "lazy_playlist": True,
-    # YouTube: 公式推奨のmweb+PO Tokenを単独指定する。
+    # YouTube: 音声 https が取れる web_embedded を単独指定する。
     "extractor_args": {
         "youtube": {
             "player_client": [_YOUTUBE_PLAYER_CLIENT_PRIMARY[0]],
