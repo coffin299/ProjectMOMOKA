@@ -502,6 +502,27 @@ def _detect_js_runtimes() -> dict:
 
 def _log_ejs_readiness() -> None:
     """YouTube EJS（JS チャレンジ解決）の準備状況をログへ出す。"""
+    # 2025.5 系は n 署名が解けず googlevideo が 403 になる
+    ytdlp_version = getattr(getattr(yt_dlp, "version", None), "__version__", "unknown")
+    # 要件と同じ下限。これより古いと音声 URL が 403 になる
+    version_parts: list[int] = []
+    # 数字だけを拾って比較する
+    for piece in str(ytdlp_version).split("."):
+        # 接尾辞が付いたセグメントは数字部分だけ使う
+        digits = "".join(ch for ch in piece if ch.isdigit())
+        # 数字が尽きたら終了する
+        if not digits:
+            break
+        version_parts.append(int(digits))
+    # 古い yt-dlp は再生不能なので起動時に知らせる
+    if tuple(version_parts) < (2026, 3, 17):
+        logger.warning(
+            "yt-dlp %s is too old for current YouTube signatures (need >=2026.3.17). "
+            "Upgrade with: py -3.11 -m pip install -U \"yt-dlp[default]>=2026.3.17\"",
+            ytdlp_version,
+        )
+    else:
+        logger.info("yt-dlp %s", ytdlp_version)
     # Deno / Node の有無を確認する
     has_deno = bool(shutil.which("deno"))
     has_node = bool(shutil.which("node"))

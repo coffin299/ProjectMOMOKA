@@ -120,6 +120,7 @@ class SearchPickLayoutView(discord.ui.LayoutView):
         self.source = source
         self.candidates = candidates[:5]
         self._queued: set[int] = set()
+        self._picked: Optional[int] = None
         self._expired = False
         self._handing_off = False
         self._lock = asyncio.Lock()
@@ -141,11 +142,12 @@ class SearchPickLayoutView(discord.ui.LayoutView):
             )
         )
         for index, track in enumerate(self.candidates):
-            queued = index in self._queued
+            queued = index in self._queued or index == self._picked
+            # 1本選んだあとは残りも押せなくする。再生パネルへ渡るまでの表示。
             button = discord.ui.Button(
                 label="Queued" if queued else "➕ Queue",
                 style=discord.ButtonStyle.success if queued else discord.ButtonStyle.primary,
-                disabled=queued or self._expired,
+                disabled=queued or self._expired or self._picked is not None,
             )
             button.callback = self._bind(index)
             container.add_item(discord.ui.Separator())
@@ -179,33 +181,54 @@ class SearchPickLayoutView(discord.ui.LayoutView):
                 ephemeral=True,
             )
             return
-        if index in self._queued or not (0 <= index < len(self.candidates)):
+        if not (0 <= index < len(self.candidates)):
             await interaction.response.send_message("Already in the queue.", ephemeral=True)
             return
-        # defer のあいだボタンは「…」。再生パネルへ差し替えるまで編集しない。
-        await interaction.response.defer()
         async with self._lock:
-            if index in self._queued or self._expired:
+            if self._expired:
+                await interaction.response.send_message(
+                    "This search expired. Run /play again.",
+                    ephemeral=True,
+                )
                 return
+            if self._picked is not None or index in self._queued:
+                await interaction.response.send_message(
+                    "Already adding a track.",
+                    ephemeral=True,
+                )
+                return
+            # 押された1本だけ Queued。残りもここで無効にする。
+            self._picked = index
             self._handing_off = True
-            error = await self.cog.enqueue_picked_track(
-                interaction,
-                self.candidates[index].url,
-                panel_message=interaction.message,
-            )
-            # None は成功。メッセージは再生パネルになっている。
-            if error is None:
-                self.stop()
-                return
-            # 失敗したら候補を押し直せるように戻す
-            self._handing_off = False
             self._build()
             try:
-                await interaction.edit_original_response(view=self)
+                await interaction.response.edit_message(view=self)
             except Exception as exc:
-                logger.warning("Failed to restore search results: %s", exc)
-            if error:
-                await interaction.followup.send(error, ephemeral=True)
+                logger.warning("Failed to disable search buttons: %s", exc)
+                self._picked = None
+                self._handing_off = False
+                self._build()
+                return
+        error = await self.cog.enqueue_picked_track(
+            interaction,
+            self.candidates[index].url,
+            panel_message=interaction.message,
+        )
+        # None は成功。メッセージは再生パネルになっている。
+        if error is None:
+            self.stop()
+            return
+        # 失敗したら候補を押し直せるように戻す
+        async with self._lock:
+            self._picked = None
+            self._handing_off = False
+            self._build()
+        try:
+            await interaction.edit_original_response(view=self)
+        except Exception as exc:
+            logger.warning("Failed to restore search results: %s", exc)
+        if error:
+            await interaction.followup.send(error, ephemeral=True)
 
     async def on_timeout(self) -> None:
         """期限後はボタンを止める。再生パネルへ渡したあとは触らない。"""
