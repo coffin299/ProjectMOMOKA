@@ -120,6 +120,32 @@ def parse_time_to_seconds(time_str: str) -> Optional[int]:
     return None
 
 
+class _ComponentPlayContext:
+    """コンポーネント操作を、再生処理が読む最小の Context 代わりにする。"""
+
+    def __init__(self, interaction: discord.Interaction):
+        # followup に使う。response は呼び出し側で defer 済み。
+        self.interaction = interaction
+        self.guild = interaction.guild
+        self.message = interaction.message
+        # チャンネルはメッセージ側が確実
+        channel = interaction.channel
+        if channel is None and interaction.message is not None:
+            channel = interaction.message.channel
+        self.channel = channel
+        # 押した人。メッセージ作者（Bot）ではない。
+        author = interaction.user
+        if self.guild is not None and not isinstance(author, discord.Member):
+            cached = self.guild.get_member(author.id)
+            if cached is not None:
+                author = cached
+        self.author = author
+
+    async def send(self, **kwargs):
+        """defer 後の追加メッセージ。"""
+        return await self.interaction.followup.send(**kwargs)
+
+
 class MusicCog(commands.Cog, name="music_cog"):
     # get_cog / GUI 合算用の正式名（変更時は呼び出し側も合わせる）
     COG_NAME = "music_cog"
@@ -2801,9 +2827,10 @@ class MusicCog(commands.Cog, name="music_cog"):
 
     async def enqueue_picked_track(self, interaction: discord.Interaction, url: str) -> Optional[str]:
         """検索候補の URL を1本だけキューに入れる。成功は None、通知済みの失敗は空文字。"""
-        if interaction.guild is None:
+        # ボタンは application command ではないので Context.from_interaction は使えない
+        ctx = _ComponentPlayContext(interaction)
+        if ctx.guild is None or ctx.channel is None:
             return "This only works in a server."
-        ctx = await commands.Context.from_interaction(interaction)
         state = self._get_guild_state(interaction.guild.id)
         if not state:
             return "サーバーの上限に達しています。"
