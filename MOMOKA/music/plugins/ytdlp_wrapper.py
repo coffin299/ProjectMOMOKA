@@ -800,6 +800,18 @@ def _sanitize_pipe_format_spec(format_spec: Optional[str]) -> Optional[str]:
     return fmt
 
 
+def youtube_pipe_use_cookies(*, retry: bool) -> bool:
+    """再生パイプにログイン cookie を載せるか。初回は外し、再試行だけ使う。"""
+    # 失敗した再試行は年齢制限やログイン必須のために cookie を付ける
+    if retry:
+        return True
+    # PO Token がある初回は cookie を載せない。visitor とトークンがずれて 403 になるため。
+    if _bgutil_provider_base_url:
+        return False
+    # トークンが無い環境は初回から cookie を使う
+    return True
+
+
 def build_ytdlp_pipe_command(
     webpage_url: str,
     *,
@@ -887,16 +899,23 @@ def build_ytdlp_pipe_command(
                 f"base_url={_bgutil_provider_base_url}",
             ]
         )
-    # PO Token 供給中にログイン cookie を載せると、visitor とトークンがずれて CDN が 403 になる。
-    # 再生パイプはトークン側に任せ、cookie はメタデータ抽出だけに残す。
-    if use_cookies is False or _bgutil_provider_base_url:
-        if use_cookies is not False and _bgutil_provider_base_url:
-            logger.info("yt-dlp pipe skipping cookies; PO token provider is active")
+    # True: 403 再試行で cookie を強制。False: 付けない。
+    # None: Provider がある初回は付けず、Provider が無いときだけ cookie を使う。
+    if use_cookies is True:
+        attach_cookies = True
+    elif use_cookies is False:
+        attach_cookies = False
     else:
-        # トークンが無いときだけクッキーを渡す
+        attach_cookies = _bgutil_provider_base_url is None
+    if attach_cookies:
         cookie_path = resolve_youtube_cookie_path()
         if cookie_path is not None:
             cmd.extend(["--cookies", str(cookie_path.resolve())])
+            logger.info("yt-dlp pipe using cookies")
+        elif use_cookies is True:
+            logger.info("yt-dlp pipe cookie retry requested but no cookie file is available")
+    elif _bgutil_provider_base_url:
+        logger.info("yt-dlp pipe skipping cookies; PO token provider is active")
     # 対象の動画ページ URL を末尾に追加する
     cmd.append(webpage_url)
     # 完成したコマンドリストを返す

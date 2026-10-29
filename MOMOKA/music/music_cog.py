@@ -43,6 +43,7 @@ try:
         canonicalize_media_query,
         normalize_search_source,
         split_prefix_play_text,
+        youtube_pipe_use_cookies,
     )
     from MOMOKA.music.error.errors import MusicCogExceptionHandler
     from MOMOKA.music.plugins.audio_mixer import AudioMixer, MusicAudioSource
@@ -74,6 +75,7 @@ except ImportError as e:
     canonicalize_media_query = None
     normalize_search_source = None
     split_prefix_play_text = None
+    youtube_pipe_use_cookies = None
     MusicCogExceptionHandler = None
     AudioMixer = None
     MusicAudioSource = None
@@ -1445,7 +1447,8 @@ class MusicCog(commands.Cog, name="music_cog"):
                 # リトライ開始をログする
                 logger.warning(
                     "Guild %s: Retrying '%s' once after stream failure / NO audio "
-                    "(attempt %s, fallback player_client, forbidden=%s retryable=%s)",
+                    "(attempt %s, fallback player_client + cookies, "
+                    "forbidden=%s retryable=%s)",
                     guild_id,
                     finished_track.title,
                     state.stream_403_retries,
@@ -1821,7 +1824,11 @@ class MusicCog(commands.Cog, name="music_cog"):
                 http_headers=getattr(track_to_play, "http_headers", None),
                 player_clients=resolved_clients,
                 pipe_format=getattr(track_to_play, "pipe_format", None),
-                pipe_use_cookies=getattr(track_to_play, "pipe_use_cookies", None),
+                pipe_use_cookies=(
+                    youtube_pipe_use_cookies(retry=use_fallback_clients)
+                    if youtube_pipe_use_cookies is not None
+                    else getattr(track_to_play, "pipe_use_cookies", None)
+                ),
                 executable=self.ffmpeg_path,
                 before_options=ffmpeg_before_opts,
                 options=self.ffmpeg_options,
