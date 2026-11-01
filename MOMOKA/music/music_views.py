@@ -22,8 +22,8 @@ class QueueAddedLayoutView(discord.ui.LayoutView):
     """再生中に単曲をキュー追加したときの小さめ Components V2 パネル。"""
 
     def __init__(self, track: Track, requester: discord.abc.User):
-        # 静的表示のためタイムアウトなし
-        super().__init__(timeout=None)
+        # ボタンが無い静的パネルは短時間で ViewStore から外す
+        super().__init__(timeout=60)
         # タイトルを安全に文字列化する
         safe_title = track.title or "Unknown title"
         # 曲URLがあればリンクにする
@@ -69,6 +69,11 @@ class QueueAddedLayoutView(discord.ui.LayoutView):
             container.add_item(discord.ui.TextDisplay(body))
         # ビューにコンテナを載せる
         self.add_item(container)
+
+    async def on_timeout(self) -> None:
+        """期限後も投稿済みの静的パネルは編集しない。"""
+        # ViewStore から外すだけでメッセージは残す
+        return
 
 
 _SEARCH_SOURCE_LABELS = {
@@ -249,8 +254,8 @@ class LoadErrorLayoutView(discord.ui.LayoutView):
     """単発再生のストリーム取得失敗用 Components V2 パネル。"""
 
     def __init__(self, load_error_text: str):
-        # タイムアウトなし（静的表示）
-        super().__init__(timeout=None)
+        # ボタンが無い静的パネルは短時間で ViewStore から外す
+        super().__init__(timeout=60)
         # 警告色のコンテナを作る
         container = discord.ui.Container(accent_color=discord.Color.orange())
         # 見出しを載せる
@@ -264,6 +269,11 @@ class LoadErrorLayoutView(discord.ui.LayoutView):
         # ビューにコンテナを載せる
         self.add_item(container)
 
+    async def on_timeout(self) -> None:
+        """期限後も投稿済みの静的パネルは編集しない。"""
+        # ViewStore から外すだけでメッセージは残す
+        return
+
 
 class MusicControllerView(discord.ui.LayoutView):
     def __init__(
@@ -273,7 +283,7 @@ class MusicControllerView(discord.ui.LayoutView):
         finished_message: Optional[str] = None,
         finished_title: Optional[str] = None,
     ):
-        # タイムアウトなしで初期化する
+        # ボタン付きパネルは timeout せず、Cog が差し替えと破棄で stop() する
         super().__init__(timeout=None)
         # 親のMusicCogインスタンスを保持する
         self.cog = cog

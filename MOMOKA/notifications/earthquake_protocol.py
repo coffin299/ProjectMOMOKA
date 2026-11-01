@@ -20,6 +20,9 @@ from MOMOKA.notifications.error.earthquake_errors import (
 
 logger = logging.getLogger("EarthquakeTsunamiCog")
 
+# 起動中に溜める WebSocket メッセージの上限（超えた分は古いものから捨てる）
+_WS_PENDING_MAX = 200
+
 
 class EarthquakeProtocolMixin:
     """WebSocket 受信、API 要求、受信済み ID 管理を提供する。"""
@@ -122,6 +125,12 @@ class EarthquakeProtocolMixin:
             async with self._ws_pending_lock:
                 # 生メッセージを保持する
                 self._ws_pending.append(data)
+                # 上限を超えた件数
+                overflow = len(self._ws_pending) - _WS_PENDING_MAX
+                # 古いメッセージから捨てる
+                if overflow > 0:
+                    # 起動待ちのバッファを上限内に収める
+                    del self._ws_pending[:overflow]
             # 本処理は flush 時に行う
             return
         # 本処理へ委譲する

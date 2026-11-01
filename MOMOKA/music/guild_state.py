@@ -90,6 +90,10 @@ class GuildState:
         self.leave_after_queue_end: bool = False
         # キュー終了後の退出再試行タスク（未起動時は None）
         self.queue_end_leave_task: Optional[asyncio.Task] = None
+        # 再生パネルはギルドにつき 1 つだけ持つ（10秒更新で増やさない）
+        self.controller_view = None
+        # そのパネルを載せているメッセージ ID（差し替え判定用）
+        self.controller_message_id: Optional[int] = None
 
     def update_activity(self):
         self.last_activity = datetime.now()
@@ -279,6 +283,27 @@ class GuildState:
             task.cancel()
         # タスク参照をクリアする
         self.queue_end_leave_task = None
+
+    def stop_controller_view(self) -> None:
+        """再生パネル View を ViewStore から外す。"""
+        # 保持している View を外す
+        view = self.controller_view
+        # 参照を先に切る
+        self.controller_view = None
+        # メッセージとの対応も消す
+        self.controller_message_id = None
+        # View が無ければ何もしない
+        if view is None:
+            # 早期リターン
+            return
+        try:
+            # 既に停止済みなら stop しない
+            if not view.is_finished():
+                # discord.py の保持を解く
+                view.stop()
+        except Exception as error:  # noqa: BLE001
+            # 停止失敗でも状態の破棄は続ける
+            logger.debug("Guild %s: controller view stop failed: %s", self.guild_id, error)
 
     async def cleanup_voice_client(self):
         if self.cleanup_in_progress:

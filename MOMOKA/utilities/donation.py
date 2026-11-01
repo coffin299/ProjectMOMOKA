@@ -89,7 +89,7 @@ def make_subtle_donation_view(settings: DonationSettings) -> Optional[discord.ui
     if btn is None:
         return None
     # View に載せる
-    view = discord.ui.View(timeout=None)
+    view = discord.ui.View(timeout=60)
     view.add_item(btn)
     return view
 

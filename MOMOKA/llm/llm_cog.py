@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import io
 import json
 import logging
@@ -106,6 +107,8 @@ DISCORD_MESSAGE_MAX_LENGTH = 2000
 SAFE_MESSAGE_LENGTH = 1990  # 安全マージン
 # チャンネル別モデル上書きの有効期限（秒）= 3時間
 MODEL_OVERRIDE_TTL_SECONDS = 3 * 60 * 60
+# ギルド（DM は guild_id=0）あたりの message_id → thread 索引の上限
+_MAX_MESSAGE_INDEX_PER_GUILD = 2000
 # /chat 応答末尾に付ける案内（Discord の -# サブテキスト）
 CHAT_HISTORY_HINT = (
     "\n-# 💡 会話履歴は @メンション と LLM 応答へのリプライでのみ保存されます。"
@@ -713,6 +716,14 @@ class LLMCog(commands.Cog, name="llm"):
         await self.http_session.close()
         for task in self.model_reset_tasks.values(): task.cancel()
         logger.info(f"Cancelled {len(self.model_reset_tasks)} pending model reset tasks.")
+        # 付け替えで残った AsyncOpenAI の接続プールを閉じる
+        clients = list(self.llm_clients.values())
+        # 閉じたあとに再利用しない
+        self.llm_clients.clear()
+        # 各クライアントを順に閉じる
+        for client in clients:
+            # 失敗しても残りのクライアントは閉じる
+            await self._close_llm_client(client)
         if self.image_generator: await self.image_generator.close()
         logger.info("LLMCog's aiohttp session has been closed.")
 
@@ -1402,7 +1413,8 @@ class LLMCog(commands.Cog, name="llm"):
         # DM はチャンネル単位で1会話に固定する（平文でも履歴を繋ぐ）
         if message.guild is None:
             thread_id = message.channel.id
-            self.message_to_thread[guild_id][message.id] = thread_id
+            # 索引へ記録し、ギルドあたりの件数上限を適用する
+            self._remember_message_thread(guild_id, message.id, thread_id)
             return thread_id
         
         current_msg, visited_ids = message, set()
@@ -1417,7 +1429,8 @@ class LLMCog(commands.Cog, name="llm"):
             except (discord.NotFound, discord.HTTPException):
                 break
         thread_id = current_msg.id
-        self.message_to_thread[guild_id][message.id] = thread_id
+        # 索引へ記録し、ギルドあたりの件数上限を適用する
+        self._remember_message_thread(guild_id, message.id, thread_id)
         return thread_id
 
     def _truncate_conversation_history(
@@ -1430,6 +1443,180 @@ class LLMCog(commands.Cog, name="llm"):
             return history[-max_history_entries:]
         return history
 
+    def _text_only_history_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
+        """保存用に画像 data URL を除いたテキストだけのメッセージを作る。"""
+        # API 用の content（文字列またはパーツ配列）を取り出す
+        content = message.get("content")
+        # 残す本文の断片
+        text_chunks: List[str] = []
+        # もともと文字列ならそのまま本文にする
+        if isinstance(content, str):
+            # 文字列本文を採用する
+            text = content
+        elif isinstance(content, list):
+            # マルチモーダル配列からテキスト部分だけ集める
+            for part in content:
+                # 素の文字列パーツはそのまま残す
+                if isinstance(part, str):
+                    # 空文字は捨てる
+                    if part:
+                        # 本文断片へ追加する
+                        text_chunks.append(part)
+                    # 次のパーツへ
+                    continue
+                # dict 以外は画像でも本文でもない
+                if not isinstance(part, dict):
+                    # 無視する
+                    continue
+                # image_url パーツは保存しない（data URL がヒープに残るため）
+                if part.get("type") == "image_url":
+                    # 次のパーツへ
+                    continue
+                # type が無くても data URL なら捨てる
+                image_url = part.get("image_url")
+                # URL 辞書かつ data: なら画像バイト
+                if isinstance(image_url, dict) and str(image_url.get("url") or "").startswith("data:"):
+                    # 保存対象外
+                    continue
+                # テキストパーツだけ採用する
+                part_text = part.get("text")
+                # 文字列の本文だけ残す
+                if isinstance(part_text, str) and part_text:
+                    # 本文断片へ追加する
+                    text_chunks.append(part_text)
+            # 断片を1つの文字列にする
+            text = "\n".join(text_chunks)
+        else:
+            # 未知の形は空文字に落とす
+            text = ""
+        # 画像だけのターンは空 content を API に再送しない
+        if not text and isinstance(content, list):
+            # 画像があったことだけ短い印で残す
+            text = "[image]"
+        # 保存形は role とテキストだけ
+        stored: Dict[str, Any] = {"role": message.get("role"), "content": text}
+        # 応答メッセージ ID があれば索引掃除に使う
+        message_id = message.get("message_id")
+        # int のときだけ残す
+        if isinstance(message_id, int):
+            # 先頭チャンクの ID
+            stored["message_id"] = message_id
+        # 分割送信した全メッセージ ID
+        message_ids = message.get("message_ids")
+        # リストなら int だけ残す
+        if isinstance(message_ids, list):
+            # 不正値を混ぜない
+            stored["message_ids"] = [item for item in message_ids if isinstance(item, int)]
+        # 画像バイトを含まないコピーを返す
+        return stored
+
+    def _strip_guild_stored_images(self, guild_id: int) -> None:
+        """ギルド内の保存済み履歴から画像 data URL を外す。"""
+        # そのギルドのスレッド一覧
+        threads = self.conversation_threads.get(guild_id)
+        # 履歴が無ければ何もしない
+        if not threads:
+            # 早期リターン
+            return
+        # 各スレッドをテキストだけに差し替える
+        for thread_key, entries in list(threads.items()):
+            # 画像バイトを参照しないコピーへ置き換える
+            threads[thread_key] = [
+                self._text_only_history_message(entry) for entry in entries
+            ]
+
+    def _history_message_ids(self, history: List[Dict[str, Any]]) -> set[int]:
+        """履歴に残っている Bot メッセージ ID を集める。"""
+        # 残す ID
+        kept: set[int] = set()
+        # 各ターンを見る
+        for entry in history:
+            # 先頭チャンク ID
+            message_id = entry.get("message_id")
+            # int なら採用する
+            if isinstance(message_id, int):
+                # 索引に残してよい ID
+                kept.add(message_id)
+            # 分割送信の残り ID
+            message_ids = entry.get("message_ids")
+            # リストでなければスキップ
+            if not isinstance(message_ids, list):
+                # 次のターンへ
+                continue
+            # 各 ID を採用する
+            for item in message_ids:
+                # int だけ
+                if isinstance(item, int):
+                    # 索引に残してよい ID
+                    kept.add(item)
+        # この履歴がまだ参照する ID
+        return kept
+
+    def _remember_message_thread(self, guild_id: int, message_id: int, thread_id: int) -> None:
+        """メッセージ ID を会話スレッドへ結びつけ、索引の件数上限を適用する。"""
+        # ギルド単位の索引を用意する
+        mapping = self.message_to_thread.setdefault(guild_id, {})
+        # このメッセージが属するスレッドを記録する
+        mapping[message_id] = thread_id
+        # 古い ID から捨てて上限内に収める
+        self._cap_message_index(guild_id)
+
+    def _cap_message_index(self, guild_id: int) -> None:
+        """ギルドあたりのメッセージ索引を挿入順で最大件数に切る。"""
+        # 対象ギルドの索引
+        mapping = self.message_to_thread.get(guild_id)
+        # 無いか上限内なら何もしない
+        if not mapping or len(mapping) <= _MAX_MESSAGE_INDEX_PER_GUILD:
+            # 切る必要がない
+            return
+        # 捨てる件数（辞書は挿入順）
+        overflow = len(mapping) - _MAX_MESSAGE_INDEX_PER_GUILD
+        # 古いキーから削除する
+        for key in list(mapping.keys())[:overflow]:
+            # 古い索引を外す
+            del mapping[key]
+
+    def _sync_thread_message_index(
+        self,
+        guild_id: int,
+        thread_id: int,
+        history: List[Dict[str, Any]],
+    ) -> None:
+        """切り詰めた履歴に無い message_id を、そのスレッドの索引から外す。"""
+        # ギルドの索引
+        mapping = self.message_to_thread.get(guild_id)
+        # 索引が無ければ掃除しない
+        if not mapping:
+            # 早期リターン
+            return
+        # 履歴に残っている ID
+        kept = self._history_message_ids(history)
+        # このスレッドを向いた古い ID を外す
+        for key, value in list(mapping.items()):
+            # 他スレッドの索引は触らない
+            if value == thread_id and key not in kept:
+                # 履歴から落ちたメッセージ ID
+                del mapping[key]
+
+    async def _close_llm_client(self, client: Any) -> None:
+        """AsyncOpenAI の接続プールを閉じる。"""
+        # close が無ければ何もしない
+        close = getattr(client, "close", None)
+        # 閉じる手段が無いクライアントは捨てるだけ
+        if close is None:
+            # 早期リターン
+            return
+        try:
+            # 同期・非同期どちらの close でも待つ
+            result = close()
+            # awaitable なら完了を待つ
+            if inspect.isawaitable(result):
+                # 接続プールの解放を待つ
+                await result
+        except Exception as error:  # noqa: BLE001
+            # 切断済みでも unload は続ける
+            logger.warning("Failed to close LLM client: %s", error)
+
     async def _collect_conversation_history(self, message: discord.Message) -> List[Dict[str, Any]]:
         guild_id = message.guild.id if message.guild else 0  # DMの場合は0
         
@@ -1441,6 +1628,10 @@ class LLMCog(commands.Cog, name="llm"):
         if message.guild is None:
             thread_id = message.channel.id
             stored = self.conversation_threads[guild_id].get(thread_id, [])
+            # 既にメモリへ残っている data URL も読み出し時に捨てる
+            stored = [self._text_only_history_message(msg) for msg in stored]
+            # 細いコピーで辞書側の画像バイトを解放する
+            self.conversation_threads[guild_id][thread_id] = stored
             history: List[Dict[str, Any]] = []
             for msg in stored:
                 role = msg.get("role")
@@ -1562,28 +1753,28 @@ class LLMCog(commands.Cog, name="llm"):
                     # DecompressionBomb を例外として扱う
                     Image.MAX_IMAGE_PIXELS = max_pixels
                     ImageFile.LOAD_TRUNCATED_IMAGES = False
-                    # ヘッダだけ先に読む
-                    probe = Image.open(io.BytesIO(image_bytes))
-                    # 幅・高さ
-                    width, height = probe.size
-                    # 総画素
-                    if width * height > max_pixels:
-                        logger.warning(
-                            "Image pixel count too large (%sx%s): %s",
-                            width,
-                            height,
-                            url,
-                        )
-                        return None
-                    # フレーム数（GIF 等）
-                    frame_count = getattr(probe, "n_frames", 1) or 1
-                    if int(frame_count) > max_frames:
-                        logger.warning(
-                            "Image frame count too large (%s): %s",
-                            frame_count,
-                            url,
-                        )
-                        return None
+                    # ヘッダだけ先に読み、抜けたらデコーダを閉じる
+                    with Image.open(io.BytesIO(image_bytes)) as probe:
+                        # 幅・高さ
+                        width, height = probe.size
+                        # 総画素
+                        if width * height > max_pixels:
+                            logger.warning(
+                                "Image pixel count too large (%sx%s): %s",
+                                width,
+                                height,
+                                url,
+                            )
+                            return None
+                        # フレーム数（GIF 等）
+                        frame_count = getattr(probe, "n_frames", 1) or 1
+                        if int(frame_count) > max_frames:
+                            logger.warning(
+                                "Image frame count too large (%s): %s",
+                                frame_count,
+                                url,
+                            )
+                            return None
                 except Exception as bomb_exc:
                     # 爆弾・破損は安全側で破棄
                     logger.warning("Rejected unsafe image decode for %s: %s", url, bomb_exc)
@@ -1613,24 +1804,30 @@ class LLMCog(commands.Cog, name="llm"):
                 if mime_type == 'image/gif':
                     try:
                         from PIL import Image
-                        gif_image = Image.open(io.BytesIO(image_bytes))
-                        if getattr(gif_image, 'is_animated', False):
-                            logger.info(
-                                f"🎬 [IMAGE] Detected animated GIF. Converting to static image: {url[:100]}...")
-                            gif_image.seek(0)
-                            if gif_image.mode != 'RGBA': gif_image = gif_image.convert('RGBA')
-                            output_buffer = io.BytesIO()
-                            gif_image.save(output_buffer, format='PNG', optimize=True)
-                            image_bytes, mime_type = output_buffer.getvalue(), 'image/png'
-                            # GIF→PNG 変換で膨らんだ場合も上限超過なら破棄する
-                            if len(image_bytes) > max_image_bytes:
-                                logger.warning(
-                                    f"Image too large after GIF conversion ({len(image_bytes)} bytes): {url}")
-                                return None
-                            logger.debug(
-                                f"🖼️ [IMAGE] Converted animated GIF to PNG (Size: {len(image_bytes)} bytes)")
-                        else:
-                            logger.debug(f"🖼️ [IMAGE] Static GIF detected, processing normally")
+                        with Image.open(io.BytesIO(image_bytes)) as gif_image:
+                            if not getattr(gif_image, 'is_animated', False):
+                                logger.debug(f"🖼️ [IMAGE] Static GIF detected, processing normally")
+                            else:
+                                logger.info(
+                                    f"🎬 [IMAGE] Detected animated GIF. Converting to static image: {url[:100]}...")
+                                gif_image.seek(0)
+                                # RGBA 変換は新しい Image を返すので、保存後に閉じる
+                                frame = gif_image.convert('RGBA') if gif_image.mode != 'RGBA' else gif_image
+                                try:
+                                    output_buffer = io.BytesIO()
+                                    frame.save(output_buffer, format='PNG', optimize=True)
+                                    image_bytes, mime_type = output_buffer.getvalue(), 'image/png'
+                                finally:
+                                    # with が閉じる元画像とは別に変換結果を解放する
+                                    if frame is not gif_image:
+                                        frame.close()
+                                # GIF→PNG 変換で膨らんだ場合も上限超過なら破棄する
+                                if len(image_bytes) > max_image_bytes:
+                                    logger.warning(
+                                        f"Image too large after GIF conversion ({len(image_bytes)} bytes): {url}")
+                                    return None
+                                logger.debug(
+                                    f"🖼️ [IMAGE] Converted animated GIF to PNG (Size: {len(image_bytes)} bytes)")
                     except ImportError:
                         logger.warning(
                             "⚠️ Pillow (PIL) library not found. Cannot process animated GIFs. Skipping image.")
@@ -1991,21 +2188,38 @@ class LLMCog(commands.Cog, name="llm"):
                 # ギルド固有の会話履歴を初期化
                 if guild_id not in self.conversation_threads:
                     self.conversation_threads[guild_id] = {}
+                # 同じギルドに残っている data URL もこの応答で捨てる
+                self._strip_guild_stored_images(guild_id)
                 if thread_id not in self.conversation_threads[guild_id]: 
                     self.conversation_threads[guild_id][thread_id] = []
                 
-                self.conversation_threads[guild_id][thread_id].append(user_message_for_api)
-                assistant_message = {"role": "assistant", "content": llm_response, "message_id": sent_messages[0].id}
+                # 保存コピーから画像 data URL を落とす（API へ送った user_message_for_api は別オブジェクト）
+                self.conversation_threads[guild_id][thread_id].append(
+                    self._text_only_history_message(user_message_for_api)
+                )
+                # 分割送信を含む Bot メッセージ ID（索引の掃除に使う）
+                sent_ids = [sent.id for sent in sent_messages]
+                assistant_message = {
+                    "role": "assistant",
+                    "content": llm_response,
+                    "message_id": sent_ids[0],
+                    "message_ids": sent_ids,
+                }
                 self.conversation_threads[guild_id][thread_id].append(assistant_message)
                 # 保存側も max_messages と同じ上限で切り詰める（特に DM の単一スレッド肥大を防ぐ）
-                self.conversation_threads[guild_id][thread_id] = self._truncate_conversation_history(
+                trimmed = self._truncate_conversation_history(
                     self.conversation_threads[guild_id][thread_id]
                 )
-                for msg in sent_messages: 
-                    guild_id_for_msg = msg.guild.id if msg.guild else 0
-                    if guild_id_for_msg not in self.message_to_thread:
-                        self.message_to_thread[guild_id_for_msg] = {}
-                    self.message_to_thread[guild_id_for_msg][msg.id] = thread_id
+                # 残ったターンもテキストだけにしてから戻す
+                trimmed = [self._text_only_history_message(entry) for entry in trimmed]
+                self.conversation_threads[guild_id][thread_id] = trimmed
+                # 履歴から落ちたメッセージ ID を索引から外す
+                self._sync_thread_message_index(guild_id, thread_id, trimmed)
+                for sent in sent_messages:
+                    # 送信先ギルド（DM は 0）
+                    guild_id_for_msg = sent.guild.id if sent.guild else 0
+                    # まだ履歴に残る応答 ID を索引へ戻す
+                    self._remember_message_thread(guild_id_for_msg, sent.id, thread_id)
                 self._cleanup_old_threads()
 
 
@@ -2035,6 +2249,8 @@ class LLMCog(commands.Cog, name="llm"):
                             k: v for k, v in self.message_to_thread[guild_id].items() 
                             if v != thread_id
                         }
+                        # スレッド削除後も件数上限を掛ける
+                        self._cap_message_index(guild_id)
 
     async def _handle_llm_streaming_response(
         self,
@@ -2934,8 +3150,14 @@ class LLMCog(commands.Cog, name="llm"):
         cache_key = getattr(new_client, "config_model_string", None) or (
             f"{provider_name}/{new_client.model_name_for_api_calls}"
         )
+        # 同じキーの古いクライアントを外してから新しいものを載せる
+        previous = self.llm_clients.get(cache_key)
         # キャッシュを新クライアントで更新する
         self.llm_clients[cache_key] = new_client
+        # 上書きで参照が消える前に接続プールを閉じる
+        if previous is not None and previous is not new_client:
+            # ローテーション前のクライアントを解放する
+            await self._close_llm_client(previous)
         # 連打抑制のため短く待つ
         await asyncio.sleep(1)
         # 新しいクライアントを返す

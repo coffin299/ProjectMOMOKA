@@ -99,6 +99,8 @@ class ImageGenerator:
             self.max_user_queued = 2
             self.job_timeout_sec = 300.0
             self._active_tasks = set()
+            # 終了中は後続キューを起動しない
+            self._closing = False
             return
 
         self.model_registry = ImageModelRegistry.from_default_root()
@@ -152,6 +154,8 @@ class ImageGenerator:
         self.job_timeout_sec = float(self.image_gen_config.get("job_timeout_sec", 300.0))
         # 実行中タスク参照（cancel 用）
         self._active_tasks: set[asyncio.Task] = set()
+        # close() 後はキューの次タスクを起動しない
+        self._closing = False
 
         # チャンネル別画像モデルは SettingsDB
         self.channel_models: Dict[str, str] = self._load_channel_models()
@@ -528,6 +532,21 @@ class ImageGenerator:
         return result if result else None
 
     async def _process_task(self, task: GenerationTask, return_result: bool) -> Optional[str]:
+        """生成を実行し、close() からキャンセルできるよう Task を保持する。"""
+        # コマンド本体、またはキュー用 create_task の Task
+        current = asyncio.current_task()
+        # イベントループ上の Task があるときだけ追跡する
+        if current is not None:
+            # unload 時にこの生成を止められるようにする
+            self._active_tasks.add(current)
+        try:
+            # 追跡と本体を分ける
+            return await self._run_generation_task(task, return_result)
+        finally:
+            # 完了しても集合に残さない
+            self._active_tasks.discard(current)
+
+    async def _run_generation_task(self, task: GenerationTask, return_result: bool) -> Optional[str]:
         if task.queue_message:
             await self._update_queue_message(task.queue_message, "Generating... / 生成中...", task.position, task.prompt)
 
@@ -759,6 +778,14 @@ class ImageGenerator:
         return None  # Don't return success message
 
     async def _schedule_next_task(self) -> None:
+        # close() のあとに次の生成を始めない
+        if self._closing:
+            # 生成中フラグを下ろす
+            self.is_generating = False
+            # 現在タスク参照を外す
+            self.current_task = None
+            # キューを進めない
+            return
         async with self.queue_lock:
             if not self.generation_queue:
                 self.is_generating = False
@@ -788,8 +815,12 @@ class ImageGenerator:
             # 失敗内容を記録してもキューは継続する
             logger.exception("Queued image generation task failed.")
         finally:
-            # 成否にかかわらず次のタスクへ進めて生成状態を解除する
-            asyncio.create_task(self._schedule_next_task())
+            # 完了した Task を追跡集合から外す
+            self._active_tasks.discard(processing_task)
+            # close() 中でなければ次のタスクへ進める
+            if not self._closing:
+                # 成否にかかわらず次のタスクをスケジュールする
+                asyncio.create_task(self._schedule_next_task())
 
     async def _handle_modal_submission(
         self,
@@ -946,7 +977,52 @@ class ImageGenerator:
             return None
 
     async def close(self) -> None:
-        logger.info("ImageGenerator local pipeline does not require explicit cleanup.")
+        """進行中の生成を止め、VRAM 上のパイプラインを解放する。"""
+        # 後続スケジュールを止める
+        self._closing = True
+        # 待機列を空にする
+        async with self.queue_lock:
+            # 未着手のジョブを捨てる
+            self.generation_queue.clear()
+            # 生成中フラグを下ろす
+            self.is_generating = False
+            # 現在ジョブ参照を外す
+            self.current_task = None
+        # close 自身はキャンセルしない
+        current = asyncio.current_task()
+        # まだ終わっていない生成 Task
+        pending = [
+            task
+            for task in list(self._active_tasks)
+            if task is not current and not task.done()
+        ]
+        # 各生成へキャンセルを送る
+        for task in pending:
+            # スレッド側の推論はすぐには止まらないが、待ちは打ち切る
+            task.cancel()
+        # キャンセル完了を少しだけ待つ
+        if pending:
+            # タイムアウト後は unload を続ける
+            await asyncio.wait(pending, timeout=5)
+        # アイドル解放タスクとキャッシュを止める
+        pipeline = getattr(self, "pipeline", None)
+        # 無効化時はパイプラインが無い
+        if pipeline is not None and hasattr(pipeline, "clear_cache"):
+            # 遅延アンロードが clear と競合しないように止める
+            cancel_idle = getattr(pipeline, "_cancel_idle_unload", None)
+            # メソッドがあるときだけ呼ぶ
+            if cancel_idle is not None:
+                # 予約済みのアイドル解放を取り消す
+                cancel_idle()
+            try:
+                # VRAM 解放は同期処理なのでスレッドへ逃す
+                await asyncio.to_thread(pipeline.clear_cache)
+            except Exception as error:  # noqa: BLE001
+                # 解放失敗でも Cog の unload は続ける
+                logger.warning("Failed to clear image pipeline cache: %s", error)
+            else:
+                # キャッシュを空にしたときだけ成功ログを出す
+                logger.info("ImageGenerator pipeline cache cleared.")
 
 
 class ImageModelSelect(discord.ui.Select):
@@ -987,7 +1063,7 @@ class ImageGenerationModal(discord.ui.Modal):
                 ja="画像生成設定",
                 en="Configure Image Generation",
             ),
-            timeout=None,
+            timeout=180,
         )
         self.parent_view = parent_view
         self.lang = ui_lang

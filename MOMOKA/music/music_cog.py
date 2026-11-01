@@ -2013,8 +2013,6 @@ class MusicCog(commands.Cog, name="music_cog"):
             # シーク操作以外、または再起動復元（force_current）では Now Playing UI を更新する
             # 次曲移行時も最初の /play 応答メッセージを編集して維持し、誰が再生開始したか分かるようにする
             if state.last_text_channel_id and (not is_seek_operation or force_current):
-                # 再生コントロール一体型UI（LayoutView）を構築する
-                view = MusicControllerView(self, guild_id)
                 # 送信先チャンネルを取得する
                 channel = self.bot.get_channel(state.last_text_channel_id)
                 # チャンネルが取れた場合のみ UI を更新する
@@ -2024,22 +2022,40 @@ class MusicCog(commands.Cog, name="music_cog"):
                         if play_msg:
                             # webhook期限切れ回避のためチャンネル経由 Message へ変換する
                             play_msg = await self._to_durable_message(play_msg)
+                            # 同じメッセージなら既存パネルを再利用する
+                            view = self._acquire_controller_view(
+                                state, guild_id, message_id=play_msg.id
+                            )
                             # /play 応答を Now Playing UI に編集する
                             await play_msg.edit(content=None, embed=None, view=view)
                             # 編集したメッセージを最新の Now Playing として保存する
                             state.last_now_playing_message = play_msg
+                            # パネルとメッセージの対応を確定する
+                            state.controller_message_id = play_msg.id
                         elif state.last_now_playing_message:
                             # 次曲など: 既存の /play 起点メッセージを編集して返信関係を維持する
                             target_message = await self._to_durable_message(
                                 state.last_now_playing_message
                             )
+                            # 同じメッセージなら既存パネルを再利用する
+                            view = self._acquire_controller_view(
+                                state, guild_id, message_id=target_message.id
+                            )
                             # 同じメッセージ上で次曲の UI に差し替える
                             await target_message.edit(content=None, embed=None, view=view)
                             # 参照を最新の Message オブジェクトへ更新する
                             state.last_now_playing_message = target_message
+                            # パネルとメッセージの対応を確定する
+                            state.controller_message_id = target_message.id
                         else:
+                            # 新規投稿なので前のパネルは止めてから作る
+                            view = self._acquire_controller_view(
+                                state, guild_id, message_id=None
+                            )
                             # 既存メッセージが無い場合のみ新規投稿する（フォールバック）
                             state.last_now_playing_message = await channel.send(view=view, silent=True)
+                            # 投稿後のメッセージ ID をパネルに紐づける
+                            state.controller_message_id = state.last_now_playing_message.id
                         # Now Playing 表示後にプログレスバーの定期更新を開始する
                         self._start_progress_updater(guild_id)
                         # 再生開始に合わせて VC ステータスを更新する
@@ -2051,8 +2067,14 @@ class MusicCog(commands.Cog, name="music_cog"):
                         try:
                             # 壊れた参照を捨てる
                             state.last_now_playing_message = None
+                            # 別メッセージへ載せ直すためパネルを作り直す
+                            view = self._acquire_controller_view(
+                                state, guild_id, message_id=None
+                            )
                             # チャンネルへ新規 Now Playing を投稿する（silent）
                             state.last_now_playing_message = await channel.send(view=view, silent=True)
+                            # 投稿後のメッセージ ID をパネルに紐づける
+                            state.controller_message_id = state.last_now_playing_message.id
                             # 復旧後もプログレス更新を開始する
                             self._start_progress_updater(guild_id)
                             # 復旧後も VC ステータスを同期する
@@ -2462,6 +2484,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             await state.clear_queue()
             # VC ステータス追跡を初期化する
             self._reset_vc_status_tracking(state)
+            # ギルド破棄に合わせて再生パネルを ViewStore から外す
+            state.stop_controller_view()
             # ギルド名解決用にギルドオブジェクトを取得する
             guild = self.bot.get_guild(guild_id)
             # クリーンアップ完了をログに残す
@@ -2844,11 +2868,14 @@ class MusicCog(commands.Cog, name="music_cog"):
         state = self.get_existing_guild_state(guild_id)
         if not state:
             return
-        view = MusicControllerView(self, guild_id)
         previous = state.last_now_playing_message
         durable = await self._to_durable_message(message)
+        # 同じメッセージなら既存パネルを再利用する
+        view = self._acquire_controller_view(state, guild_id, message_id=durable.id)
         await durable.edit(content=None, embed=None, view=view)
         state.last_now_playing_message = durable
+        # パネルとメッセージの対応を確定する
+        state.controller_message_id = durable.id
         if previous is not None and previous.id != durable.id:
             try:
                 await previous.delete()
@@ -3349,8 +3376,8 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 古いメッセージへの参照を初期化する
             state.last_now_playing_message = None
 
-        # 一体型UIが統合された LayoutView オブジェクトを構築する
-        view = MusicControllerView(self, ctx.guild.id)
+        # 別メッセージへ出すので前のパネルを止めてから作る
+        view = self._acquire_controller_view(state, ctx.guild.id, message_id=None)
         
         # 新しい Now Playing リッチUIを送信する（embedは指定しない）
         msg = await self._send_ctx_message(ctx, view=view)
@@ -3358,8 +3385,13 @@ class MusicCog(commands.Cog, name="music_cog"):
         if msg:
             # webhook期限切れ回避のため、チャンネル経由のMessageへ変換して保存する
             state.last_now_playing_message = await self._to_durable_message(msg)
+            # 投稿後のメッセージ ID をパネルに紐づける
+            state.controller_message_id = state.last_now_playing_message.id
             # nowplaying 再表示時もプログレスバー定期更新を開始する
             self._start_progress_updater(ctx.guild.id)
+        else:
+            # 送信できなかったパネルは保持しない
+            state.stop_controller_view()
 
     def _create_now_playing_embed(self, state: GuildState, track: Track) -> discord.Embed:
         # 再生が一時停止中であるか判定して、表示用アイコンを設定する
@@ -3593,28 +3625,35 @@ class MusicCog(commands.Cog, name="music_cog"):
             # 早期リターン
             return
 
-        # 最新の再生状態を元に一体型UI（LayoutView）を新規構築する
-        view = MusicControllerView(
-            self,
-            guild_id,
-            finished_message=finished_message,
-            finished_title=finished_title,
-        )
         # 編集対象メッセージをローカル変数に保持する
         target_message = state.last_now_playing_message
+        # 編集前に例外になると復旧側が view を参照できないため先に空にする
+        view = None
 
         try:
             # InteractionMessageのままならチャンネル経由Messageへ変換する
             target_message = await self._to_durable_message(target_message)
             # 変換結果を状態へ反映する
             state.last_now_playing_message = target_message
-            # 古いメッセージの Embed をクリアしつつ、新しい V2レイアウトでメッセージを上書き編集する
+            # 同じメッセージなら既存パネルを再描画する
+            view = self._acquire_controller_view(
+                state,
+                guild_id,
+                message_id=target_message.id,
+                finished_message=finished_message,
+                finished_title=finished_title,
+            )
+            # 古いメッセージの Embed をクリアしつつ、V2レイアウトでメッセージを上書き編集する
             await target_message.edit(embed=None, view=view)
+            # パネルとメッセージの対応を確定する
+            state.controller_message_id = target_message.id
         except discord.NotFound:
             # ユーザー削除などでメッセージが消えている場合は参照を捨てて更新ループを止める
             state.last_now_playing_message = None
             # プログレス更新も止めて 404 連打を防ぐ
             state.stop_progress_updater()
+            # 消えたメッセージのパネルを ViewStore から外す
+            state.stop_controller_view()
             # 想定内のため WARNING に留める
             logger.warning(
                 f"Guild {guild_id}: Now Playing message missing (deleted); "
@@ -3622,7 +3661,7 @@ class MusicCog(commands.Cog, name="music_cog"):
             )
         except discord.HTTPException as e:
             # Invalid Webhook Token（50027）は期限切れInteraction応答の典型なので復旧を試みる
-            if e.code == 50027:
+            if e.code == 50027 and view is not None:
                 recovered = await self._recover_now_playing_message(state, view)
                 # 復旧できなければ参照を捨ててエラー連打を防ぐ
                 if not recovered:
@@ -3630,16 +3669,27 @@ class MusicCog(commands.Cog, name="music_cog"):
                     state.last_now_playing_message = None
                     # プログレス更新も止めて無駄なAPI呼び出しを防ぐ
                     state.stop_progress_updater()
+                    # 復旧に使ったパネルも外す
+                    state.stop_controller_view()
                     # 復旧失敗を警告ログに残す
                     logger.warning(
                         f"Guild {guild_id}: Now Playing webhook token expired; "
                         "cleared message reference to stop update errors."
                     )
+            elif e.code == 50027:
+                # パネルを作る前に失敗した場合も参照を捨てる
+                state.last_now_playing_message = None
+                # プログレス更新を止める
+                state.stop_progress_updater()
+                # 残っていればパネルを外す
+                state.stop_controller_view()
             elif e.code == 10008:
                 # Unknown Message: NotFound 以外の経路でも参照を破棄する
                 state.last_now_playing_message = None
                 # プログレス更新を止める
                 state.stop_progress_updater()
+                # 不明メッセージのパネルを外す
+                state.stop_controller_view()
                 # 連打防止の警告を残す
                 logger.warning(
                     f"Guild {guild_id}: Now Playing message unknown (10008); "
@@ -3657,6 +3707,51 @@ class MusicCog(commands.Cog, name="music_cog"):
         if not state.current_track:
             # メッセージの参照をクリアして、次の再生に備える
             state.last_now_playing_message = None
+            # 終了パネルは無効ボタンだけなので View は保持しない
+            state.stop_controller_view()
+
+    def _acquire_controller_view(
+        self,
+        state: GuildState,
+        guild_id: int,
+        *,
+        message_id: Optional[int],
+        finished_message: Optional[str] = None,
+        finished_title: Optional[str] = None,
+    ) -> MusicControllerView:
+        """同じメッセージなら既存パネルを再描画し、別メッセージなら作り直す。"""
+        # いま保持しているパネル
+        current = state.controller_view
+        # 同じメッセージに載っている生存中のパネルだけ再利用する
+        if (
+            message_id is not None
+            and current is not None
+            and state.controller_message_id == message_id
+            and not current.is_finished()
+        ):
+            # 終了文言を更新する（再生中は None のまま）
+            current.finished_message = finished_message
+            # 終了見出しを更新する
+            current.finished_title = finished_title
+            # 中身だけ組み直して同じ View を返す
+            current.rebuild_ui()
+            # 再利用したパネル
+            return current
+        # 別メッセージへ移るときは前の View を ViewStore から外す
+        state.stop_controller_view()
+        # 新しいパネルを作る
+        view = MusicControllerView(
+            self,
+            guild_id,
+            finished_message=finished_message,
+            finished_title=finished_title,
+        )
+        # ギルド状態へ 1 つだけ持たせる
+        state.controller_view = view
+        # 新規投稿前は None、編集時は対象メッセージ ID
+        state.controller_message_id = message_id
+        # 新しいパネル
+        return view
 
     async def _recover_now_playing_message(
         self,
@@ -3683,8 +3778,18 @@ class MusicCog(commands.Cog, name="music_cog"):
                 except Exception:
                     # 削除失敗は無視して再送へ進む
                     pass
+            # 別メッセージへ出すので前のパネルを止めて作り直す
+            fresh = self._acquire_controller_view(
+                state,
+                state.guild_id,
+                message_id=None,
+                finished_message=getattr(view, "finished_message", None),
+                finished_title=getattr(view, "finished_title", None),
+            )
             # チャンネル経由で新しい Now Playing を送信する（webhook非依存・silent）
-            state.last_now_playing_message = await channel.send(view=view, silent=True)
+            state.last_now_playing_message = await channel.send(view=fresh, silent=True)
+            # 投稿後のメッセージ ID をパネルに紐づける
+            state.controller_message_id = state.last_now_playing_message.id
             # 復旧成功
             return True
         except Exception as e:

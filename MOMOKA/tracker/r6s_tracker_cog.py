@@ -47,7 +47,22 @@ class APICache:
 
     def set(self, key: str, value: Any) -> None:
         """Set cache value"""
-        self.cache[key] = (value, datetime.now())
+        # 参照されない期限切れをここで捨てる
+        now = datetime.now()
+        # 期限
+        limit = timedelta(seconds=self.duration)
+        # 期限切れキーを集める
+        expired = [
+            cache_key
+            for cache_key, (_cached, timestamp) in self.cache.items()
+            if now - timestamp >= limit
+        ]
+        # 期限切れを削除する
+        for cache_key in expired:
+            # もう返さないエントリ
+            del self.cache[cache_key]
+        # 新しい値を記録する
+        self.cache[key] = (value, now)
 
     def clear(self) -> None:
         """Clear all cache"""
