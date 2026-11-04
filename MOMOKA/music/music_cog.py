@@ -1589,6 +1589,138 @@ class MusicCog(commands.Cog, name="music_cog"):
             voice_client.is_playing() or voice_client.is_paused()
         )
 
+    def _create_audio_mixer(self, guild_id: int) -> AudioMixer:
+        """Create a mixer whose music completion is routed through MusicCog."""
+        def on_source_removed(name: str, removed_source=None):
+            if name != "music":
+                return
+            state = self.get_existing_guild_state(guild_id)
+            if state is not None:
+                # Set before scheduling so the AudioPlayer after callback cannot
+                # race the source completion handler and advance the queue twice.
+                state._music_source_removed = True
+            asyncio.run_coroutine_threadsafe(
+                self._on_music_source_removed(guild_id, removed_source),
+                self.bot.loop,
+            )
+
+        return AudioMixer(on_source_removed_callback=on_source_removed)
+
+    async def add_overlay_audio_source(
+        self,
+        guild_id: int,
+        name: str,
+        source: discord.AudioSource,
+        volume: float,
+    ) -> bool:
+        """Add TTS to the live music pipeline, recovering a stale player if needed."""
+        state = self.get_existing_guild_state(guild_id)
+        if state is None or state.voice_client is None or not state.voice_client.is_connected():
+            return False
+
+        mixer = None
+        restart_music_at = None
+        restart_music = False
+        async with state.audio_lock:
+            # Re-read state after locking: music may have ended while TTS was generated.
+            if not state.voice_client or not state.voice_client.is_connected():
+                try:
+                    source.cleanup()
+                except Exception:
+                    pass
+                return False
+            was_music_active = bool(state.is_playing and state.current_track)
+            restart_music_at = state.get_current_position() if was_music_active else None
+            mixer = state.mixer
+            vc = state.voice_client
+            if (
+                (vc.is_playing() or vc.is_paused())
+                and (mixer is None or vc.source is not mixer)
+            ):
+                return False
+
+            if (
+                mixer is None
+                or not getattr(mixer, "active", True)
+                or getattr(mixer, "_is_done", False)
+                or (was_music_active and not self._is_mixer_alive(state))
+            ):
+                if mixer is not None:
+                    mixer.on_source_removed_callback = None
+                    mixer.stop()
+                mixer = self._create_audio_mixer(guild_id)
+                state.mixer = mixer
+
+            try:
+                await mixer.add_source(name, source, volume=volume)
+            except Exception:
+                logger.exception("Guild %s: Failed to add overlay source '%s'", guild_id, name)
+                try:
+                    source.cleanup()
+                except Exception:
+                    pass
+                return False
+
+            mixer_live = self._is_mixer_alive(state)
+            transition_pending = state._music_source_removed or state._playing_next
+            if was_music_active and not mixer_live and not transition_pending:
+                # Carry TTS into the new mixer, then restore music after releasing the lock.
+                restart_music = True
+                state.is_playing = False
+                state.reset_playback_tracking()
+            elif was_music_active and not mixer_live and transition_pending:
+                # The old music source ended while synthesis was running. Keep the
+                # TTS frame path alive so the pending queue transition can reuse it.
+                try:
+                    vc.play(
+                        mixer,
+                        after=lambda e, m=mixer: self.mixer_finished_callback(e, guild_id, m),
+                    )
+                except Exception:
+                    logger.exception("Guild %s: Failed to restart mixer during track transition", guild_id)
+                    await mixer.remove_source(name)
+                    return False
+            elif not self._is_mixer_alive(state):
+                if vc.is_playing() or vc.is_paused():
+                    await mixer.remove_source(name)
+                    if state.mixer is mixer and not mixer.has_sources():
+                        state.mixer = None
+                        mixer.stop()
+                    return False
+                try:
+                    vc.play(
+                        mixer,
+                        after=lambda e, m=mixer: self.mixer_finished_callback(e, guild_id, m),
+                    )
+                except Exception:
+                    logger.exception("Guild %s: Failed to start overlay mixer", guild_id)
+                    await mixer.remove_source(name)
+                    if state.mixer is mixer and not mixer.has_sources():
+                        state.mixer = None
+                        mixer.stop()
+                    return False
+
+        if restart_music:
+            try:
+                await self._play_next_song(
+                    guild_id,
+                    seek_seconds=max(0, restart_music_at),
+                    force_current=True,
+                )
+            except Exception:
+                logger.exception("Guild %s: Failed to restore music with TTS overlay", guild_id)
+            if self._is_mixer_alive(state):
+                return True
+            if state.mixer is mixer:
+                state.mixer = None
+                mixer.on_source_removed_callback = None
+                mixer.stop()
+            else:
+                await mixer.remove_source(name)
+            return False
+
+        return self._is_mixer_alive(state)
+
     def _schedule_queue_end_leave(self, guild_id: int) -> None:
         """キュー終了後の VC 退出を少し待って再試行する。"""
         # 状態が無ければ何もしない
@@ -1860,40 +1992,49 @@ class MusicCog(commands.Cog, name="music_cog"):
                 await self._on_music_source_removed(guild_id, source)
                 return
 
-            if (
-                state.mixer is None
-                or not getattr(state.mixer, "active", True)
-                or getattr(state.mixer, "_is_done", False)
-            ):
-                # stop 済み Mixer はソースを追加しても read() されないため再利用しない。
-                def on_source_removed(name: str, removed_source=None):
-                    """ソースが削除されたときのコールバック"""
-                    if name == 'music':
-                        # 削除済みギルド状態は復活させない
-                        removed_state = self.get_existing_guild_state(guild_id)
-                        # 状態があれば同期的に所有フラグを立てる（mixer_finished より先に必須）
-                        if removed_state is not None:
-                            # 次曲遷移の所有者を on_source_removed 側にする
-                            removed_state._music_source_removed = True
-                        # 次曲・リトライ・NO-audio UI を非同期で処理する
-                        asyncio.run_coroutine_threadsafe(
-                            self._on_music_source_removed(guild_id, removed_source),
-                            self.bot.loop,
+            async with state.audio_lock:
+                if (
+                    state.mixer is None
+                    or not getattr(state.mixer, "active", True)
+                    or getattr(state.mixer, "_is_done", False)
+                ):
+                    # stop 済み Mixer はソースを追加しても read() されないため再利用しない。
+                    state.mixer = self._create_audio_mixer(guild_id)
+
+                # mixer の選択・source 登録・AudioPlayer 起動をTTS追加と直列化する。
+                current_mixer = state.mixer
+                await current_mixer.add_source('music', source, volume=state.volume)
+                state.seek_position = seek_seconds
+                state.playback_start_time = time.time()
+                state.paused_at = None
+
+                voice_client = state.voice_client
+                if voice_client and voice_client.is_connected():
+                    needs_new_player = (
+                        voice_client.source is not current_mixer
+                        or not voice_client.is_playing()
+                    )
+                    if needs_new_player:
+                        if (
+                            voice_client.is_playing()
+                            and voice_client.source is not current_mixer
+                        ):
+                            logger.info(
+                                "Guild %s: Stopping stale AudioPlayer before starting new mixer",
+                                guild_id,
+                            )
+                            voice_client.stop()
+                        voice_client.play(
+                            current_mixer,
+                            after=lambda e, m=current_mixer: self.mixer_finished_callback(
+                                e, guild_id, m
+                            ),
                         )
-                
-                state.mixer = AudioMixer(on_source_removed_callback=on_source_removed)
-
-            # ミキサーをローカル変数に保持（awaitの間にstate.mixerがNoneに変更されるのを防止）
-            # mixer_finished_callbackの旧ミキサー競合でstate.mixer=Noneにされても、
-            # ローカル変数はオブジェクトを保持し続ける
-            current_mixer = state.mixer
-
-            await current_mixer.add_source('music', source, volume=state.volume)
-
-            # 実音準備後に進捗起点を合わせる（プライム待ち時間を曲位置に含めない）
-            state.seek_position = seek_seconds
-            state.playback_start_time = time.time()
-            state.paused_at = None
+                        logger.info(
+                            "Guild %s: Started new AudioPlayer with mixer %s",
+                            guild_id,
+                            id(current_mixer),
+                        )
 
             if not state.voice_client or not state.voice_client.is_connected():
                 # ボイスクライアントが存在しない、あるいは切断されている場合は再生を中断する
@@ -2583,19 +2724,30 @@ class MusicCog(commands.Cog, name="music_cog"):
         ):
             return
 
-        # 古い PCM 位置を退避してから、止まったプレイヤーと Mixer を破棄する。
-        position = max(0, state.get_current_position())
-        stale_mixer = state.mixer
-        state.mixer = None
-        if stale_mixer is not None:
-            stale_mixer.on_source_removed_callback = None
-            stale_mixer.stop()
-        if state.voice_client.is_playing() or state.voice_client.is_paused():
-            state.voice_client.stop()
+        async with state.audio_lock:
+            # Recheck after acquiring the shared audio lifecycle lock.
+            if (
+                not state.is_playing
+                or state.is_paused
+                or state.stopping
+                or state.is_seeking
+                or state._playing_next
+                or self._is_mixer_alive(state)
+            ):
+                return
+            # 古い PCM 位置を退避してから、止まったプレイヤーと Mixer を破棄する。
+            position = max(0, state.get_current_position())
+            stale_mixer = state.mixer
+            state.mixer = None
+            if stale_mixer is not None:
+                stale_mixer.on_source_removed_callback = None
+                stale_mixer.stop()
+            if state.voice_client.is_playing() or state.voice_client.is_paused():
+                state.voice_client.stop()
 
-        # is_playing を一度落として、内部再生ガードを通過させる。
-        state.is_playing = False
-        state.reset_playback_tracking()
+            # is_playing を一度落として、内部再生ガードを通過させる。
+            state.is_playing = False
+            state.reset_playback_tracking()
         try:
             await self._play_next_song(
                 guild_id,

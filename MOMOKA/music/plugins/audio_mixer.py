@@ -122,12 +122,34 @@ _FRAME_SAMPLES = _FRAME_BYTES // 2
 _PCM_DTYPE = np.dtype('<i2')
 
 
+async def _acquire_thread_lock(lock: threading.Lock) -> None:
+    """Acquire a blocking source lock without freezing asyncio, even on cancel."""
+    loop = asyncio.get_running_loop()
+    waiter = loop.run_in_executor(None, lock.acquire)
+    try:
+        await asyncio.shield(waiter)
+    except asyncio.CancelledError:
+        # shield keeps the worker alive; release if it acquires after cancellation.
+        def release_late_acquisition(future):
+            try:
+                acquired = future.result()
+            except Exception:
+                return
+            if acquired:
+                lock.release()
+
+        waiter.add_done_callback(release_late_acquisition)
+        raise
+
+
 class AudioMixer(discord.AudioSource):
     def __init__(self, on_source_removed_callback=None):
         # ソース辞書: ソース名→AudioSourceオブジェクト
         self.sources: Dict[str, discord.AudioSource] = {}
         # ボリューム辞書: ソース名→音量(float)
         self.volumes: Dict[str, float] = {}
+        # ソース単位で read() と cleanup()/差し替えを直列化する。
+        self._source_locks: Dict[str, threading.Lock] = {}
         # asyncio用ロック（非同期メソッド間の排他制御）
         self.lock = asyncio.Lock()
         # スレッド間の排他制御用ロック（read()はオーディオスレッドから呼ばれる）
@@ -162,9 +184,13 @@ class AudioMixer(discord.AudioSource):
         # 終了したソースを (名前, ソース参照) のタプルで記録
         finished_sources: List[Tuple[str, discord.AudioSource]] = []
 
-        # スレッド安全にソース一覧のスナップショットを取得
+        # ソース・音量・入出力ロックを同じスナップショットで取得する。
         with self._thread_lock:
-            sources_to_process = list(self.sources.items())
+            sources_to_process = [
+                (name, source, self.volumes.get(name, 1.0), self._source_locks[name])
+                for name, source in self.sources.items()
+                if name in self._source_locks
+            ]
 
         # 音楽・TTSを含めて再生可能な音源が無い場合はプレイヤーを終了する
         if not sources_to_process:
@@ -174,10 +200,14 @@ class AudioMixer(discord.AudioSource):
         mixed = np.zeros(_FRAME_SAMPLES, dtype=np.int32)
 
         # 各ソースからフレームを読み取り、NumPy でベクタ加算
-        for name, source in sources_to_process:
+        for name, source, volume, source_lock in sources_to_process:
             try:
-                # ソースからPCMフレームを読み取る
-                frame = source.read()
+                # 置き換え済みソースは読まず、read/cleanup が同時に走らないよう保護する。
+                with source_lock:
+                    with self._thread_lock:
+                        if self.sources.get(name) is not source:
+                            continue
+                    frame = source.read()
                 # 空フレーム＝ソース終了
                 if not frame:
                     finished_sources.append((name, source))
@@ -192,9 +222,6 @@ class AudioMixer(discord.AudioSource):
 
                 # 16bit LE PCM をゼロコピーで int16 ビュー化
                 src = np.frombuffer(frame, dtype=_PCM_DTYPE)
-                # このソースの音量を取得
-                volume = self.volumes.get(name, 1.0)
-
                 # volume=1.0 は乗算を省略して int32 加算のみ
                 if volume == 1.0:
                     mixed += src.astype(np.int32, copy=False)
@@ -219,16 +246,19 @@ class AudioMixer(discord.AudioSource):
                         continue
                     # ソース辞書から削除
                     self.sources.pop(name, None)
-                    # ボリューム辞書からも削除
+                    # ボリューム・ソースロックも同時に破棄
                     self.volumes.pop(name, None)
-                    # FFmpegプロセス等のリソースをクリーンアップ
-                    if finished_source and hasattr(finished_source, 'cleanup'):
-                        try:
-                            finished_source.cleanup()
-                        except Exception as e:
-                            logger.error(f"Error cleaning up finished source '{name}': {e}")
+                    self._source_locks.pop(name, None)
                     # 実際に削除されたソースを記録（失敗フラグ参照用にソースも残す）
                     actually_removed.append((name, finished_source))
+
+            # FFmpeg cleanup は thread lock の外で行う。
+            for name, finished_source in actually_removed:
+                if finished_source and hasattr(finished_source, 'cleanup'):
+                    try:
+                        finished_source.cleanup()
+                    except Exception as e:
+                        logger.error(f"Error cleaning up finished source '{name}': {e}")
 
             # コールバックはロック外で実行（デッドロック防止）
             # 各ソースの削除ごとにコールバックを発火
@@ -259,36 +289,76 @@ class AudioMixer(discord.AudioSource):
         ソースをミキサーに追加する。同名のソースが存在する場合は置き換え。
         """
         async with self.lock:
+            old_source = None
+            old_lock = None
             with self._thread_lock:
                 # stop() 後の Mixer は VoiceClient の AudioPlayer から切り離され、read() が呼ばれない。
                 # ソースだけ追加すると再生表示のまま無音になるため、停止済み参照を拒否する。
                 if not self.active or self._is_done:
                     raise RuntimeError("Cannot add a source to a stopped AudioMixer")
-                # 同名ソースが存在する場合は先にクリーンアップ
-                if name in self.sources:
-                    old_source = self.sources.get(name)
-                    if old_source and hasattr(old_source, 'cleanup'):
-                        old_source.cleanup()
+                old_source = self.sources.get(name)
+                old_lock = self._source_locks.get(name)
+                if old_source is None:
+                    self.sources[name] = source
+                    self.volumes[name] = max(0.0, volume)
+                    self._source_locks[name] = threading.Lock()
+                    return
 
-                # 新しいソースを登録
-                self.sources[name] = source
-                # 音量を設定（0.0以上に制限）
-                self.volumes[name] = max(0.0, volume)
+            # 読み取り中の旧ソースを壊さず、イベントループもブロックしない。
+            if old_lock is not None:
+                await _acquire_thread_lock(old_lock)
+            try:
+                with self._thread_lock:
+                    if not self.active or self._is_done:
+                        raise RuntimeError("Cannot add a source to a stopped AudioMixer")
+                    if self.sources.get(name) is not old_source:
+                        # read() が先に終了処理した場合は新ソースをそのまま登録。
+                        self.sources[name] = source
+                        self.volumes[name] = max(0.0, volume)
+                        self._source_locks[name] = threading.Lock()
+                    else:
+                        self.sources[name] = source
+                        self.volumes[name] = max(0.0, volume)
+                        self._source_locks[name] = threading.Lock()
+                if old_source is not source and hasattr(old_source, "cleanup"):
+                    try:
+                        old_source.cleanup()
+                    except Exception as cleanup_err:
+                        logger.warning("AudioMixer: Failed to clean replaced source '%s': %s", name, cleanup_err)
+            except Exception:
+                try:
+                    source.cleanup()
+                except Exception:
+                    pass
+                raise
+            finally:
+                if old_lock is not None:
+                    old_lock.release()
 
     async def remove_source(self, name: str) -> Optional[discord.AudioSource]:
         """
         指定名のソースをミキサーから削除する。
         """
         removed_source = None
+        source_lock = None
         async with self.lock:
             with self._thread_lock:
-                # ソース辞書から削除
-                removed_source = self.sources.pop(name, None)
-                # ボリューム辞書からも削除
-                self.volumes.pop(name, None)
-            # FFmpegプロセス等のリソースをクリーンアップ（thread_lock外で実行）
-            if removed_source and hasattr(removed_source, 'cleanup'):
-                removed_source.cleanup()
+                removed_source = self.sources.get(name)
+                source_lock = self._source_locks.get(name)
+            if source_lock is None:
+                return None
+            await _acquire_thread_lock(source_lock)
+            try:
+                with self._thread_lock:
+                    if self.sources.get(name) is not removed_source:
+                        return None
+                    self.sources.pop(name, None)
+                    self.volumes.pop(name, None)
+                    self._source_locks.pop(name, None)
+                if removed_source and hasattr(removed_source, 'cleanup'):
+                    removed_source.cleanup()
+            finally:
+                source_lock.release()
         # ソース削除コールバックを発火（asyncio lock外で実行）
         if removed_source and self.on_source_removed_callback:
             try:
@@ -330,16 +400,43 @@ class AudioMixer(discord.AudioSource):
         """全ソースのリソースをクリーンアップ"""
         # スレッド安全にコピーを作成してからイテレート
         with self._thread_lock:
-            sources_copy = list(self.sources.values())
+            sources_copy = [
+                (source, self._source_locks[name])
+                for name, source in self.sources.items()
+                if name in self._source_locks
+            ]
             self.sources.clear()
             self.volumes.clear()
+            self._source_locks.clear()
         # クリーンアップはロック外で実行
-        for source in sources_copy:
+        for source, source_lock in sources_copy:
+            # stop() は同期APIのためここでは待たない。read中なら後始末を別スレッドへ委譲する。
+            if not source_lock.acquire(blocking=False):
+                threading.Thread(
+                    target=self._cleanup_source_when_idle,
+                    args=(source, source_lock),
+                    name="audio-mixer-cleanup",
+                    daemon=True,
+                ).start()
+                continue
             if hasattr(source, 'cleanup'):
                 try:
                     source.cleanup()
                 except Exception as e:
                     logger.error(f"Error cleaning up source: {e}")
+                finally:
+                    source_lock.release()
+            else:
+                source_lock.release()
+
+    @staticmethod
+    def _cleanup_source_when_idle(source: discord.AudioSource, source_lock: threading.Lock) -> None:
+        with source_lock:
+            if hasattr(source, "cleanup"):
+                try:
+                    source.cleanup()
+                except Exception as e:
+                    logger.error("Error cleaning up deferred audio source: %s", e)
 
 
 class MusicAudioSource(discord.FFmpegPCMAudio):

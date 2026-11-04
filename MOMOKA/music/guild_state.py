@@ -51,6 +51,8 @@ class GuildState:
         self.is_loading: bool = False
         # /play の同時到着時に初回再生を一度だけ起動するためのギルド単位ロック
         self.play_lock = asyncio.Lock()
+        # MusicCog と TTSCog が Mixer の入替・追加・起動を同時に行わないためのロック
+        self.audio_lock = asyncio.Lock()
         # 意図的な停止中に古いミキサーの終了コールバックを無視するフラグ
         self.stopping: bool = False
         self.mixer: Optional[AudioMixer] = None

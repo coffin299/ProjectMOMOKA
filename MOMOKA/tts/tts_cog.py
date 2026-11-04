@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 from typing import Dict, Optional, List, Any
 import time
+import uuid
 import logging
 import gc  # ガベージコレクションを追加
 
@@ -930,10 +931,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
         music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
         music_state = music_cog._get_guild_state(guild.id) if music_cog else None
 
-        # 音楽再生中、またはミキサーがまだ再生され続けている（TTS 読み上げ中など）ならオーバーレイ。
-        # プレイヤー停止済みのミキサーに足すと二度と読まれず、音楽終了後の VC 退出も妨げる
-        if music_state and music_state.mixer and (
-            music_state.is_playing or self._music_mixer_is_live(music_cog, music_state)
+        # 音楽状態が再生中ならMixerの実稼働状態をMusicCog側で検証・復旧してから重ねる。
+        # is_playing だけ見て停止済みMixerへ追加するとTTSが読まれず、曲状態も残ってしまう。
+        if music_state and (
+            music_state.is_playing
+            or (music_state.mixer and self._music_mixer_is_live(music_cog, music_state))
         ):
             return await self._overlay_tts_with_mixer(guild, converted_text, model_id, style, style_weight, speed, volume, interaction)
 
@@ -981,7 +983,8 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
     async def _overlay_tts_with_mixer(self, guild: discord.Guild, text: str, model_id: int, style: str, style_weight: float, speed: float, volume: float, interaction: Optional[discord.Interaction] = None) -> bool:
         music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
-        music_state = music_cog._get_guild_state(guild.id)
+        if music_cog is None:
+            return await self._play_tts_directly(guild, text, model_id, style, style_weight, speed, volume, interaction)
         
         wav_data = await self._api_call_to_audio_data(text, model_id, style, style_weight, speed)
         if not wav_data:
@@ -989,16 +992,32 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return False
 
         try:
-            # BytesIOをwith文で管理してメモリリークを防止
             audio_buffer = io.BytesIO(wav_data)
             tts_source = TTSAudioSource(audio_buffer, text=text, guild_id=guild.id, pipe=True)
-            source_name = f"tts_{int(time.time() * 1000)}"
-            await music_state.mixer.add_source(source_name, tts_source, volume=volume)
-            # wav_dataの参照を明示的に削除
-            del wav_data
-            return True
+            source_name = f"tts_{uuid.uuid4().hex}"
+            added = await music_cog.add_overlay_audio_source(
+                guild.id, source_name, tts_source, volume
+            )
+            if added:
+                return True
+            # 音楽終了とTTS生成が競合した場合は、生成済み音声を直接再生へ引き継ぐ。
+            if (
+                guild.voice_client
+                and guild.voice_client.is_connected()
+                and not guild.voice_client.is_playing()
+                and not guild.voice_client.is_paused()
+            ):
+                return self._play_tts_audio_data(guild, text, wav_data, volume)
+            tts_source.cleanup()
+            if interaction:
+                await interaction.followup.send("❌ 音声の再生に失敗しました。", ephemeral=True)
+            return False
         except Exception as e:
             logging.getLogger(__name__).error(f"[TTSCog] ミキサーへのTTS追加エラー: {e}")
+            try:
+                tts_source.cleanup()
+            except Exception:
+                pass
             if interaction: await interaction.followup.send("❌ 音声の再生に失敗しました。", ephemeral=True)
             return False
 
@@ -1019,10 +1038,21 @@ class TTSCog(commands.Cog, name="tts_cog"):
             if interaction: await interaction.followup.send("❌ 音声生成に失敗しました。", ephemeral=True)
             return False
 
-        # 再度接続状態を確認（音声生成中に切断された可能性）
-        if not voice_client.is_connected():
+        return self._play_tts_audio_data(guild, text, wav_data, volume)
+
+    def _play_tts_audio_data(self, guild: discord.Guild, text: str, wav_data: bytes, volume: float) -> bool:
+        """Play already-generated WAV data directly without synthesizing it again."""
+        voice_client = guild.voice_client
+        if (
+            not voice_client
+            or not voice_client.is_connected()
+            or voice_client.is_playing()
+            or voice_client.is_paused()
+        ):
             return False
 
+        # 再度接続状態を確認（音声生成中に切断された可能性）
+        volume_source = None
         try:
             # BytesIOをメモリ効率的に管理
             audio_buffer = io.BytesIO(wav_data)
@@ -1042,9 +1072,19 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return True
         except discord.errors.ClientException as e:
             logging.getLogger(__name__).warning(f"[TTSCog] 再生エラー: {e}")
+            try:
+                if volume_source:
+                    volume_source.cleanup()
+            except Exception:
+                pass
             return False
         except Exception as e:
             logging.getLogger(__name__).error(f"[TTSCog] TTS再生中の予期しないエラー: {e}")
+            try:
+                if volume_source:
+                    volume_source.cleanup()
+            except Exception:
+                pass
             return False
 
 
