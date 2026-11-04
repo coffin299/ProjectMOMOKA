@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import gc
 import time
-from typing import TYPE_CHECKING, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 from transformers import (
     AutoModelForMaskedLM,
@@ -36,11 +36,45 @@ if TYPE_CHECKING:
 # 各言語ごとのロード済みの BERT モデルを格納する辞書
 __loaded_models: dict[Languages, Union[PreTrainedModel, DebertaV2Model]] = {}
 
+# 日本語 BERT の希望 dtype 名。"fp16" / "fp32"。未設定の CUDA ロードは fp16
+__jp_bert_dtype_name: Optional[str] = None
+
 # 各言語ごとのロード済みの BERT トークナイザーを格納する辞書
 __loaded_tokenizers: dict[
     Languages,
     Union[PreTrainedTokenizer, PreTrainedTokenizerFast, DebertaV2TokenizerFast],
 ] = {}
+
+
+def set_jp_bert_dtype_name(name: Optional[str]) -> str:
+    """日本語 BERT のロード dtype を fp16 か fp32 に固定する。戻り値は採用した名前。"""
+    global __jp_bert_dtype_name
+    # 未指定は fp16。未知の表記は fp32 に倒す
+    normalized = (name or "fp16").strip().lower().replace("torch.", "")
+    # fp16 系
+    if normalized in {"fp16", "float16", "half"}:
+        __jp_bert_dtype_name = "fp16"
+    # fp32 系
+    elif normalized in {"fp32", "float32", "float"}:
+        __jp_bert_dtype_name = "fp32"
+    else:
+        # 不明値は安全側の全精度
+        logger.warning("未知の BERT dtype %s のため fp32 を使います", name)
+        __jp_bert_dtype_name = "fp32"
+    return __jp_bert_dtype_name
+
+
+def jp_load_dtype(device: str) -> torch.dtype:
+    """デバイスと設定から、ロードに渡す torch.dtype を返す。CPU は常に fp32。"""
+    import torch
+
+    # CUDA 以外は fp16 を使わない
+    if not str(device).startswith("cuda"):
+        return torch.float32
+    # 明示の fp32。未設定の CUDA は fp16
+    if __jp_bert_dtype_name == "fp32":
+        return torch.float32
+    return torch.float16
 
 
 def load_model(
@@ -51,6 +85,7 @@ def load_model(
     ] = None,
     cache_dir: Optional[str] = None,
     revision: str = "main",
+    torch_dtype: Optional[torch.dtype] = None,
 ) -> Union[PreTrainedModel, DebertaV2Model]:
     """
     指定された言語の BERT モデルをロードし、ロード済みの BERT モデルを返す。
@@ -74,6 +109,7 @@ def load_model(
             ref: https://huggingface.co/docs/accelerate/usage_guides/big_modeling
         cache_dir (Optional[str]): モデルのキャッシュディレクトリ。指定しない場合はデフォルトのキャッシュディレクトリが利用される (デフォルト: None)
         revision (str): モデルの Hugging Face 上の Git リビジョン。指定しない場合は最新の main ブランチの内容が利用される (デフォルト: None)
+        torch_dtype (Optional[torch.dtype]): 重みの dtype。CUDA では fp16 を渡すと常駐 VRAM が約半分になる (デフォルト: None = fp32)
 
     Returns:
         Union[PreTrainedModel, DebertaV2Model]: ロード済みの BERT モデル
@@ -92,22 +128,27 @@ def load_model(
     # BERT モデルをロードし、辞書に格納して返す
     ## 英語のみ DebertaV2Model でロードする必要がある
     start_time = time.time()
+    # fp16 指定時だけ dtype を渡す。未指定は従来どおり fp32
+    load_kwargs: dict[str, Any] = {
+        "device_map": device_map,
+        "cache_dir": cache_dir,
+        "revision": revision,
+    }
+    # 希望 dtype があれば from_pretrained に渡す
+    if torch_dtype is not None:
+        load_kwargs["torch_dtype"] = torch_dtype
     if language == Languages.EN:
         __loaded_models[language] = cast(
             DebertaV2Model,
             DebertaV2Model.from_pretrained(
                 pretrained_model_name_or_path,
-                device_map=device_map,
-                cache_dir=cache_dir,
-                revision=revision,
+                **load_kwargs,
             ),
         )
     else:
         __loaded_models[language] = AutoModelForMaskedLM.from_pretrained(
             pretrained_model_name_or_path,
-            device_map=device_map,
-            cache_dir=cache_dir,
-            revision=revision,
+            **load_kwargs,
         )
     logger.info(
         f"Loaded the {language.name} BERT model from {pretrained_model_name_or_path} ({time.time() - start_time:.2f}s)"

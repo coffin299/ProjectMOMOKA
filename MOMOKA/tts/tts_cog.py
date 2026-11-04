@@ -75,11 +75,26 @@ class TTSCog(commands.Cog, name="tts_cog"):
             noise_scale=float(self.config.get('noise_scale', 0.667)),
             noise_w=float(self.config.get('noise_w', 0.8)),
             length_scale=float(self.config.get('length_scale', 1.0)),
+            # CUDA の日本語 BERT 精度。未指定は fp16
+            bert_dtype=str(self.config.get('bert_dtype', 'fp16')),
         )
-        # 最後の合成からこの秒数でワーカーを終了し、モデル（BERT 含む）のメモリを OS へ返す。0 なら合成ごとに終了
+        # null / 未設定は常駐。0 は合成ごと終了、正の数はその秒数アイドルで終了
+        raw_idle = self.config.get("model_idle_unload_seconds", None)
+        # YAML の null は Python の None
+        if raw_idle is None:
+            # ワーカーをアイドル終了させない
+            idle_seconds = None
+        else:
+            # 数値へ変換する
+            idle_seconds = float(raw_idle)
+            # 負値も常駐扱い
+            if idle_seconds < 0:
+                # 無効化
+                idle_seconds = None
+        # 最後の合成から idle_seconds でワーカーを終了し、モデルメモリを OS へ返す
         self.tts_worker = TTSWorkerClient(
             tts_cfg,
-            idle_shutdown_seconds=float(self.config.get('model_idle_unload_seconds', 60)),
+            idle_shutdown_seconds=idle_seconds,
         )
         self.api_url = self.config.get('api_server_url')  # optional legacy
         self.api_key = self.config.get('api_key')

@@ -32,6 +32,36 @@ class SynthesizerConfig:
     noise_w: float = 0.8
     length_scale: float = 1.0
     sbvits2_module_path: Optional[str] = None  # optional: e.g. 'style_bert_vits2'
+    # CUDA の日本語 BERT。"fp32" で全精度。CPU では常に fp32
+    bert_dtype: str = "fp16"
+
+
+def _align_bert_dtype(model: object, target: object) -> str:
+    """BERT 重みを希望 dtype に揃える。載った精度の名前を返す。"""
+    # 変換対象が無ければ fp32 として扱う
+    parameters = getattr(model, "parameters", None)
+    weight = next(parameters(), None) if callable(parameters) else None
+    if weight is None or torch is None:
+        return "fp32"
+    # すでに希望精度なら変換しない
+    if weight.dtype != target:
+        try:
+            # fp32 と fp16 のどちら方向にも合わせる
+            model.to(dtype=target)  # type: ignore[attr-defined]
+            # 変換前のコピーをアロケータから返す
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "BERT を %s に変換できなかったため、今の精度のまま使います: %s",
+                target,
+                exc,
+            )
+    # 実際の重み dtype をログ用の名前にする
+    weight = next(model.parameters(), None)  # type: ignore[attr-defined]
+    if weight is not None and weight.dtype == torch.float16:
+        return "fp16"
+    return "fp32"
 
 
 class StyleBertVITS2Synthesizer:
@@ -285,13 +315,20 @@ class StyleBertVITS2Synthesizer:
                 from style_bert_vits2.constants import Languages
                 logger.debug("Pre-loading Japanese BERT model and tokenizer from Hugging Face...")
                 # Use Hugging Face model ID instead of local path
+                # 設定の fp16 / fp32 を覚え、推論側の遅延ロードも同じ精度にする
+                bert_models.set_jp_bert_dtype_name(self.config.bert_dtype)
+                # CPU は常に fp32。CUDA は設定どおり
+                bert_dtype = bert_models.jp_load_dtype(self._device)
                 # Load BERT model first
-                bert_models.load_model(
+                jp_bert = bert_models.load_model(
                     Languages.JP,
                     pretrained_model_name_or_path="ku-nlp/deberta-v2-large-japanese-char-wwm",
                     device_map=self._device if self._device != 'cpu' else None,
                     cache_dir=None,  # Use default Hugging Face cache
+                    torch_dtype=bert_dtype,
                 )
+                # キャッシュ済みの重みが希望と違えば、fp16 と fp32 のどちらへも揃える
+                bert_prec = _align_bert_dtype(jp_bert, bert_dtype)
                 logger.debug("Japanese BERT model loaded successfully")
                 # Load BERT tokenizer
                 bert_models.load_tokenizer(
@@ -299,7 +336,10 @@ class StyleBertVITS2Synthesizer:
                     pretrained_model_name_or_path="ku-nlp/deberta-v2-large-japanese-char-wwm",
                     cache_dir=None,  # Use default Hugging Face cache
                 )
-                logger.info("Japanese BERT model and tokenizer loaded successfully")
+                logger.info(
+                    "Japanese BERT model and tokenizer loaded successfully (%s)",
+                    bert_prec,
+                )
             except Exception as e:
                 logger.warning(f"Failed to pre-load BERT model/tokenizer: {e}. It will be loaded on first inference.")
             
@@ -413,7 +453,7 @@ class StyleBertVITS2Synthesizer:
         # モデル状態をリセット（次回 load_model() で再ロード可能）
         self._model_ready = False
 
-        # load_model() が読み込んだ日本語 BERT（約 1.3GB）はモジュール側に常駐し続けるため一緒に解放する
+        # load_model() が読み込んだ日本語 BERT（fp16 または fp32）はモジュール側に常駐し続けるため一緒に解放する
         import sys
         bert_models = sys.modules.get("style_bert_vits2.nlp.bert_models")
         if bert_models is not None:

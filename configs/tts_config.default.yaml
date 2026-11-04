@@ -10,8 +10,12 @@ tts:
   default_model_dir: null
   # OpenJTalk 辞書ディレクトリ。null ならパッケージ既定
   pyopenjtalk_dict_dir: null
+  # 日本語 BERT の精度。CUDA 既定は fp16。fp32 で全精度（VRAM は約 2 倍）
+  # CPU ではこの値に関係なく fp32。特徴量は音響モデルへ渡す直前に fp32 へ戻す
+  bert_dtype: fp16
   # 合成は別プロセスで行う。最後の読み上げからこの秒数でそのプロセスを終了し、
-  # モデル（日本語 BERT 含む）のメモリを解放する。0 なら毎回終了（毎回起動し直すので遅い）
+  # モデル（日本語 BERT 含む）のメモリを解放する。
+  # null = 常駐（アイドル終了なし） / 0 = 毎回終了（遅い） / 正の数 = その秒数で終了
   model_idle_unload_seconds: 60
   # 出力サンプルレート（Discord 音声は通常 48000）
   sample_rate: 48000

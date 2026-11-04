@@ -335,6 +335,10 @@ llm:
 tts:
   model_root: "models/tts-models"
   model_name: "your-model-name"
+  # CUDA の日本語 BERT。fp16（既定）または fp32。CPU は常に fp32
+  bert_dtype: fp16
+  # null=常駐 / 0=毎回終了 / 正の数=その秒数アイドルでワーカー終了
+  model_idle_unload_seconds: null
 ```
 
 #### 音楽（`music_config.yaml`）

@@ -321,7 +321,7 @@ llm:
 #### Images / TTS / Music
 
 - Images: place models at `models/image-models/<name>/<name>.safetensors`; configure via images/LLM image settings (`local` or `forge`)
-- TTS: `models/tts-models/` + `tts_config.yaml`
+- TTS: `models/tts-models/` + `tts_config.yaml` (`bert_dtype: fp16` on CUDA by default; features cast back to fp32 before the acoustic model)
 - Music: `music_config.yaml` (`default_volume`, `max_queue_size`, `max_guilds`, cookie path, etc.)
 
 ---

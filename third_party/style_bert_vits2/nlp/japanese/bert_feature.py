@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Optional, Union
 
@@ -15,6 +16,9 @@ from style_bert_vits2.utils import get_onnx_device_options
 
 if TYPE_CHECKING:
     import torch
+
+# 日本語 BERT 特徴量のログ
+_logger = logging.getLogger(__name__)
 
 
 def extract_bert_feature(
@@ -40,6 +44,21 @@ def extract_bert_feature(
 
     import torch
 
+    def _hidden_to_fp32(states: tuple) -> torch.Tensor:
+        # 特徴量テンソルを文長×1024 で取り出す
+        feature = torch.cat(states[-3:-2], -1)[0].cpu()
+        # fp16 の出力だけ fp32 に戻す。fp32 重みの出力はそのまま使う
+        if feature.dtype != torch.float32:
+            return feature.float()
+        return feature
+
+    def _feature_is_bad(feature: torch.Tensor) -> bool:
+        # NaN / Inf / 全ゼロは無音合成の原因になる
+        if not torch.isfinite(feature).all():
+            return True
+        # 振幅が無ければ壊れている
+        return bool(feature.abs().max().item() == 0.0)
+
     # 各単語が何文字かを作る `word2ph` を使う必要があるので、読めない文字は必ず無視する
     # でないと `word2ph` の結果とテキストの文字数結果が整合性が取れない
     text = "".join(text_to_sep_kata(text, raise_yomi_error=False)[0])
@@ -48,7 +67,13 @@ def extract_bert_feature(
 
     if device == "cuda" and not torch.cuda.is_available():
         device = "cpu"
-    model = bert_models.load_model(Languages.JP, device_map=device)
+
+    # ホスト設定が fp32 なら CUDA でも fp32。未設定の CUDA は fp16
+    model = bert_models.load_model(
+        Languages.JP,
+        device_map=device,
+        torch_dtype=bert_models.jp_load_dtype(device),
+    )
     bert_models.transfer_model(Languages.JP, device)
 
     style_res_mean = None
@@ -58,13 +83,25 @@ def extract_bert_feature(
         for i in inputs:
             inputs[i] = inputs[i].to(device)  # type: ignore
         res = model(**inputs, output_hidden_states=True)
-        res = torch.cat(res["hidden_states"][-3:-2], -1)[0].cpu()
+        res = _hidden_to_fp32(res["hidden_states"])
+        # fp16 が壊れたら一度だけ fp32 に上げて同じ文を作り直す
+        if _feature_is_bad(res) and device.startswith("cuda"):
+            _logger.warning(
+                "Japanese BERT feature looks broken under current dtype; retrying in fp32"
+            )
+            # 以降の遅延ロードも fp32 にする
+            bert_models.set_jp_bert_dtype_name("fp32")
+            # 重みを全精度へ揃える
+            model.to(dtype=torch.float32)
+            # 同じ入力で再推論する
+            res = model(**inputs, output_hidden_states=True)
+            res = _hidden_to_fp32(res["hidden_states"])
         if assist_text:
             style_inputs = tokenizer(assist_text, return_tensors="pt")
             for i in style_inputs:
                 style_inputs[i] = style_inputs[i].to(device)  # type: ignore
             style_res = model(**style_inputs, output_hidden_states=True)
-            style_res = torch.cat(style_res["hidden_states"][-3:-2], -1)[0].cpu()
+            style_res = _hidden_to_fp32(style_res["hidden_states"])
             style_res_mean = style_res.mean(0)
 
     assert len(word2ph) == len(text) + 2, text

@@ -121,12 +121,20 @@ class TTSWorkerClient:
         self,
         synth_config,
         *,
-        idle_shutdown_seconds: float = 60.0,
+        idle_shutdown_seconds: Optional[float] = 60.0,
         first_request_timeout: float = 180.0,
         request_timeout: float = 60.0,
     ) -> None:
         self._config_json = json.dumps(asdict(synth_config))
-        self.idle_shutdown_seconds = float(idle_shutdown_seconds)
+        # None は常駐（アイドル終了なし）。0 以上は秒数で終了する
+        if idle_shutdown_seconds is None:
+            # 常駐
+            self.idle_shutdown_seconds: Optional[float] = None
+        else:
+            # 負値も常駐扱いに寄せる
+            seconds = float(idle_shutdown_seconds)
+            # 負なら無効化
+            self.idle_shutdown_seconds = None if seconds < 0 else seconds
         # 初回はプロセス起動・torch import・モデル読込を含むため長めに待つ
         self.first_request_timeout = float(first_request_timeout)
         self.request_timeout = float(request_timeout)
@@ -231,15 +239,29 @@ class TTSWorkerClient:
             task.cancel()
 
     def _schedule_idle_shutdown(self) -> None:
+        # プロセスが無ければスケジュール不要
         if not self.is_running:
             return
+        # null 設定は常駐のためタイマーを張らない
+        if self.idle_shutdown_seconds is None:
+            # 既存タイマーだけ消す
+            self._cancel_idle_shutdown()
+            # 終了しない
+            return
+        # 既存タイマーを取り消す
         self._cancel_idle_shutdown()
+        # 指定秒後に終了するタスクを起動する
         self._idle_task = asyncio.create_task(
             self._shutdown_when_idle(), name="tts-worker-idle-shutdown"
         )
 
     async def _shutdown_when_idle(self) -> None:
-        await asyncio.sleep(max(0.0, self.idle_shutdown_seconds))
+        # 常駐設定なら待機すらせず戻る（防御）
+        if self.idle_shutdown_seconds is None:
+            # 何もしない
+            return
+        # アイドル秒数だけ待つ（0 なら即終了＝合成ごと）
+        await asyncio.sleep(max(0.0, float(self.idle_shutdown_seconds)))
         async with self._lock:
             # ロック待ちの間に合成が走った場合は、その合成がこのタスクを cancel している
             logger.info("TTS worker idle; stopping it to release memory")
