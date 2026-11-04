@@ -143,7 +143,7 @@ async def _acquire_thread_lock(lock: threading.Lock) -> None:
 
 
 class AudioMixer(discord.AudioSource):
-    def __init__(self, on_source_removed_callback=None):
+    def __init__(self, on_source_removed_callback=None, *, guild_id: Optional[int] = None):
         # ソース辞書: ソース名→AudioSourceオブジェクト
         self.sources: Dict[str, discord.AudioSource] = {}
         # ボリューム辞書: ソース名→音量(float)
@@ -160,6 +160,9 @@ class AudioMixer(discord.AudioSource):
         self.active = True
         # ソース削除時に呼ばれるコールバック（各ソース削除ごとに発火）
         self.on_source_removed_callback = on_source_removed_callback
+        # 定期的に PCM ピークだけ記録し、音源側と Discord 送信側を切り分ける。
+        self.guild_id = guild_id
+        self._last_pcm_meter_log = time.monotonic()
 
     def is_done(self) -> bool:
         """ミキサーが終了したかどうかを返す"""
@@ -198,6 +201,8 @@ class AudioMixer(discord.AudioSource):
 
         # int32 累積バッファ（加算オーバーフロー回避、最後に一度だけ clip）
         mixed = np.zeros(_FRAME_SAMPLES, dtype=np.int32)
+        source_peaks: Dict[str, int] = {}
+        source_volumes: Dict[str, float] = {}
 
         # 各ソースからフレームを読み取り、NumPy でベクタ加算
         for name, source, volume, source_lock in sources_to_process:
@@ -222,9 +227,12 @@ class AudioMixer(discord.AudioSource):
 
                 # 16bit LE PCM をゼロコピーで int16 ビュー化
                 src = np.frombuffer(frame, dtype=_PCM_DTYPE)
+                src32 = src.astype(np.int32, copy=False)
+                source_peaks[name] = int(np.max(np.abs(src32))) if src32.size else 0
+                source_volumes[name] = volume
                 # volume=1.0 は乗算を省略して int32 加算のみ
                 if volume == 1.0:
-                    mixed += src.astype(np.int32, copy=False)
+                    mixed += src32
                 else:
                     # int(s * volume) 相当（ゼロ方向へ切り捨て）で加算
                     mixed += (src.astype(np.float32) * np.float32(volume)).astype(np.int32)
@@ -282,6 +290,17 @@ class AudioMixer(discord.AudioSource):
 
         # 16bit 範囲へ一括クリップして PCM bytes に戻す
         np.clip(mixed, -32768, 32767, out=mixed)
+        now = time.monotonic()
+        if now - self._last_pcm_meter_log >= 5.0:
+            output_peak = int(np.max(np.abs(mixed))) if mixed.size else 0
+            logger.info(
+                "Guild %s: AudioMixer PCM meter output_peak=%s source_peaks=%s volumes=%s",
+                self.guild_id if self.guild_id is not None else "unknown",
+                output_peak,
+                source_peaks,
+                source_volumes,
+            )
+            self._last_pcm_meter_log = now
         return mixed.astype(_PCM_DTYPE).tobytes()
 
     async def add_source(self, name: str, source: discord.AudioSource, volume: float = 1.0):

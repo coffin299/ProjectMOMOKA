@@ -1604,7 +1604,29 @@ class MusicCog(commands.Cog, name="music_cog"):
                 self.bot.loop,
             )
 
-        return AudioMixer(on_source_removed_callback=on_source_removed)
+        return AudioMixer(on_source_removed_callback=on_source_removed, guild_id=guild_id)
+
+    def _log_voice_output_route(self, voice_client: discord.VoiceClient) -> None:
+        """Log Discord-side flags that can suppress a valid PCM stream."""
+        try:
+            guild = voice_client.guild
+            member = guild.me
+            voice_state = getattr(member, "voice", None) if member else None
+            permissions = voice_client.channel.permissions_for(member) if member else None
+            logger.info(
+                "Guild %s: Voice output route channel_type=%s speak_permission=%s "
+                "server_mute=%s server_deaf=%s self_mute=%s self_deaf=%s stage_suppress=%s",
+                guild.id,
+                type(voice_client.channel).__name__,
+                getattr(permissions, "speak", None),
+                getattr(voice_state, "mute", None),
+                getattr(voice_state, "deaf", None),
+                getattr(voice_state, "self_mute", None),
+                getattr(voice_state, "self_deaf", None),
+                getattr(voice_state, "suppress", None),
+            )
+        except Exception:
+            logger.debug("Unable to inspect voice output route", exc_info=True)
 
     async def add_overlay_audio_source(
         self,
@@ -1676,6 +1698,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                         mixer,
                         after=lambda e, m=mixer: self.mixer_finished_callback(e, guild_id, m),
                     )
+                    self._log_voice_output_route(vc)
                 except Exception:
                     logger.exception("Guild %s: Failed to restart mixer during track transition", guild_id)
                     await mixer.remove_source(name)
@@ -2030,6 +2053,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                                 e, guild_id, m
                             ),
                         )
+                        self._log_voice_output_route(voice_client)
                         logger.info(
                             "Guild %s: Started new AudioPlayer with mixer %s",
                             guild_id,

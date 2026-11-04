@@ -1067,6 +1067,9 @@ class TTSCog(commands.Cog, name="tts_cog"):
                 gc.collect()
             
             voice_client.play(volume_source, after=after_playback)
+            music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
+            if music_cog and hasattr(music_cog, "_log_voice_output_route"):
+                music_cog._log_voice_output_route(voice_client)
             # wav_dataの参照を明示的に削除
             del wav_data
             return True
