@@ -2532,6 +2532,19 @@ class MusicCog(commands.Cog, name="music_cog"):
                 if state.is_paused:
                     # 次の間隔まで待つ
                     continue
+                # state は再生中でも Discord の AudioPlayer が停止していると、
+                # mixer.read() が再開されず UI だけ再生中のまま残る。現在位置から復旧する。
+                if state.mixer is not None and not self._is_mixer_alive(state):
+                    logger.warning(
+                        "Guild %s: Mixer player stopped while track '%s' is marked playing; recovering",
+                        guild_id,
+                        getattr(state.current_track, "title", "Unknown Track"),
+                    )
+                    asyncio.create_task(
+                        self._recover_stalled_mixer(guild_id),
+                        name=f"music_mixer_recovery_{guild_id}",
+                    )
+                    break
                 # Stop 確認中はダイアログを上書きしない
                 if state.confirming_stop:
                     # 次の間隔まで待つ
@@ -2551,6 +2564,46 @@ class MusicCog(commands.Cog, name="music_cog"):
             if state and state.progress_update_task is asyncio.current_task():
                 # 参照を None にして再利用可能にする
                 state.progress_update_task = None
+
+    async def _recover_stalled_mixer(self, guild_id: int) -> None:
+        """停止した Mixer AudioPlayer を現在曲の位置から再生成する。"""
+        state = self.get_existing_guild_state(guild_id)
+        if (
+            state is None
+            or not state.is_playing
+            or state.is_paused
+            or state.is_loading
+            or state.stopping
+            or state.is_seeking
+            or state._playing_next
+            or state.current_track is None
+            or state.voice_client is None
+            or not state.voice_client.is_connected()
+            or self._is_mixer_alive(state)
+        ):
+            return
+
+        # 古い PCM 位置を退避してから、止まったプレイヤーと Mixer を破棄する。
+        position = max(0, state.get_current_position())
+        stale_mixer = state.mixer
+        state.mixer = None
+        if stale_mixer is not None:
+            stale_mixer.on_source_removed_callback = None
+            stale_mixer.stop()
+        if state.voice_client.is_playing() or state.voice_client.is_paused():
+            state.voice_client.stop()
+
+        # is_playing を一度落として、内部再生ガードを通過させる。
+        state.is_playing = False
+        state.reset_playback_tracking()
+        try:
+            await self._play_next_song(
+                guild_id,
+                seek_seconds=position,
+                force_current=True,
+            )
+        except Exception:
+            logger.exception("Guild %s: Failed to recover stalled mixer playback", guild_id)
 
     @commands.Cog.listener()
     async def on_ready(self):
