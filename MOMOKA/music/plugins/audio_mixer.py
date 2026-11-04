@@ -40,6 +40,9 @@ _FFMPEG_FILE_GUARD = [
     "-threads",
     "1",
 ]
+# Bring very quiet web audio and generated speech up to a usable level while
+# limiting peaks. User-provided -af/-filter:a options remain authoritative.
+_DYNAMIC_NORMALIZER = "dynaudnorm=f=150:g=5:p=0.95:m=20"
 
 
 def _spawn_ytdlp(cmd: list[str]) -> subprocess.Popen:
@@ -163,6 +166,13 @@ class AudioMixer(discord.AudioSource):
         # 定期的に PCM ピークだけ記録し、音源側と Discord 送信側を切り分ける。
         self.guild_id = guild_id
         self._last_pcm_meter_log = time.monotonic()
+        self._meter_source_peaks: Dict[str, int] = {}
+        self._meter_source_sumsq: Dict[str, int] = {}
+        self._meter_source_samples: Dict[str, int] = {}
+        self._meter_source_volumes: Dict[str, float] = {}
+        self._meter_output_peak = 0
+        self._meter_output_sumsq = 0
+        self._meter_output_samples = 0
 
     def is_done(self) -> bool:
         """ミキサーが終了したかどうかを返す"""
@@ -201,8 +211,6 @@ class AudioMixer(discord.AudioSource):
 
         # int32 累積バッファ（加算オーバーフロー回避、最後に一度だけ clip）
         mixed = np.zeros(_FRAME_SAMPLES, dtype=np.int32)
-        source_peaks: Dict[str, int] = {}
-        source_volumes: Dict[str, float] = {}
 
         # 各ソースからフレームを読み取り、NumPy でベクタ加算
         for name, source, volume, source_lock in sources_to_process:
@@ -228,8 +236,17 @@ class AudioMixer(discord.AudioSource):
                 # 16bit LE PCM をゼロコピーで int16 ビュー化
                 src = np.frombuffer(frame, dtype=_PCM_DTYPE)
                 src32 = src.astype(np.int32, copy=False)
-                source_peaks[name] = int(np.max(np.abs(src32))) if src32.size else 0
-                source_volumes[name] = volume
+                source_peak = int(np.max(np.abs(src32))) if src32.size else 0
+                self._meter_source_peaks[name] = max(
+                    self._meter_source_peaks.get(name, 0), source_peak
+                )
+                self._meter_source_sumsq[name] = self._meter_source_sumsq.get(name, 0) + int(
+                    np.sum(src32.astype(np.int64) ** 2, dtype=np.int64)
+                )
+                self._meter_source_samples[name] = (
+                    self._meter_source_samples.get(name, 0) + int(src32.size)
+                )
+                self._meter_source_volumes[name] = volume
                 # volume=1.0 は乗算を省略して int32 加算のみ
                 if volume == 1.0:
                     mixed += src32
@@ -290,17 +307,43 @@ class AudioMixer(discord.AudioSource):
 
         # 16bit 範囲へ一括クリップして PCM bytes に戻す
         np.clip(mixed, -32768, 32767, out=mixed)
+        frame_output_peak = int(np.max(np.abs(mixed))) if mixed.size else 0
+        self._meter_output_peak = max(self._meter_output_peak, frame_output_peak)
+        self._meter_output_sumsq += int(
+            np.sum(mixed.astype(np.int64) ** 2, dtype=np.int64)
+        )
+        self._meter_output_samples += int(mixed.size)
         now = time.monotonic()
         if now - self._last_pcm_meter_log >= 5.0:
-            output_peak = int(np.max(np.abs(mixed))) if mixed.size else 0
+            source_rms = {
+                name: round(
+                    (self._meter_source_sumsq[name] / max(1, self._meter_source_samples[name])) ** 0.5,
+                    1,
+                )
+                for name in self._meter_source_sumsq
+            }
+            output_rms = round(
+                (self._meter_output_sumsq / max(1, self._meter_output_samples)) ** 0.5,
+                1,
+            )
             logger.info(
-                "Guild %s: AudioMixer PCM meter output_peak=%s source_peaks=%s volumes=%s",
+                "Guild %s: AudioMixer PCM meter 5s source_peak=%s source_rms=%s "
+                "output_peak=%s output_rms=%s volumes=%s",
                 self.guild_id if self.guild_id is not None else "unknown",
-                output_peak,
-                source_peaks,
-                source_volumes,
+                self._meter_source_peaks,
+                source_rms,
+                self._meter_output_peak,
+                output_rms,
+                self._meter_source_volumes,
             )
             self._last_pcm_meter_log = now
+            self._meter_source_peaks.clear()
+            self._meter_source_sumsq.clear()
+            self._meter_source_samples.clear()
+            self._meter_source_volumes.clear()
+            self._meter_output_peak = 0
+            self._meter_output_sumsq = 0
+            self._meter_output_samples = 0
         return mixed.astype(_PCM_DTYPE).tobytes()
 
     async def add_source(self, name: str, source: discord.AudioSource, volume: float = 1.0):
@@ -553,6 +596,10 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             "-blocksize",
             str(getattr(discord.FFmpegPCMAudio, "BLOCKSIZE", 8192)),
         ]
+        # ユーザーが独自の audio filter を指定していなければ音量を動的に正規化する。
+        options_tokens = shlex.split(options) if isinstance(options, str) and options.strip() else []
+        if "-af" not in options_tokens and "-filter:a" not in options_tokens:
+            out_args.extend(["-af", _DYNAMIC_NORMALIZER])
         # options（例: -vn）があれば分割して追加する
         if isinstance(options, str) and options.strip():
             # オプション文字列を分割する
@@ -1035,6 +1082,11 @@ class TTSAudioSource(discord.FFmpegPCMAudio):
         # BytesIOの場合はpipe=Trueを強制
         if isinstance(source, io.BytesIO):
             kwargs['pipe'] = True
+
+        tts_options = kwargs.get("options", "")
+        tts_option_tokens = shlex.split(tts_options) if isinstance(tts_options, str) and tts_options.strip() else []
+        if "-af" not in tts_option_tokens and "-filter:a" not in tts_option_tokens:
+            kwargs["options"] = f"{tts_options} -af {_DYNAMIC_NORMALIZER}".strip()
 
         # BytesIOの参照を保持してクリーンアップ時にクローズ
         self._source_buffer = source if isinstance(source, io.BytesIO) else None
