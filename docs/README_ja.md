@@ -500,12 +500,14 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 音楽が再生されない
 
-1. ボイスチャンネル接続・FFmpeg・`youtube_cookies.txt` を確認
-2. GUIの「TTS+Musicログ」で `BgUtils PO Token Provider v1.3.1 is ready` を確認
-3. `http://127.0.0.1:4416/ping` がversion `1.3.1`を返すことを確認
-4. Providerビルドが無い場合はNode.js 20+をPATHへ入れ、`startMOMOKA.bat`を再実行
-5. `tv client ... DRM protected` が出る場合は、古い設定/プロセスではなく現行MOMOKAが起動したyt-dlpを使用しているか確認
-6. `Voice WS timeout; reconnecting in …`（WARN）は discord.py の一時切断＋自動再接続。再接続後に再生が戻れば問題なし。ループする場合はネットワークを確認
+1. **DAVE（2026-03-02 以降必須）:** Discord は通常 VC で E2EE（DAVE）を強制する。`discord.py>=2.7` と **`davey`** が無いと接続拒否（close **4017**）や無音になる。起動環境で `python -c "import davey"` が通るか確認し、ダメなら `pip install -U "discord.py[voice]" davey`（または `startMOMOKA.bat` で requirements 再インストール）
+2. ボイスチャンネル接続・FFmpeg・`youtube_cookies.txt` を確認
+3. GUIの「TTS+Musicログ」で `BgUtils PO Token Provider v1.3.1 is ready` を確認
+4. `http://127.0.0.1:4416/ping` がversion `1.3.1`を返すことを確認
+5. Providerビルドが無い場合はNode.js 20+をPATHへ入れ、`startMOMOKA.bat`を再実行
+6. `tv client ... DRM protected` が出る場合は、古い設定/プロセスではなく現行MOMOKAが起動したyt-dlpを使用しているか確認
+7. `Voice WS timeout; reconnecting in …`（WARN）は discord.py の一時切断＋自動再接続。再接続後に再生が戻れば問題なし。ループする場合はネットワークを確認
+8. Bot がサーバーミュート（マイクミュート）されていないか、Speak 権限があるかを確認（deafen＝スピーカーミュートは再生に影響しない）
 
 ### 画像生成ができない
 

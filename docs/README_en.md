@@ -471,12 +471,14 @@ Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.
 
 ### Music won't play
 
-1. Check the VC connection, FFmpeg, and `youtube_cookies.txt`
-2. Confirm `BgUtils PO Token Provider v1.3.1 is ready` in the GUI TTS+Music log
-3. Confirm `http://127.0.0.1:4416/ping` reports version `1.3.1`
-4. If the Provider build is missing, install Node.js 20+ and rerun `startMOMOKA.bat`
-5. If `tv client ... DRM protected` appears, confirm the current MOMOKA-managed yt-dlp process is being used
-6. `Voice WS timeout; reconnecting in …` (WARN) is a transient discord.py voice WS disconnect with auto-reconnect; ignore if playback resumes. If it loops, check the network
+1. **DAVE (required since 2026-03-02):** Discord enforces A/V E2EE (DAVE) on non-stage VCs. Without `discord.py>=2.7` and **`davey`**, voice fails (close **4017**) or stays silent. Check `python -c "import davey"`; if it fails, run `pip install -U "discord.py[voice]" davey` (or reinstall via `startMOMOKA.bat`)
+2. Check the VC connection, FFmpeg, and `youtube_cookies.txt`
+3. Confirm `BgUtils PO Token Provider v1.3.1 is ready` in the GUI TTS+Music log
+4. Confirm `http://127.0.0.1:4416/ping` reports version `1.3.1`
+5. If the Provider build is missing, install Node.js 20+ and rerun `startMOMOKA.bat`
+6. If `tv client ... DRM protected` appears, confirm the current MOMOKA-managed yt-dlp process is being used
+7. `Voice WS timeout; reconnecting in …` (WARN) is a transient discord.py voice WS disconnect with auto-reconnect; ignore if playback resumes. If it loops, check the network
+8. Ensure the bot is not server-muted and has Speak permission (server deafen alone should not block playback)
 
 ### Image generation fails
 
