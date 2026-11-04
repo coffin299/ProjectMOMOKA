@@ -260,6 +260,10 @@ class AudioMixer(discord.AudioSource):
         """
         async with self.lock:
             with self._thread_lock:
+                # stop() 後の Mixer は VoiceClient の AudioPlayer から切り離され、read() が呼ばれない。
+                # ソースだけ追加すると再生表示のまま無音になるため、停止済み参照を拒否する。
+                if not self.active or self._is_done:
+                    raise RuntimeError("Cannot add a source to a stopped AudioMixer")
                 # 同名ソースが存在する場合は先にクリーンアップ
                 if name in self.sources:
                     old_source = self.sources.get(name)

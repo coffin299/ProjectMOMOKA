@@ -1860,7 +1860,12 @@ class MusicCog(commands.Cog, name="music_cog"):
                 await self._on_music_source_removed(guild_id, source)
                 return
 
-            if state.mixer is None:
+            if (
+                state.mixer is None
+                or not getattr(state.mixer, "active", True)
+                or getattr(state.mixer, "_is_done", False)
+            ):
+                # stop 済み Mixer はソースを追加しても read() されないため再利用しない。
                 def on_source_removed(name: str, removed_source=None):
                     """ソースが削除されたときのコールバック"""
                     if name == 'music':
