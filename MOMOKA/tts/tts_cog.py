@@ -55,6 +55,20 @@ class TTSCog(commands.Cog, name="tts_cog"):
     # get_cog 用の正式名
     COG_NAME = "tts_cog"
 
+    @staticmethod
+    def _numeric_setting(config: dict, key: str, default, cast=float):
+        """Read a numeric config value, treating YAML null as the documented default."""
+        value = config.get(key)
+        if value is None:
+            return cast(default)
+        try:
+            return cast(value)
+        except (TypeError, ValueError, OverflowError):
+            logging.getLogger(__name__).warning(
+                "Invalid TTS setting %s=%r; using default %r", key, value, default
+            )
+            return cast(default)
+
     def __init__(self, bot: commands.Bot):
         if TTSCogExceptionHandler is None:
             raise commands.ExtensionFailed(self.qualified_name,
@@ -72,10 +86,10 @@ class TTSCog(commands.Cog, name="tts_cog"):
             model_root=self.config.get('model_root', 'models/tts-models'),
             model_name=self.config.get('default_model_dir'),
             dictionary_dir=self.config.get('pyopenjtalk_dict_dir'),
-            sample_rate=int(self.config.get('sample_rate', 48000)),  # Discord standard: 48kHz
-            noise_scale=float(self.config.get('noise_scale', 0.667)),
-            noise_w=float(self.config.get('noise_w', 0.8)),
-            length_scale=float(self.config.get('length_scale', 1.0)),
+            sample_rate=self._numeric_setting(self.config, 'sample_rate', 48000, int),  # Discord standard: 48kHz
+            noise_scale=self._numeric_setting(self.config, 'noise_scale', 0.667),
+            noise_w=self._numeric_setting(self.config, 'noise_w', 0.8),
+            length_scale=self._numeric_setting(self.config, 'length_scale', 1.0),
             # CUDA の日本語 BERT 精度。未指定は fp16
             bert_dtype=str(self.config.get('bert_dtype', 'fp16')),
         )
@@ -100,11 +114,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self.api_url = self.config.get('api_server_url')  # optional legacy
         self.api_key = self.config.get('api_key')
 
-        self.default_model_id = self.config.get('default_model_id', 0)
+        self.default_model_id = self._numeric_setting(self.config, 'default_model_id', 0, int)
         self.default_style = self.config.get('default_style', 'Neutral')
-        self.default_style_weight = self.config.get('default_style_weight', 5.0)
-        self.default_speed = self.config.get('default_speed', 1.0)
-        self.default_volume = self.config.get('default_volume', 1.0)
+        self.default_style_weight = self._numeric_setting(self.config, 'default_style_weight', 5.0)
+        self.default_speed = self._numeric_setting(self.config, 'default_speed', 1.0)
+        self.default_volume = self._numeric_setting(self.config, 'default_volume', 1.0)
 
         headers = {}
         if self.api_key:

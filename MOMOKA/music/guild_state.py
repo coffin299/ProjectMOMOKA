@@ -35,7 +35,7 @@ class GuildState:
         self.queue: asyncio.Queue[Track] = asyncio.Queue()
         # キュー並び替え・取出・投入の競合を防ぐ（shuffle 差し替え事故防止）
         self.queue_lock = asyncio.Lock()
-        self.volume: float = cog_config.get('music', {}).get('default_volume', 20) / 100.0
+        self.volume: float = cog_config.get('music', {}).get('default_volume', 100) / 100.0
         self.loop_mode: LoopMode = LoopMode.OFF
         self.is_playing: bool = False
         self.is_paused: bool = False
