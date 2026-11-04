@@ -1625,6 +1625,20 @@ class MusicCog(commands.Cog, name="music_cog"):
                 getattr(voice_state, "self_deaf", None),
                 getattr(voice_state, "suppress", None),
             )
+            connection = getattr(voice_client, "_connection", None)
+            dave_session = getattr(connection, "dave_session", None)
+            dave_ready = getattr(dave_session, "ready", None) if dave_session else None
+            logger.info(
+                "Guild %s: Voice transport state=%s mode=%s dave_protocol=%s "
+                "dave_session=%s dave_ready=%s can_encrypt=%s",
+                guild.id,
+                getattr(getattr(connection, "state", None), "name", None),
+                getattr(connection, "mode", None),
+                getattr(connection, "dave_protocol_version", None),
+                dave_session is not None,
+                dave_ready,
+                getattr(connection, "can_encrypt", None),
+            )
         except Exception:
             logger.debug("Unable to inspect voice output route", exc_info=True)
 
