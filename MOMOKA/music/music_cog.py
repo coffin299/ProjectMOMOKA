@@ -1642,6 +1642,15 @@ class MusicCog(commands.Cog, name="music_cog"):
         except Exception:
             logger.debug("Unable to inspect voice output route", exc_info=True)
 
+    def _schedule_voice_transport_check(self, voice_client: discord.VoiceClient, delay: float = 5.0) -> None:
+        """Recheck DAVE after startup, when the initial voice handshake has had time to settle."""
+        async def check_later():
+            await asyncio.sleep(delay)
+            if voice_client.is_connected():
+                self._log_voice_output_route(voice_client)
+
+        asyncio.create_task(check_later())
+
     async def add_overlay_audio_source(
         self,
         guild_id: int,
@@ -1713,6 +1722,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                         after=lambda e, m=mixer: self.mixer_finished_callback(e, guild_id, m),
                     )
                     self._log_voice_output_route(vc)
+                    self._schedule_voice_transport_check(vc)
                 except Exception:
                     logger.exception("Guild %s: Failed to restart mixer during track transition", guild_id)
                     await mixer.remove_source(name)
@@ -2068,6 +2078,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                             ),
                         )
                         self._log_voice_output_route(voice_client)
+                        self._schedule_voice_transport_check(voice_client)
                         logger.info(
                             "Guild %s: Started new AudioPlayer with mixer %s",
                             guild_id,
