@@ -246,19 +246,30 @@ class LLMCog(commands.Cog, name="llm"):
 
     def _is_image_generator_disabled(self) -> bool:
         """image_generator.enabled が false、またはツール未登録なら True。"""
-        # トップレベル独立 config
-        top = self.config.get("image_generator") or {}
-        if isinstance(top, dict) and top.get("enabled") is False:
+        # プラグイン初期化と同じ優先順位で実効設定を選ぶ（独立設定が旧設定に勝つ）。
+        top = self.config.get("image_generator")
+        legacy = (self.llm_config or {}).get("image_generator")
+        effective = top if isinstance(top, dict) and top else legacy
+        disabled = isinstance(effective, dict) and effective.get("enabled") is False
+        plugin_missing = self.image_generator is None
+        plugin_disabled = (
+            not plugin_missing
+            and not getattr(self.image_generator, "_enabled", True)
+        )
+        if disabled or plugin_missing or plugin_disabled:
+            # 設定trueなのに拒否された場合も、初期化・ツール登録の理由をログで判別できる。
+            logger.warning(
+                "[%s] Image generation blocked: config_enabled=%s, role=%s, "
+                "active_tool=%s, plugin_present=%s, plugin_enabled=%s",
+                self.display_name,
+                effective.get("enabled") if isinstance(effective, dict) else None,
+                self.bot_role,
+                "image_generator" in self._active_tools_list(),
+                not plugin_missing,
+                getattr(self.image_generator, "_enabled", None),
+            )
             return True
-        # 旧パス
-        legacy = (self.llm_config or {}).get("image_generator") or {}
-        if isinstance(legacy, dict) and legacy.get("enabled") is False:
-            return True
-        # プラグイン未初期化
-        if self.image_generator is None:
-            return True
-        # プラグイン側フラグ
-        return not getattr(self.image_generator, "_enabled", True)
+        return False
 
     def _looks_like_image_gen_request(self, text: str) -> bool:
         """描画・画像生成依頼っぽいかの簡易判定。"""
