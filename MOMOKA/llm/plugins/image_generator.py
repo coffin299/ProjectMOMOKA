@@ -1614,3 +1614,22 @@ class ImageGenerationSetupView(discord.ui.View):
                 lang=resolve_interaction_lang(interaction),
             )
         )
+
+    @discord.ui.button(
+        label="Cancel / キャンセル",
+        style=discord.ButtonStyle.danger,
+        row=0,
+    )
+    async def cancel_setup(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if not self._is_authorized(interaction):
+            await interaction.response.send_message(
+                "❌ Only the original requester can cancel this setup. / 元の依頼者のみキャンセルできます。",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.send_message(
+            "画像生成の設定をキャンセルしました。 / Image generation setup cancelled.",
+            ephemeral=True,
+        )
+        await self.finalize_interaction(message_suffix="❌ Cancelled / キャンセル")
