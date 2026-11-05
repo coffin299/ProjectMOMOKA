@@ -89,7 +89,7 @@ image_generator:
         label: Shiitake-Mix v2.0
         source: civitai
         version_id: "1570140"
-        filename: ShiitakeMix_v2.safetensors
+        filename: shiitakeMix_v2.safetensors
       - id: illustrious-xl-v2
         label: Illustrious-XL v2.0
         source: huggingface
