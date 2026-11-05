@@ -1033,23 +1033,53 @@ class ImageGenerator:
 
         try:
             if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=False, thinking=True)
+                # 生成完了まで Discord の「考え中…」を出し続けない。
+                # 進捗は _run_generation_task が別メッセージで更新する。
+                await interaction.response.send_message(
+                    "🎨 画像生成を受け付けました。進捗をこのチャンネルに表示します。\n"
+                    "🎨 Image generation accepted. Progress will appear in this channel.",
+                    ephemeral=False,
+                )
         except discord.HTTPException as exc:  # noqa: BLE001
-            logger.warning("Failed to defer modal interaction: %s", exc)
+            logger.warning("Failed to acknowledge image generation modal: %s", exc)
 
-        result = await self._enqueue_task(
-            payload,
-            channel_id=interaction.channel_id,
-            user_id=interaction.user.id,
-            user_name=requester_name,
-        )
+        try:
+            result = await self._enqueue_task(
+                payload,
+                channel_id=interaction.channel_id,
+                user_id=interaction.user.id,
+                user_name=requester_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Image generation modal submission failed")
+            result = f"❌ Image generation failed: {exc} / 画像生成に失敗しました。"
 
-        # 即時生成成功時は None になり得るため、文言があるときだけ followup する
+        # 生成成功時は画像を別途送信する。キュー入りや失敗時だけ追記する。
         if result:
             try:
                 await interaction.followup.send(result, ephemeral=False)
             except discord.HTTPException as exc:  # noqa: BLE001
                 logger.error("Failed to send modal follow-up message: %s", exc)
+
+    async def _show_queue_message(
+        self,
+        channel_id: int,
+        position: int,
+        prompt: str,
+    ) -> Optional[discord.Message]:
+        """待機キューの受付メッセージをチャンネルへ送る。"""
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            logger.error("Channel %s not found when showing image generation queue", channel_id)
+            return None
+        embed = discord.Embed(
+            title="⏳ Generation Queued / 生成待ち",
+            description=f"**Prompt:** {prompt[:200]}{'...' if len(prompt) > 200 else ''}",
+            color=discord.Color.orange(),
+        )
+        embed.add_field(name="Position / 順番", value=f"#{position}", inline=True)
+        embed.add_field(name="Status / 状態", value="Waiting / 待機中", inline=True)
+        return await channel.send(embed=embed)
 
     async def _update_queue_message(self, message: discord.Message, status: str, position: int, prompt: str) -> None:
         try:
@@ -1494,14 +1524,18 @@ class ImageGenerationModal(discord.ui.Modal):
     async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
         logger.error("Error in ImageGenerationModal: %s", error, exc_info=True)
         msg_lang = resolve_interaction_lang(interaction)
-        await interaction.response.send_message(
-            pick_str(
-                msg_lang,
-                ja="❌ モーダル処理中に予期しないエラーが発生しました。",
-                en="❌ An unexpected error occurred while processing the modal.",
-            ),
-            ephemeral=True,
+        message = pick_str(
+            msg_lang,
+            ja="❌ モーダル処理中に予期しないエラーが発生しました。",
+            en="❌ An unexpected error occurred while processing the modal.",
         )
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(message, ephemeral=True)
+            else:
+                await interaction.response.send_message(message, ephemeral=True)
+        except discord.HTTPException:
+            logger.exception("Failed to report image generation modal error")
 
 
 class ImageGenerationSetupView(discord.ui.View):
