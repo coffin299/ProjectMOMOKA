@@ -2883,6 +2883,13 @@ class LLMCog(commands.Cog, name="llm"):
                 )
                 return None, "", None
         finally:
+            # image_generator ツールが準備したカードは、LLM の最終本文を
+            # Discord に反映し終えた後（正常終了・エラー終了とも）に表示する。
+            if self.image_generator and not self._shutting_down:
+                try:
+                    await self.image_generator.flush_pending_setup(channel.id, user.id)
+                except Exception:
+                    logger.exception("Failed to flush deferred image generation setup")
             # 正常終了・中断・例外いずれでも追跡を解除する
             self._unregister_active_response(sent_message)
             # GUI 用ギルドカウントも必ず減算する

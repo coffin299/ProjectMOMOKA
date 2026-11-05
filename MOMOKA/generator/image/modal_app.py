@@ -1,6 +1,6 @@
 # Modal 上で動かす画像生成アプリ。
 # Bot プロセスからは import しない。デプロイは `modal deploy MOMOKA/generator/image/modal_app.py`。
-# 重みの取得は CPU 関数。GPU は T4 で、生成メソッドが戻ると scaledown_window=2 で落ちる。
+# 重みの取得は CPU 関数。GPU は T4 (16 GiB)。生成メソッドが戻ると短時間でスケールダウンする。
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ SHIITAKE_VERSION_ID = "1570140"
 SHIITAKE_FILENAME = "ShiitakeMix_v2.safetensors"
 # マウント先。CPU 関数と GPU クラスで同じ Volume を見る。
 VOLUME_PATH = "/models"
-# T4 で失敗させない上限。Bot 側モーダルでも同じ値で拒否する。
+# T4 で許可する最大辺長。Bot 側モーダルでも同じ値で拒否する。
 MAX_SIDE = 2048
 MAX_STEPS = 32
 # Illustrious の CLIP skip。
@@ -252,16 +252,18 @@ class IllustriousGenerator:
             _weights_file(safe),
             torch_dtype=torch.float16,
         )
-        # VAE を分割してピークを下げる。
-        pipe.enable_vae_slicing()
-        # Attention を分割してピークVRAMを抑える。
-        pipe.enable_attention_slicing()
-        # 1024px以下は全重みをGPUへ載せる。
+        # diffusers のバージョンやパイプラインによって未実装の最適化 API があるため、
+        # 存在するものだけ適用する。VAE slicing は単画像生成では必須ではない。
+        enable_vae_slicing = getattr(pipe, "enable_vae_slicing", None)
+        if callable(enable_vae_slicing):
+            enable_vae_slicing()
+        enable_attention_slicing = getattr(pipe, "enable_attention_slicing", None)
+        if callable(enable_attention_slicing):
+            enable_attention_slicing()
+        # 16 GiB の T4 にモデル全体を載せて GPU のみで推論する。
         if use_cpu_offload:
-            # 1024px超ではT4のVRAMを節約する。転送が増えるため生成は遅くなる。
+            # 将来、明示的に CPU offload を選ぶ場合のフォールバック経路。
             pipe.enable_model_cpu_offload()
-            # 高解像度VAE decodeのピークVRAMを抑える。
-            pipe.enable_vae_tiling()
         else:
             pipe.to("cuda")
         # CLIP skip 2。
@@ -295,9 +297,14 @@ class IllustriousGenerator:
         # 8 の倍数でないサイズはここで切る。
         if width % 8 or height % 8 or width < 256 or height < 256:
             raise ValueError("size must be a multiple of 8 and at least 256")
-        # T4では1024pxを超える生成だけCPU offloadへ切り替える。
-        use_cpu_offload = width > 1024 or height > 1024
+        # 16 GiB の T4 ではモデル全体を GPU に載せて推論する。
+        use_cpu_offload = False
         self._ensure_loaded(weights_filename, use_cpu_offload=use_cpu_offload)
+        # 高解像度ではVAE decodeだけタイル化し、GPU上のピーク使用量を抑える。
+        if width > 1024 or height > 1024:
+            enable_vae_tiling = getattr(self.pipe, "enable_vae_tiling", None)
+            if callable(enable_vae_tiling):
+                enable_vae_tiling()
         # 推論スレッドから進捗を受け取る。
         events: queue.Queue = queue.Queue()
 

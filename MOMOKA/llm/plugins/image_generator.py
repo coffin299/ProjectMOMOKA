@@ -51,6 +51,8 @@ class ImageGenerator:
 
     def __init__(self, bot):
         self.bot = bot
+        # LLM の最終応答を Discord に反映してから出す画像生成 UI を保持する。
+        self._pending_setup_views: Dict[tuple[int, int], List[tuple[discord.Embed, "ImageGenerationSetupView"]]] = {}
         # SettingsDB（チャンネル別モデル用）
         self.settings_db = resolve_settings_db(bot)
         # 独立 config（image_generator_config）を優先し、旧 llm.image_generator もフォールバック
@@ -607,13 +609,31 @@ class ImageGenerator:
         )
         embed.set_footer(text="Modal auto-closes after 5 minutes of inactivity / 5分間操作が無いとモーダルは閉じます")
 
-        message = await channel.send(embed=embed, view=view)
-        view.message = message
+        # ツール実行中にカードを送ると、LLM が続きを生成している間に
+        # セットアップ UI が割り込むため、応答完了後の flush まで送信を保留する。
+        self._pending_setup_views.setdefault((channel_id, user_id), []).append((embed, view))
 
         return (
-            "📝 Prompted the user to configure image generation parameters via modal. "
-            "User interaction is required to proceed."
+            "📝 Image generation setup is ready. Finish your user-facing response first; "
+            "the setup card will appear immediately after your response."
         )
+
+    async def flush_pending_setup(self, channel_id: int, user_id: int) -> None:
+        """LLM の最終応答が表示された後に、保留中のセットアップ UI を送信する。"""
+        pending = self._pending_setup_views.pop((channel_id, user_id), [])
+        if not pending:
+            return
+
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            logger.error("Channel %s not found when sending deferred image setup", channel_id)
+            return
+
+        for embed, view in pending:
+            try:
+                view.message = await channel.send(embed=embed, view=view)
+            except discord.HTTPException:
+                logger.exception("Failed to send deferred image generation setup in channel %s", channel_id)
 
     async def _enqueue_task(self, arguments: Dict[str, Any], channel_id: int, user_id: int,
                              user_name: str) -> str:
