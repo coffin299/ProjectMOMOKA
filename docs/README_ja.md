@@ -477,10 +477,12 @@ Starter は月 30 ドルの計算クレジット（T4 は約 0.59 ドル/時）�
 pip install modal
 modal token set --token-id <token_id> --token-secret <token_secret>
 modal deploy MOMOKA/generator/image/modal_app.py
+$env:CIVITAI_TOKEN = "<Civitai の API キー>"
 modal run MOMOKA/generator/image/modal_app.py
+Remove-Item Env:CIVITAI_TOKEN
 ```
 
-トークンの常用は `configs/image_generator_config.yaml` の `modal.token_id` / `modal.token_secret`（このファイルは gitignore 済み）。`modal run` はCPUで未配置の重みだけをVolumeに置く。既存のIllustriousは再取得せず、Shiitake-Mix v2.0（Civitai version 1570140）を追加する。GPUはそのファイルを読むだけ。
+Modal認証は `configs/image_generator_config.yaml` の `modal.token_id` / `modal.token_secret`（このファイルは gitignore 済み）。Civitaiのアカウント設定でAPIキーを作り、上記のように `CIVITAI_TOKEN` を一時設定してから `modal run` する。`modal run` はCPUで未配置の重みだけをVolumeに置く。既存のIllustriousは再取得せず、Shiitake-Mix v2.0（Civitai version 1570140）を追加する。GPUはそのファイルを読むだけ。
 
 `provider: local` のときは `models/image-models/<name>/<name>.safetensors` を置く。
 

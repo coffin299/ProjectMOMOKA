@@ -445,10 +445,12 @@ One-time setup in the existing environment (do not create a venv):
 pip install modal
 modal token set --token-id <token_id> --token-secret <token_secret>
 modal deploy MOMOKA/generator/image/modal_app.py
+$env:CIVITAI_TOKEN = "<Civitai API key>"
 modal run MOMOKA/generator/image/modal_app.py
+Remove-Item Env:CIVITAI_TOKEN
 ```
 
-Day-to-day tokens live in `configs/image_generator_config.yaml` (`modal.token_id` / `modal.token_secret`; the file is gitignored). `modal run` places only missing checkpoints on the Volume using CPU. The existing Illustrious file is reused and Shiitake-Mix v2.0 (Civitai version 1570140) is added. The GPU reads those files.
+Modal credentials live in `configs/image_generator_config.yaml` (`modal.token_id` / `modal.token_secret`; the file is gitignored). Create a Civitai API key in account settings and temporarily set `CIVITAI_TOKEN` as above before `modal run`. The command places only missing checkpoints on the Volume using CPU. The existing Illustrious file is reused and Shiitake-Mix v2.0 (Civitai version 1570140) is added. The GPU reads those files.
 
 For `provider: local`, place weights at `models/image-models/<name>/<name>.safetensors`.
 

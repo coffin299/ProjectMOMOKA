@@ -11,6 +11,7 @@ import urllib.error
 import urllib.request
 from io import BytesIO
 from typing import Any, Iterator
+from urllib.parse import urlencode
 
 import modal
 
@@ -108,7 +109,14 @@ def download_weights(
         url = f"https://civitai.com/api/download/models/{str(version_id).strip()}"
         headers = {"User-Agent": "momoka-image/1.0"}
         if civitai_token.strip():
-            headers["Authorization"] = f"Bearer {civitai_token.strip()}"
+            # Civitai redirects downloads to object storage; urllib strips Authorization
+            # on cross-host redirects. Its download endpoint supports token= for this flow.
+            url = f"{url}?{urlencode({'token': civitai_token.strip()})}"
+        else:
+            raise RuntimeError(
+                "Civitai requires an API token for model downloads. Set CIVITAI_TOKEN "
+                "in the shell before running modal run MOMOKA/generator/image/modal_app.py."
+            )
         target = _weights_file(safe)
         partial = target + ".partial"
         try:
@@ -122,6 +130,11 @@ def download_weights(
                         break
                     handle.write(chunk)
         except urllib.error.HTTPError as exc:
+            if exc.code == 401:
+                raise RuntimeError(
+                    "Civitai rejected the API token (HTTP 401). Check CIVITAI_TOKEN "
+                    "and rerun modal run MOMOKA/generator/image/modal_app.py."
+                ) from exc
             raise RuntimeError(f"civitai download failed: HTTP {exc.code}") from exc
         if os.path.getsize(partial) < MIN_WEIGHTS_BYTES:
             os.remove(partial)

@@ -374,16 +374,20 @@ def unsupported_message(lang: str, reason: str = "") -> str:
     return base
 
 
-def image_gen_disabled_message(lang: str) -> str:
-    """画像生成無効時の案内。"""
+def image_gen_disabled_message(lang: str, *, bot_role: str = "primary") -> str:
+    """画像生成を扱わないBotから依頼されたときの案内。"""
+    if bot_role == "companion":
+        if lang.startswith("ja"):
+            return "画像生成はARONAでは利用できません。PLANAに画像生成を依頼してください。"
+        return "Image generation is not available on ARONA. Please ask PLANA to generate the image."
     if lang.startswith("ja"):
         return (
-            "画像生成機能は現在無効です（設定でオフになっています）。"
+            "画像生成機能は現在利用できません（設定または初期化を確認してください）。"
             "代わりに画像検索などのスラッシュコマンドをご利用ください。"
             "PLANA の `/help` または `/invite` からコマンド一覧を確認できます。"
         )
     return (
-        "Image generation is currently disabled in config. "
+        "Image generation is currently unavailable. Check its configuration or initialization. "
         "Please use related slash commands (e.g. image search) instead. "
         "Check PLANA `/help` or `/invite` for available commands."
     )

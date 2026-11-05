@@ -2336,7 +2336,7 @@ class LLMCog(commands.Cog, name="llm"):
             # conversation: 画像生成オフ＋描画依頼なら案内
             if route.mode == "conversation" and self._looks_like_image_gen_request(user_text_for_router):
                 if self._is_image_generator_disabled():
-                    notice = image_gen_disabled_message(route.lang)
+                    notice = image_gen_disabled_message(route.lang, bot_role=self.bot_role)
                     await self._replace_waiting_with_content(
                         sent_message,
                         message.channel,
@@ -4225,7 +4225,7 @@ class LLMCog(commands.Cog, name="llm"):
                     return
                 if route.mode == "conversation" and self._looks_like_image_gen_request(message):
                     if self._is_image_generator_disabled():
-                        notice = image_gen_disabled_message(route.lang)
+                        notice = image_gen_disabled_message(route.lang, bot_role=self.bot_role)
                         await self._replace_waiting_with_content(
                             temp_message, interaction.channel, notice, view=self._create_support_view()
                         )
