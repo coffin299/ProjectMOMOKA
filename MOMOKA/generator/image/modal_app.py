@@ -25,7 +25,7 @@ SHIITAKE_FILENAME = "ShiitakeMix_v2.safetensors"
 # マウント先。CPU 関数と GPU クラスで同じ Volume を見る。
 VOLUME_PATH = "/models"
 # T4 で失敗させない上限。Bot 側モーダルでも同じ値で拒否する。
-MAX_SIDE = 1024
+MAX_SIDE = 2048
 MAX_STEPS = 32
 # Illustrious の CLIP skip。
 CLIP_SKIP = 2
@@ -212,7 +212,7 @@ def _apply_sampler(pipe: Any, sampler_name: str) -> None:
     memory=20480,
     volumes={VOLUME_PATH: weights_volume},
     scaledown_window=2,
-    timeout=600,
+    timeout=1200,
     min_containers=0,
     max_containers=1,
 )
@@ -224,10 +224,15 @@ class IllustriousGenerator:
     def setup(self) -> None:
         self.pipe = None
         self.loaded_filename = ""
+        self.loaded_with_cpu_offload = False
 
-    def _ensure_loaded(self, filename: str) -> None:
+    def _ensure_loaded(self, filename: str, *, use_cpu_offload: bool) -> None:
         safe = _safe_filename(filename)
-        if self.pipe is not None and self.loaded_filename == safe:
+        if (
+            self.pipe is not None
+            and self.loaded_filename == safe
+            and self.loaded_with_cpu_offload == use_cpu_offload
+        ):
             return
         if not _weights_ready(safe):
             raise RuntimeError(
@@ -238,7 +243,7 @@ class IllustriousGenerator:
         import torch
         from diffusers import StableDiffusionXLPipeline
 
-        # fp16 で T4 16GB に載せる。
+        # 前モデルの参照を破棄してGPUメモリを空ける。
         if self.pipe is not None:
             del self.pipe
             self.pipe = None
@@ -249,10 +254,16 @@ class IllustriousGenerator:
         )
         # VAE を分割してピークを下げる。
         pipe.enable_vae_slicing()
-        # Attention を分割する。CPU オフロードは GPU 秒が増えるので使わない。
+        # Attention を分割してピークVRAMを抑える。
         pipe.enable_attention_slicing()
-        # 重みを GPU へ載せる。
-        pipe.to("cuda")
+        # 1024px以下は全重みをGPUへ載せる。
+        if use_cpu_offload:
+            # 1024px超ではT4のVRAMを節約する。転送が増えるため生成は遅くなる。
+            pipe.enable_model_cpu_offload()
+            # 高解像度VAE decodeのピークVRAMを抑える。
+            pipe.enable_vae_tiling()
+        else:
+            pipe.to("cuda")
         # CLIP skip 2。
         _apply_clip_skip(pipe, CLIP_SKIP)
         # 既定サンプラー。
@@ -260,6 +271,7 @@ class IllustriousGenerator:
         # 以後の呼び出しで使う。
         self.pipe = pipe
         self.loaded_filename = safe
+        self.loaded_with_cpu_offload = use_cpu_offload
 
     @modal.method()
     def generate(
@@ -283,7 +295,9 @@ class IllustriousGenerator:
         # 8 の倍数でないサイズはここで切る。
         if width % 8 or height % 8 or width < 256 or height < 256:
             raise ValueError("size must be a multiple of 8 and at least 256")
-        self._ensure_loaded(weights_filename)
+        # T4では1024pxを超える生成だけCPU offloadへ切り替える。
+        use_cpu_offload = width > 1024 or height > 1024
+        self._ensure_loaded(weights_filename, use_cpu_offload=use_cpu_offload)
         # 推論スレッドから進捗を受け取る。
         events: queue.Queue = queue.Queue()
 

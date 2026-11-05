@@ -435,7 +435,7 @@ Up to 10,000 queued tracks, loop modes, volume 0–200%, auto-leave when the que
 
 ### Image generation (PLANA)
 
-The LLM tool call only opens a Discord settings modal. Generation starts after the user submits it. Progress (GPU boot, steps) reuses the existing progress message. Modal limits are 1024x1024 and 32 steps. Defaults are Euler a / 24 steps / CFG 5.5.
+The LLM tool call only opens a Discord settings modal. Generation starts after the user submits it. Progress (GPU boot, steps) reuses the existing progress message. Modal limits are 2048x2048 and 32 steps. Requests above 1024px use CPU offload and VAE tiling on T4, so generation takes longer. Defaults are Euler a / 24 steps / CFG 5.5.
 
 The Starter plan includes $30 of compute per month (T4 is about $0.59/hour). Set the Modal workspace budget to $30 so overage is not charged to the card. Do not pin a region (that multiplies the rate).
 

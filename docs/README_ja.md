@@ -467,7 +467,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 画像生成（PLANA）
 
-LLM の tool call は Discord の設定モーダルを出すだけで、送信が確定するまで生成しない。確定後の進捗（GPU 起動中、ステップ）は従来の進捗メッセージに載る。Modal 時の上限は 1024x1024、32 steps。既定は Euler a / 24 steps / CFG 5.5。
+LLM の tool call は Discord の設定モーダルを出すだけで、送信が確定するまで生成しない。確定後の進捗（GPU 起動中、ステップ）は従来の進捗メッセージに載る。Modal 時の上限は 2048x2048、32 steps。1024pxを超える場合はT4でCPU offloadとVAE tilingを使うため、生成時間が長くなる。既定は Euler a / 24 steps / CFG 5.5。
 
 Starter は月 30 ドルの計算クレジット（T4 は約 0.59 ドル/時）。超過分はカード課金になるので、Modal の Workspace budget を 30 ドルにしておく。リージョン固定はしない（割増になる）。
 

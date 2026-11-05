@@ -50,7 +50,7 @@ image_generator:
   # 同一ユーザーの同時リクエスト上限（実行中含む）
   max_user_queued: 2
   # 1 生成ジョブのタイムアウト秒
-  job_timeout_sec: 300.0
+  job_timeout_sec: 1200.0
   # 既定の画像生成モデル ID（Modal モデル一覧の id と一致させる）
   model: shiitake-mix-v2
   # ローカル／共通の既定生成パラメータ
@@ -101,10 +101,10 @@ image_generator:
     cpu: 2.0
     memory_mib: 20480
     # Bot が 1 枚を待つ秒数
-    timeout: 600
-    # T4 で拒否する解像度
-    max_width: 1024
-    max_height: 1024
+    timeout: 1200
+    # T4でCPU offloadを使って許可する最大解像度
+    max_width: 2048
+    max_height: 2048
     # T4 で拒否するステップ
     max_steps: 32
     # Discord モーダルの初期値
