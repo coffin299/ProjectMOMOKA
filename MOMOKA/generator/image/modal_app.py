@@ -7,6 +7,8 @@ from __future__ import annotations
 import os
 import queue
 import threading
+import urllib.error
+import urllib.request
 from io import BytesIO
 from typing import Any, Iterator
 
@@ -16,6 +18,9 @@ import modal
 REPO_ID = "OnomaAIResearch/Illustrious-XL-v2.0"
 # Volume 上のファイル名。Bot 側 YAML の weights_filename と揃える。
 WEIGHTS_FILENAME = "Illustrious-XL-v2.0.safetensors"
+# Civitai Shiitake-Mix v2.0（Illustrious 系チェックポイント）。
+SHIITAKE_VERSION_ID = "1570140"
+SHIITAKE_FILENAME = "ShiitakeMix_v2.safetensors"
 # マウント先。CPU 関数と GPU クラスで同じ Volume を見る。
 VOLUME_PATH = "/models"
 # T4 で失敗させない上限。Bot 側モーダルでも同じ値で拒否する。
@@ -55,14 +60,21 @@ gpu_image = (
 )
 
 
-def _weights_file() -> str:
+def _safe_filename(filename: str) -> str:
+    name = os.path.basename((filename or "").replace("\\", "/")).strip()
+    if not name.endswith(".safetensors") or name.startswith("."):
+        raise RuntimeError(f"invalid checkpoint filename: {filename}")
+    return name
+
+
+def _weights_file(filename: str = WEIGHTS_FILENAME) -> str:
     # Volume 内のチェックポイント絶対パス。
-    return os.path.join(VOLUME_PATH, WEIGHTS_FILENAME)
+    return os.path.join(VOLUME_PATH, _safe_filename(filename))
 
 
-def _weights_ready() -> bool:
+def _weights_ready(filename: str = WEIGHTS_FILENAME) -> bool:
     # サイズが足りるファイルだけ完成扱いにする。
-    path = _weights_file()
+    path = _weights_file(filename)
     # 未作成なら未完了。
     if not os.path.isfile(path):
         return False
@@ -77,33 +89,63 @@ def _weights_ready() -> bool:
     memory=2048,
     timeout=1800,
 )
-def download_weights(repo_id: str, filename: str, hf_token: str = "") -> str:
+def download_weights(
+    filename: str,
+    source: str = "huggingface",
+    repo_id: str = "",
+    version_id: str = "",
+    hf_token: str = "",
+    civitai_token: str = "",
+) -> str:
     """GPU を付けずにチェックポイントを Volume へ置く。"""
     # 既にあれば GPU 時間を使わず戻る。
-    if _weights_ready():
+    safe = _safe_filename(filename)
+    if _weights_ready(safe):
         return "ready"
-    # 空文字トークンは未指定として扱う。
-    token = hf_token.strip() or None
-    # 公開リポジトリから単一ファイルを落とす。
-    from huggingface_hub import hf_hub_download
+    if (source or "huggingface").strip().lower() == "civitai":
+        if not str(version_id).strip():
+            raise RuntimeError("civitai version_id is empty")
+        url = f"https://civitai.com/api/download/models/{str(version_id).strip()}"
+        headers = {"User-Agent": "momoka-image/1.0"}
+        if civitai_token.strip():
+            headers["Authorization"] = f"Bearer {civitai_token.strip()}"
+        target = _weights_file(safe)
+        partial = target + ".partial"
+        try:
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=600) as response, open(partial, "wb") as handle:
+                if "text/html" in response.headers.get("Content-Type", "").lower():
+                    raise RuntimeError("civitai download returned html instead of a checkpoint")
+                while True:
+                    chunk = response.read(8 * 1024 * 1024)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"civitai download failed: HTTP {exc.code}") from exc
+        if os.path.getsize(partial) < MIN_WEIGHTS_BYTES:
+            os.remove(partial)
+            raise RuntimeError("civitai download was too small; check Civitai access/token")
+        os.replace(partial, target)
+    else:
+        # 空文字トークンは未指定として扱う。
+        token = hf_token.strip() or None
+        from huggingface_hub import hf_hub_download
 
-    # Volume 直下へ保存する。
-    saved = hf_hub_download(
-        repo_id=repo_id or REPO_ID,
-        filename=filename or WEIGHTS_FILENAME,
-        local_dir=VOLUME_PATH,
-        token=token,
-    )
-    # 期待ファイル名と違う場所に落ちたら揃える。
-    target = _weights_file()
-    # 同一パスなら移動しない。
-    if os.path.abspath(saved) != os.path.abspath(target):
-        os.replace(saved, target)
+        saved = hf_hub_download(
+            repo_id=repo_id or REPO_ID,
+            filename=safe,
+            local_dir=VOLUME_PATH,
+            token=token,
+        )
+        target = _weights_file(safe)
+        if os.path.abspath(saved) != os.path.abspath(target):
+            os.replace(saved, target)
     # 次の GPU コンテナから見えるように確定する。
     weights_volume.commit()
     # 呼び出し元が成否を見る。
-    if not _weights_ready():
-        raise RuntimeError("checkpoint download finished but the file is still missing")
+    if not _weights_ready(safe):
+        raise RuntimeError(f"checkpoint download finished but the file is still missing: {safe}")
     return "downloaded"
 
 
@@ -166,11 +208,17 @@ class IllustriousGenerator:
     """T4 で Illustrious-XL を1枚だけ生成し、すぐスケールダウンする。"""
 
     @modal.enter()
-    def load(self) -> None:
-        # 重みが無い起動は推論に入らず落とす。
-        if not _weights_ready():
+    def setup(self) -> None:
+        self.pipe = None
+        self.loaded_filename = ""
+
+    def _ensure_loaded(self, filename: str) -> None:
+        safe = _safe_filename(filename)
+        if self.pipe is not None and self.loaded_filename == safe:
+            return
+        if not _weights_ready(safe):
             raise RuntimeError(
-                "checkpoint missing on volume; run modal run "
+                f"checkpoint missing on volume: {safe}; run modal run "
                 "MOMOKA/generator/image/modal_app.py"
             )
         # GPU イメージの中だけで diffusers を読む。
@@ -178,8 +226,12 @@ class IllustriousGenerator:
         from diffusers import StableDiffusionXLPipeline
 
         # fp16 で T4 16GB に載せる。
+        if self.pipe is not None:
+            del self.pipe
+            self.pipe = None
+            torch.cuda.empty_cache()
         pipe = StableDiffusionXLPipeline.from_single_file(
-            _weights_file(),
+            _weights_file(safe),
             torch_dtype=torch.float16,
         )
         # VAE を分割してピークを下げる。
@@ -194,6 +246,7 @@ class IllustriousGenerator:
         _apply_sampler(pipe, "Euler a")
         # 以後の呼び出しで使う。
         self.pipe = pipe
+        self.loaded_filename = safe
 
     @modal.method()
     def generate(
@@ -206,6 +259,7 @@ class IllustriousGenerator:
         cfg_scale: float,
         seed: int,
         sampler_name: str,
+        weights_filename: str = WEIGHTS_FILENAME,
     ) -> Iterator[dict[str, Any]]:
         """ステップを yield し、最後に PNG バイトを yield する。"""
         # 上限を超えたリクエストは推論しない。
@@ -216,6 +270,7 @@ class IllustriousGenerator:
         # 8 の倍数でないサイズはここで切る。
         if width % 8 or height % 8 or width < 256 or height < 256:
             raise ValueError("size must be a multiple of 8 and at least 256")
+        self._ensure_loaded(weights_filename)
         # 推論スレッドから進捗を受け取る。
         events: queue.Queue = queue.Queue()
 
@@ -291,6 +346,10 @@ class IllustriousGenerator:
 @app.local_entrypoint()
 def main() -> None:
     # CLI トークンで CPU ダウンロードだけ行う。
-    status = download_weights.remote(REPO_ID, WEIGHTS_FILENAME, "")
-    # 結果を表示する。
-    print(status)
+    civitai_token = os.environ.get("CIVITAI_TOKEN", "")
+    jobs = (
+        (WEIGHTS_FILENAME, "huggingface", REPO_ID, "", "", ""),
+        (SHIITAKE_FILENAME, "civitai", "", SHIITAKE_VERSION_ID, "", civitai_token),
+    )
+    for args in jobs:
+        print(args[0], download_weights.remote(*args))

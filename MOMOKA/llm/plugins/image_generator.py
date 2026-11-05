@@ -169,6 +169,8 @@ class ImageGenerator:
 
     def _init_local_models(self) -> None:
         """ホスト上の diffusers モデルを列挙する。"""
+        # Modal のモデル表はローカルでは使わない。
+        self.modal_models = {}
         # ディレクトリ走査。
         self.model_registry = ImageModelRegistry.from_default_root()
         # ローカルパイプライン。Modal のときは作らない。
@@ -204,31 +206,51 @@ class ImageGenerator:
         self._enabled = True
 
     def _init_modal_models(self) -> None:
-        """ローカルの重みを要求せず、設定上のモデル ID だけで有効化する。"""
-        # ホスト側のレジストリは使わない。
+        """設定された Modal チェックポイントをモデル選択肢にする。"""
+        self.modal_models = {}
         self.model_registry = None
-        # 表示名になるリポジトリ ID。
-        repo_id = str(
-            self.modal_config.get("repo_id")
-            or self.image_gen_config.get("model")
-            or ""
-        ).strip()
-        # ID が空なら Modal モードでも生成できない。
-        if not repo_id:
+        raw_models = self.modal_config.get("models")
+        catalog = []
+        if isinstance(raw_models, list):
+            for item in raw_models:
+                if not isinstance(item, dict):
+                    continue
+                model_id = str(item.get("id") or "").strip()
+                filename = str(item.get("filename") or "").strip()
+                if not model_id or not filename.endswith(".safetensors"):
+                    continue
+                model = {
+                    "id": model_id,
+                    "label": str(item.get("label") or model_id).strip(),
+                    "filename": filename,
+                    "source": str(item.get("source") or "huggingface").strip(),
+                    "repo_id": str(item.get("repo_id") or "").strip(),
+                    "version_id": str(item.get("version_id") or "").strip(),
+                }
+                catalog.append(model)
+        # 古い設定との互換: 単一 Hugging Face モデルを受け付ける。
+        if not catalog:
+            repo_id = str(self.modal_config.get("repo_id") or self.image_gen_config.get("model") or "").strip()
+            filename = str(self.modal_config.get("weights_filename") or "Illustrious-XL-v2.0.safetensors").strip()
+            if repo_id:
+                catalog = [{
+                    "id": repo_id, "label": repo_id, "filename": filename,
+                    "source": "huggingface", "repo_id": repo_id, "version_id": "",
+                }]
+        if not catalog:
             logger.warning("Modal image provider has no repo_id / model.")
             self.available_models = []
             self.default_model = None
             self.pipeline = None
             self._enabled = False
             return
-        # 切替候補は既定の1件。
-        self.available_models = [repo_id]
-        # チャンネル既定も同じ ID。
-        self.default_model = repo_id
+        self.available_models = [model["id"] for model in catalog]
+        self.modal_models = {model["id"]: model for model in catalog}
+        configured_default = self.image_gen_config.get("model")
+        self.default_model = configured_default if configured_default in self.modal_models else self.available_models[0]
         # 呼び出しは生成時まで modal を import しない。
         from MOMOKA.generator.image.modal_client import ModalImageClient
-
-        self.pipeline = ModalImageClient(self.modal_config, repo_id=repo_id)
+        self.pipeline = ModalImageClient(self.modal_config, models=catalog)
         # トークン未設定でもモーダルは出せる。GPU は確定後にエラーになる。
         self._enabled = True
 
@@ -397,6 +419,10 @@ class ImageGenerator:
 
     def get_available_models(self) -> List[str]:
         return self.available_models.copy()
+
+    def model_label(self, model_id: str) -> str:
+        spec = getattr(self, "modal_models", {}).get(model_id)
+        return str(spec.get("label") or model_id) if spec else model_id
     
     @staticmethod
     def _is_black_image(image_bytes: bytes, threshold: float = 0.01) -> bool:
@@ -808,6 +834,7 @@ class ImageGenerator:
                     sampler_name or "default",
                     start_time,
                     progress_state,
+                    model_name,
                 )
             else:
                 image_bytes = await self.pipeline.generate(
@@ -1029,6 +1056,7 @@ class ImageGenerator:
         sampler_name: str,
         start_time: float,
         progress_state: Dict[str, Any],
+        model_id: str,
     ) -> bytes:
         """確定後に Modal を呼び、ステップを既存の進捗メッセージへ反映する。"""
 
@@ -1073,6 +1101,7 @@ class ImageGenerator:
             cfg_scale=params.cfg_scale,
             seed=params.seed,
             sampler_name=params.sampler_name or "",
+            model_id=model_id,
             on_progress=on_progress,
         )
 
@@ -1239,7 +1268,11 @@ class ImageGenerator:
 class ImageModelSelect(discord.ui.Select):
     def __init__(self, parent_view: "ImageGenerationSetupView", default_model: str):
         options = [
-            discord.SelectOption(label=model, value=model, default=(model == default_model))
+            discord.SelectOption(
+                label=parent_view.image_generator.model_label(model),
+                value=model,
+                default=(model == default_model),
+            )
             for model in parent_view.image_generator.get_available_models()
         ]
         if not options:

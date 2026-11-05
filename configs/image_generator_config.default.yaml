@@ -51,8 +51,8 @@ image_generator:
   max_user_queued: 2
   # 1 生成ジョブのタイムアウト秒
   job_timeout_sec: 300.0
-  # 使うモデル ID。modal のときは Hugging Face の repo id
-  model: OnomaAIResearch/Illustrious-XL-v2.0
+  # 既定の画像生成モデル ID（Modal モデル一覧の id と一致させる）
+  model: shiitake-mix-v2
   # ローカル／共通の既定生成パラメータ
   default_params:
     # サンプリングステップ数
@@ -83,6 +83,18 @@ image_generator:
     repo_id: OnomaAIResearch/Illustrious-XL-v2.0
     # Volume に保存するファイル名。modal_app.py の WEIGHTS_FILENAME と揃える
     weights_filename: Illustrious-XL-v2.0.safetensors
+    # デプロイ時に用意するモデル一覧。Volume上の既存Illustrious重みもそのまま利用する
+    models:
+      - id: shiitake-mix-v2
+        label: Shiitake-Mix v2.0
+        source: civitai
+        version_id: "1570140"
+        filename: ShiitakeMix_v2.safetensors
+      - id: illustrious-xl-v2
+        label: Illustrious-XL v2.0
+        source: huggingface
+        repo_id: OnomaAIResearch/Illustrious-XL-v2.0
+        filename: Illustrious-XL-v2.0.safetensors
     # 以下は modal_app.py にハードコードしたデプロイ値の控え。変更したら再デプロイが必要
     gpu: T4
     scaledown_window: 2

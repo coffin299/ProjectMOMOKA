@@ -77,7 +77,7 @@ The PCM mixer (`AudioMixer`) uses NumPy vectorized add/clip so music and TTS can
 
 ### 3. Image Generation (PLANA only)
 
-Default provider is **Modal T4** (`provider: modal`) with [Illustrious-XL v2.0](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0). The GPU shuts down about 2 seconds after each image. `provider: local` uses the on-host diffusers engine (`models/image-models/`). Forge settings remain in the config.
+Default provider is **Modal T4** (`provider: modal`) with Shiitake-Mix v2.0. Illustrious-XL v2.0 remains available in the model selector. The GPU shuts down about 2 seconds after each image. `provider: local` uses the on-host diffusers engine (`models/image-models/`). Forge settings remain in the config.
 
 Requests on ARONA are redirected to PLANA.
 
@@ -444,11 +444,11 @@ One-time setup in the existing environment (do not create a venv):
 ```text
 pip install modal
 modal token set --token-id <token_id> --token-secret <token_secret>
-modal run MOMOKA/generator/image/modal_app.py
 modal deploy MOMOKA/generator/image/modal_app.py
+modal run MOMOKA/generator/image/modal_app.py
 ```
 
-Day-to-day tokens live in `configs/image_generator_config.yaml` (`modal.token_id` / `modal.token_secret`; the file is gitignored). `modal run` downloads the ~6.9GB checkpoint onto a Volume with CPU only. The GPU reads that file.
+Day-to-day tokens live in `configs/image_generator_config.yaml` (`modal.token_id` / `modal.token_secret`; the file is gitignored). `modal run` places only missing checkpoints on the Volume using CPU. The existing Illustrious file is reused and Shiitake-Mix v2.0 (Civitai version 1570140) is added. The GPU reads those files.
 
 For `provider: local`, place weights at `models/image-models/<name>/<name>.safetensors`.
 

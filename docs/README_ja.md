@@ -77,7 +77,7 @@ PCM ミキサー（`AudioMixer`）は NumPy でフレーム加算・クリップ
 
 ### 3. 画像生成機能（PLANA 専用）
 
-既定は **Modal の T4**（`provider: modal`）。モデルは [Illustrious-XL v2.0](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0)。生成が終わると GPU は約 2 秒で解放される。`provider: local` にするとホスト上の diffusers（`models/image-models/`）に戻る。Forge 用の設定欄も残してある。
+既定は **Modal の T4**（`provider: modal`）と Shiitake-Mix v2.0。Illustrious-XL v2.0 もモデル選択から利用できる。生成が終わると GPU は約 2 秒で解放される。`provider: local` にするとホスト上の diffusers（`models/image-models/`）に戻る。Forge 用の設定欄も残してある。
 
 ARONA に画像生成を頼むと、PLANA への誘導メッセージが返ります。
 
@@ -476,11 +476,11 @@ Starter は月 30 ドルの計算クレジット（T4 は約 0.59 ドル/時）�
 ```text
 pip install modal
 modal token set --token-id <token_id> --token-secret <token_secret>
-modal run MOMOKA/generator/image/modal_app.py
 modal deploy MOMOKA/generator/image/modal_app.py
+modal run MOMOKA/generator/image/modal_app.py
 ```
 
-トークンの常用は `configs/image_generator_config.yaml` の `modal.token_id` / `modal.token_secret`（このファイルは gitignore 済み）。`modal run` は CPU だけで約 6.9GB を Volume に置く。GPU はそのファイルを読むだけ。
+トークンの常用は `configs/image_generator_config.yaml` の `modal.token_id` / `modal.token_secret`（このファイルは gitignore 済み）。`modal run` はCPUで未配置の重みだけをVolumeに置く。既存のIllustriousは再取得せず、Shiitake-Mix v2.0（Civitai version 1570140）を追加する。GPUはそのファイルを読むだけ。
 
 `provider: local` のときは `models/image-models/<name>/<name>.safetensors` を置く。
 

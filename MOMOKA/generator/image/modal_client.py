@@ -19,11 +19,11 @@ class ModalImageError(RuntimeError):
 class ModalImageClient:
     """YAML のトークンで T4 クラスを呼び、進捗と PNG を受け取る。"""
 
-    def __init__(self, modal_config: dict[str, Any], repo_id: str) -> None:
+    def __init__(self, modal_config: dict[str, Any], models: list[dict[str, str]]) -> None:
         # 実行用 YAML の modal 節。
         self.config = modal_config or {}
         # 表示用・ダウンロード用のモデル ID。
-        self.repo_id = repo_id
+        self.models = {item["id"]: item for item in models}
         # デプロイ名。
         self.app_name = str(self.config.get("app_name") or "momoka-image")
         # GPU クラス名。
@@ -31,9 +31,6 @@ class ModalImageClient:
         # CPU ダウンロード関数名。
         self.download_name = str(self.config.get("download_function") or "download_weights")
         # Volume 上のファイル名。
-        self.filename = str(
-            self.config.get("weights_filename") or "Illustrious-XL-v2.0.safetensors"
-        )
         # 空なら公開モデルとしてトークンなし。
         self.hf_token = str(self.config.get("hf_token") or "").strip()
         # 1 ジョブの待ち秒。
@@ -41,7 +38,13 @@ class ModalImageClient:
         # トークンはプロパティ経由で都度読む。
         self._client: Any = None
         # 一度 Volume に載ったあとは CPU 関数を呼ばない。
-        self._weights_ready = False
+        self._weights_ready: set[str] = set()
+
+    def _model_spec(self, model_id: str) -> dict[str, str]:
+        spec = self.models.get(model_id)
+        if spec is None:
+            raise ModalImageError(f"Unknown Modal image model: {model_id}")
+        return spec
 
     def _token_pair(self) -> tuple[str, str]:
         # YAML の ID。
@@ -118,10 +121,11 @@ class ModalImageClient:
             f"Modal image generation failed: {text}\nModal での画像生成に失敗しました: {text}"
         )
 
-    async def ensure_weights(self, *, force: bool = False) -> None:
+    async def ensure_weights(self, spec: dict[str, str], *, force: bool = False) -> None:
         """CPU 関数で重みの有無を確認し、無ければダウンロードする。"""
         # 成功済みなら GPU の前に CPU コンテナを起動しない。
-        if self._weights_ready and not force:
+        filename = spec["filename"]
+        if filename in self._weights_ready and not force:
             return
         # SDK を取る。
         modal = self._sdk()
@@ -134,9 +138,12 @@ class ModalImageClient:
         try:
             # GPU を付けずに取得する。
             status = await function.remote.aio(
-                self.repo_id,
-                self.filename,
+                filename,
+                spec.get("source", "huggingface"),
+                spec.get("repo_id", ""),
+                spec.get("version_id", ""),
                 self.hf_token,
+                str(self.config.get("civitai_token") or "").strip(),
             )
         except Exception as exc:  # noqa: BLE001
             # 未デプロイやトークンエラーに翻訳する。
@@ -148,7 +155,7 @@ class ModalImageClient:
                 f"重み取得の戻り値が想定外です: {status}"
             )
         # 次回以降はスキップする。
-        self._weights_ready = True
+        self._weights_ready.add(filename)
         # 初回だけログを残す。
         logger.info("Modal weights status: %s", status)
 
@@ -163,6 +170,7 @@ class ModalImageClient:
         cfg_scale: float,
         seed: int,
         sampler_name: str,
+        model_id: str = "",
         on_progress: Optional[ProgressCallback] = None,
     ) -> bytes:
         """重み確認のあと T4 で生成し、PNG バイトを返す。"""
@@ -177,7 +185,8 @@ class ModalImageClient:
         # ダウンロード中であることが分かるようにする。
         await report(0, steps, "Generating... / 重みを確認中")
         # CPU で Volume を用意する。
-        await self.ensure_weights()
+        spec = self._model_spec(model_id or next(iter(self.models)))
+        await self.ensure_weights(spec)
         # ここから先は GPU のコールドスタート。
         await report(0, steps, "Generating... / GPU 起動中")
         try:
@@ -191,16 +200,17 @@ class ModalImageClient:
                 cfg_scale=cfg_scale,
                 seed=seed,
                 sampler_name=sampler_name,
+                weights_filename=spec["filename"],
                 report=report,
             )
         except ModalImageError as exc:
             # 重み欠落のときだけ CPU 取得をやり直す。
-            if "Checkpoint" not in str(exc):
+            if "checkpoint" not in str(exc).lower():
                 raise
             # キャッシュを捨てる。
-            self._weights_ready = False
+            self._weights_ready.discard(spec["filename"])
             # もう一度 Volume を確認する。
-            await self.ensure_weights(force=True)
+            await self.ensure_weights(spec, force=True)
             # GPU を起動し直す。
             await report(0, steps, "Generating... / GPU 起動中")
             png = await self._generate_once(
@@ -212,6 +222,7 @@ class ModalImageClient:
                 cfg_scale=cfg_scale,
                 seed=seed,
                 sampler_name=sampler_name,
+                weights_filename=spec["filename"],
                 report=report,
             )
         return png
@@ -227,6 +238,7 @@ class ModalImageClient:
         cfg_scale: float,
         seed: int,
         sampler_name: str,
+        weights_filename: str,
         report: ProgressCallback,
     ) -> bytes:
         # SDK。
@@ -252,6 +264,7 @@ class ModalImageClient:
                 float(cfg_scale),
                 int(seed),
                 sampler_name or "",
+                weights_filename,
             )
             # 各イベントを進捗か画像に振り分ける。
             async for event in stream:
