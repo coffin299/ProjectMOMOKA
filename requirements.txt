@@ -10,7 +10,9 @@
 # --- Discord / core ---
 # discord.py 2.7+: native DAVE voice; install davey or voice may fail with close 4017.
 discord.py[voice]>=2.7.0
-davey>=0.1.0
+# discord.py 2.7.x uses the davey 0.1.x API. Keep below 0.2 until discord.py
+# updates its integration for davey's breaking transition API changes.
+davey>=0.1.6,<0.2.0
 aiohttp>=3.9.0
 ddgs>=9.0.0
 openai>=1.40.0

@@ -471,7 +471,7 @@ Receives JMA-sourced alerts via [P2P Quake JSON API v2 / WebSocket](https://www.
 
 ### Music won't play
 
-1. **DAVE (required since 2026-03-02):** Discord enforces A/V E2EE (DAVE) on non-stage VCs. Without `discord.py>=2.7` and **`davey`**, voice fails (close **4017**) or stays silent. Check `python -c "import davey"`; if it fails, run `pip install -U "discord.py[voice]" davey` (or reinstall via `startMOMOKA.bat`)
+1. **DAVE (required since 2026-03-02):** Discord enforces A/V E2EE (DAVE) on non-stage VCs. Use `discord.py>=2.7` and `davey>=0.1.6,<0.2.0`. If `dave_ready=False` persists, reinstall requirements via `startMOMOKA.bat` and confirm the runtime picked up the newer davey. davey 0.2.x has breaking API changes not yet compatible with discord.py 2.7.x.
 2. Check the VC connection, FFmpeg, and `youtube_cookies.txt`
 3. Confirm `BgUtils PO Token Provider v1.3.1 is ready` in the GUI TTS+Music log
 4. Confirm `http://127.0.0.1:4416/ping` reports version `1.3.1`

@@ -10,6 +10,7 @@ import subprocess
 import time
 from collections import deque
 from datetime import datetime, timedelta
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -1628,12 +1629,17 @@ class MusicCog(commands.Cog, name="music_cog"):
             connection = getattr(voice_client, "_connection", None)
             dave_session = getattr(connection, "dave_session", None)
             dave_ready = getattr(dave_session, "ready", None) if dave_session else None
+            try:
+                davey_version = version("davey")
+            except PackageNotFoundError:
+                davey_version = "missing"
             logger.info(
-                "Guild %s: Voice transport state=%s mode=%s dave_protocol=%s "
+                "Guild %s: Voice transport state=%s mode=%s davey=%s dave_protocol=%s "
                 "dave_session=%s dave_ready=%s can_encrypt=%s",
                 guild.id,
                 getattr(getattr(connection, "state", None), "name", None),
                 getattr(connection, "mode", None),
+                davey_version,
                 getattr(connection, "dave_protocol_version", None),
                 dave_session is not None,
                 dave_ready,

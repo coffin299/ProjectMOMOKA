@@ -500,7 +500,7 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 音楽が再生されない
 
-1. **DAVE（2026-03-02 以降必須）:** Discord は通常 VC で E2EE（DAVE）を強制する。`discord.py>=2.7` と **`davey`** が無いと接続拒否（close **4017**）や無音になる。起動環境で `python -c "import davey"` が通るか確認し、ダメなら `pip install -U "discord.py[voice]" davey`（または `startMOMOKA.bat` で requirements 再インストール）
+1. **DAVE（2026-03-02 以降必須）:** Discord は通常 VC で E2EE（DAVE）を強制する。`discord.py>=2.7` と `davey>=0.1.6,<0.2.0` が必要。`dave_ready=False` のままなら `startMOMOKA.bat` で requirements を再インストールし、実行環境に新しい davey が入ったか確認する。0.2.x は discord.py 2.7.x の統合と互換性のない API 変更を含むため使わない。
 2. ボイスチャンネル接続・FFmpeg・`youtube_cookies.txt` を確認
 3. GUIの「TTS+Musicログ」で `BgUtils PO Token Provider v1.3.1 is ready` を確認
 4. `http://127.0.0.1:4416/ping` がversion `1.3.1`を返すことを確認
