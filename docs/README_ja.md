@@ -77,7 +77,7 @@ PCM ミキサー（`AudioMixer`）は NumPy でフレーム加算・クリップ
 
 ### 3. 画像生成機能（PLANA 専用）
 
-**内製 diffusers エンジン**（外部サービス不要）。モデルは `models/image-models/` 配下。オプションで Stable Diffusion WebUI Forge API も利用可。
+既定は **Modal の T4**（`provider: modal`）。モデルは [Illustrious-XL v2.0](https://huggingface.co/OnomaAIResearch/Illustrious-XL-v2.0)。生成が終わると GPU は約 2 秒で解放される。`provider: local` にするとホスト上の diffusers（`models/image-models/`）に戻る。Forge 用の設定欄も残してある。
 
 ARONA に画像生成を頼むと、PLANA への誘導メッセージが返ります。
 
@@ -327,8 +327,12 @@ llm:
 #### 画像生成（`images_config.yaml` / LLM 連携設定）
 
 ```yaml
-# provider: "local" （内製）または "forge"
-# モデル配置: models/image-models/<name>/<name>.safetensors
+image_generator:
+  provider: modal   # local にするとホストの diffusers
+  model: OnomaAIResearch/Illustrious-XL-v2.0
+  modal:
+    token_id: YOUR_MODAL_TOKEN_ID
+    token_secret: YOUR_MODAL_TOKEN_SECRET
 ```
 
 #### TTS（`tts_config.yaml`）
@@ -463,7 +467,22 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 
 ### 画像生成（PLANA）
 
-`models/image-models/<name>/<name>.safetensors` を配置し、設定で `provider: "local"`（デフォルト）を使用。Forge 利用時は `--api` 付きで Forge を起動し `provider: "forge"` を設定。
+LLM の tool call は Discord の設定モーダルを出すだけで、送信が確定するまで生成しない。確定後の進捗（GPU 起動中、ステップ）は従来の進捗メッセージに載る。Modal 時の上限は 1024x1024、32 steps。既定は Euler a / 24 steps / CFG 5.5。
+
+Starter は月 30 ドルの計算クレジット（T4 は約 0.59 ドル/時）。超過分はカード課金になるので、Modal の Workspace budget を 30 ドルにしておく。リージョン固定はしない（割増になる）。
+
+初回だけ、既存環境で次を実行する（venv は作らない）。
+
+```text
+pip install modal
+modal token set --token-id <token_id> --token-secret <token_secret>
+modal run MOMOKA/generator/image/modal_app.py
+modal deploy MOMOKA/generator/image/modal_app.py
+```
+
+トークンの常用は `configs/image_generator_config.yaml` の `modal.token_id` / `modal.token_secret`（このファイルは gitignore 済み）。`modal run` は CPU だけで約 6.9GB を Volume に置く。GPU はそのファイルを読むだけ。
+
+`provider: local` のときは `models/image-models/<name>/<name>.safetensors` を置く。
 
 ### 地震速報（PLANA）
 

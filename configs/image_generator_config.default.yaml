@@ -5,6 +5,8 @@
 image_generator:
   # false なら画像生成ツール・コマンドを無効化
   enabled: true
+  # local = ホストの diffusers / modal = Modal の T4 を生成中だけ使う
+  provider: modal
   # 生成画像をディスクに残すか
   save_images: true
   # 保存先ディレクトリ（リポジトリ相対可）
@@ -49,8 +51,8 @@ image_generator:
   max_user_queued: 2
   # 1 生成ジョブのタイムアウト秒
   job_timeout_sec: 300.0
-  # 使うモデル ID / パス。null なら環境・Forge 側の既定に従う
-  model: null
+  # 使うモデル ID。modal のときは Hugging Face の repo id
+  model: OnomaAIResearch/Illustrious-XL-v2.0
   # ローカル／共通の既定生成パラメータ
   default_params:
     # サンプリングステップ数
@@ -63,6 +65,44 @@ image_generator:
     seed: -1
     # ネガティブプロンプト既定文
     negative_prompt: lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry
+  # Modal Starter（月30ドルの計算クレジット）向け。実トークンは実行用 yaml だけに書く
+  modal:
+    # Modal の Token ID。default はプレースホルダ
+    token_id: YOUR_MODAL_TOKEN_ID
+    # Modal の Token Secret
+    token_secret: YOUR_MODAL_TOKEN_SECRET
+    # 非公開モデルを使うときだけ。Illustrious-XL v2.0 は公開なので null でよい
+    hf_token: null
+    # modal deploy した App 名
+    app_name: momoka-image
+    # GPU クラス名
+    class_name: IllustriousGenerator
+    # 重み取得用の CPU 関数名
+    download_function: download_weights
+    # Hugging Face のリポジトリ
+    repo_id: OnomaAIResearch/Illustrious-XL-v2.0
+    # Volume に保存するファイル名。modal_app.py の WEIGHTS_FILENAME と揃える
+    weights_filename: Illustrious-XL-v2.0.safetensors
+    # 以下は modal_app.py にハードコードしたデプロイ値の控え。変更したら再デプロイが必要
+    gpu: T4
+    scaledown_window: 2
+    cpu: 2.0
+    memory_mib: 20480
+    # Bot が 1 枚を待つ秒数
+    timeout: 600
+    # T4 で拒否する解像度
+    max_width: 1024
+    max_height: 1024
+    # T4 で拒否するステップ
+    max_steps: 32
+    # Discord モーダルの初期値
+    default_params:
+      steps: 24
+      cfg_scale: 5.5
+      sampler_name: Euler a
+      seed: -1
+      clip_skip: 2
+      negative_prompt: lowres, worst quality, bad quality, bad anatomy, bad hands, extra digits, missing fingers, jpeg artifacts, signature, watermark, username, blurry
   # Stable Diffusion WebUI Forge（HTTP API）連携
   forge:
     # Forge API のベース URL

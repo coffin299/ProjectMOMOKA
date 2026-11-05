@@ -4516,8 +4516,8 @@ class LLMCog(commands.Cog, name="llm"):
             self._add_support_footer(embed)
             await interaction.followup.send(embed=embed, view=self._create_support_view())
             return
-        # プロバイダー付き形式（provider/model_name）の場合は実際のモデル名を抽出
-        actual_model = model.split('/', 1)[1] if '/' in model else model
+        # provider/ 接頭辞だけ外す。モデル ID 内のスラッシュは残す。
+        actual_model = self.image_generator.display_model_name(model)
         available_models = self.image_generator.get_available_models()
         if actual_model not in available_models:
             embed = discord.Embed(title="⚠️ Invalid Model / 無効なモデル",
@@ -4529,12 +4529,10 @@ class LLMCog(commands.Cog, name="llm"):
         try:
             await self.image_generator.set_model_for_channel(interaction.channel_id, actual_model)
             default_model = self.image_generator.default_model
-            try:
-                provider, model_name = model.split('/', 1)
-            except ValueError:
-                provider, model_name = "local", model
+            provider = self.image_generator.provider
+            model_name = actual_model
 
-            if model != default_model:
+            if actual_model != default_model:
                 embed = discord.Embed(title="✅ Image Model Switched / 画像生成モデルを切り替えました",
                                       description="The image generation model for this channel has been switched.\nこのチャンネルの画像生成モデルを切り替えました。",
                                       color=discord.Color.green())
@@ -4582,10 +4580,7 @@ class LLMCog(commands.Cog, name="llm"):
         current_model, default_model, is_default = self.image_generator.get_model_for_channel(
             interaction.channel_id), self.image_generator.default_model, self.image_generator.get_model_for_channel(
             interaction.channel_id) == self.image_generator.default_model
-        try:
-            provider, model_name = current_model.split('/', 1)
-        except ValueError:
-            provider, model_name = "local", current_model
+        provider = self.image_generator.provider
 
         embed = discord.Embed(title="🎨 Current Image Generation Model / 現在の画像生成モデル",
                               color=discord.Color.blue() if is_default else discord.Color.purple())
@@ -4595,7 +4590,9 @@ class LLMCog(commands.Cog, name="llm"):
                         inline=True)
         models_by_provider = self.image_generator.get_models_by_provider()
         for provider_name, models in sorted(models_by_provider.items()):
-            model_list = "\n".join([f"• `{m.split('/', 1)[1]}`" for m in models[:5]])
+            model_list = "\n".join(
+                [f"• `{self.image_generator.display_model_name(m)}`" for m in models[:5]]
+            )
             if len(models) > 5: model_list += f"\n• ... and {len(models) - 5} more"
             embed.add_field(name=f"📦 {provider_name.title()} Models", value=model_list or "None", inline=True)
         embed.add_field(name="💡 Commands / コマンド",
@@ -4639,8 +4636,8 @@ class LLMCog(commands.Cog, name="llm"):
                               description=f"Total: {total_models} models across {len(models_by_provider)} provider(s)\n合計: {len(models_by_provider)}プロバイダー、{total_models}モデル",
                               color=discord.Color.blue())
         for provider_name, models in sorted(models_by_provider.items()):
-            # モデル名からプロバイダー部分を除去（表示用）
-            model_names = [m.split('/', 1)[1] if '/' in m else m for m in models]
+            # provider/ 接頭辞だけ外す（表示用）
+            model_names = [self.image_generator.display_model_name(m) for m in models]
             if len(model_names) > 10:
                 model_text = "\n".join([f"{i + 1}. `{m}`" for i, m in enumerate(model_names[:10])])
                 model_text += f"\n... and {len(model_names) - 10} more"

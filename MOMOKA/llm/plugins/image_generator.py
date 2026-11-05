@@ -72,6 +72,7 @@ class ImageGenerator:
                 "(image_generator.enabled=false). "
                 "Skipping pipeline/model initialization to conserve VRAM."
             )
+            self.provider = "local"
             self.model_registry = None
             self.pipeline = None
             self.available_models = []
@@ -103,32 +104,20 @@ class ImageGenerator:
             self._closing = False
             return
 
-        self.model_registry = ImageModelRegistry.from_default_root()
-        self.pipeline = LocalTxt2ImgPipeline(
-            device=self.image_gen_config.get("device"),
-            idle_unload_seconds=self.image_gen_config.get("idle_unload_seconds", 300),
-        )
-
-        discovered_models = sorted(self.model_registry.names())
-        if not discovered_models:
-            logger.warning("No local image models found under models/image-models. Image generation will be disabled.")
-            self.available_models = []
-            self.default_model = None
-            self._enabled = False
+        # local または modal。未知の値はローカル扱いにする。
+        self.provider = str(self.image_gen_config.get("provider") or "local").strip().lower()
+        # Modal の YAML 節。
+        self.modal_config = self.image_gen_config.get("modal") or {}
+        # dict 以外は空にする。
+        if not isinstance(self.modal_config, dict):
+            self.modal_config = {}
+        # プロバイダごとにモデル一覧の作り方が違う。
+        if self.provider == "modal":
+            self._init_modal_models()
         else:
-            configured_models = self.image_gen_config.get("available_models")
-            if configured_models:
-                available = [model for model in configured_models if model in discovered_models]
-                if not available:
-                    logger.warning("Configured available_models not found locally. Using discovered models instead.")
-                    available = discovered_models
-            else:
-                available = discovered_models
-
-            self.available_models = available
-            configured_default = self.image_gen_config.get("model")
-            self.default_model = configured_default if configured_default in self.available_models else self.available_models[0]
-            self._enabled = True
+            # forge 表記が残っていても実行系はローカル。
+            self.provider = "local"
+            self._init_local_models()
 
         self.default_size = self.image_gen_config.get("default_size", "1024x1024")
         self.save_images = self.image_gen_config.get("save_images", True)
@@ -152,6 +141,9 @@ class ImageGenerator:
         self.max_user_queued = int(self.image_gen_config.get("max_user_queued", 2))
         # 生成ジョブのタイムアウト秒
         self.job_timeout_sec = float(self.image_gen_config.get("job_timeout_sec", 300.0))
+        # 共通上限のあとで、Modal のときだけ T4 向けに上書きする。
+        if self.provider == "modal":
+            self._apply_modal_limits()
         # 実行中タスク参照（cancel 用）
         self._active_tasks: set[asyncio.Task] = set()
         # close() 後はキューの次タスクを起動しない
@@ -166,10 +158,141 @@ class ImageGenerator:
         self.current_task: Optional[GenerationTask] = None
 
         if self._enabled:
-            logger.info("ImageGenerator initialised with %d local model(s)", len(self.available_models))
+            logger.info(
+                "ImageGenerator initialised provider=%s models=%d",
+                self.provider,
+                len(self.available_models),
+            )
             logger.info("Default model: %s", self.default_model)
         else:
             logger.info("ImageGenerator initialised but disabled (no models found)")
+
+    def _init_local_models(self) -> None:
+        """ホスト上の diffusers モデルを列挙する。"""
+        # ディレクトリ走査。
+        self.model_registry = ImageModelRegistry.from_default_root()
+        # ローカルパイプライン。Modal のときは作らない。
+        self.pipeline = LocalTxt2ImgPipeline(
+            device=self.image_gen_config.get("device"),
+            idle_unload_seconds=self.image_gen_config.get("idle_unload_seconds", 300),
+        )
+        # 見つかった名前。
+        discovered_models = sorted(self.model_registry.names())
+        # 1件も無ければ無効。
+        if not discovered_models:
+            logger.warning("No local image models found under models/image-models. Image generation will be disabled.")
+            self.available_models = []
+            self.default_model = None
+            self._enabled = False
+            return
+        # 設定で絞り込みがある場合。
+        configured_models = self.image_gen_config.get("available_models")
+        if configured_models:
+            available = [model for model in configured_models if model in discovered_models]
+            # 一致が無ければ発見分へ戻す。
+            if not available:
+                logger.warning("Configured available_models not found locally. Using discovered models instead.")
+                available = discovered_models
+        else:
+            available = discovered_models
+        # 公開する一覧。
+        self.available_models = available
+        # YAML の model が一覧にあればそれを既定にする。
+        configured_default = self.image_gen_config.get("model")
+        self.default_model = configured_default if configured_default in self.available_models else self.available_models[0]
+        # ローカル生成を有効にする。
+        self._enabled = True
+
+    def _init_modal_models(self) -> None:
+        """ローカルの重みを要求せず、設定上のモデル ID だけで有効化する。"""
+        # ホスト側のレジストリは使わない。
+        self.model_registry = None
+        # 表示名になるリポジトリ ID。
+        repo_id = str(
+            self.modal_config.get("repo_id")
+            or self.image_gen_config.get("model")
+            or ""
+        ).strip()
+        # ID が空なら Modal モードでも生成できない。
+        if not repo_id:
+            logger.warning("Modal image provider has no repo_id / model.")
+            self.available_models = []
+            self.default_model = None
+            self.pipeline = None
+            self._enabled = False
+            return
+        # 切替候補は既定の1件。
+        self.available_models = [repo_id]
+        # チャンネル既定も同じ ID。
+        self.default_model = repo_id
+        # 呼び出しは生成時まで modal を import しない。
+        from MOMOKA.generator.image.modal_client import ModalImageClient
+
+        self.pipeline = ModalImageClient(self.modal_config, repo_id=repo_id)
+        # トークン未設定でもモーダルは出せる。GPU は確定後にエラーになる。
+        self._enabled = True
+
+    def _apply_modal_limits(self) -> None:
+        """T4 / Starter 向けの上限と Illustrious の既定値を適用する。"""
+        # モーダル節の生成パラメータ。
+        modal_params = self.modal_config.get("default_params") or {}
+        # dict のときだけ既定を差し替える。
+        if isinstance(modal_params, dict) and modal_params:
+            self.default_params = modal_params
+        # 辺の上限。未設定なら 1024。
+        self.max_width = int(self.modal_config.get("max_width", 1024))
+        self.max_height = int(self.modal_config.get("max_height", 1024))
+        # ステップ上限。
+        self.max_steps = int(self.modal_config.get("max_steps", 32))
+        # GPU 待ち。
+        if self.modal_config.get("timeout") is not None:
+            self.job_timeout_sec = float(self.modal_config.get("timeout"))
+
+    def display_model_name(self, choice: str) -> str:
+        """provider/ 接頭辞だけを外す。モデル ID 内のスラッシュは残す。"""
+        # このプロバイダの接頭辞。
+        prefix = f"{self.provider}/"
+        # 付いているときだけ外す。
+        if choice.startswith(prefix):
+            return choice[len(prefix):]
+        # Hugging Face の org/name はそのまま。
+        return choice
+
+    def modal_size_error(self, size: str, lang: str) -> Optional[str]:
+        """Modal モードでサイズが範囲外なら、キューに入れる前のエラー文を返す。"""
+        # ローカルは従来どおり後段で丸める。
+        if self.provider != "modal":
+            return None
+        try:
+            # WIDTHxHEIGHT を分解する。
+            width_str, height_str = size.lower().replace(" ", "").split("x", 1)
+            width = int(width_str)
+            height = int(height_str)
+        except (ValueError, AttributeError):
+            return pick_str(
+                lang,
+                ja="Size: 横x縦 の整数で指定してください",
+                en="Size: use WIDTHxHEIGHT integers",
+            )
+        # 上限を超えたら T4 を起動しない。
+        if (
+            width < self.min_width
+            or height < self.min_height
+            or width > self.max_width
+            or height > self.max_height
+        ):
+            return pick_str(
+                lang,
+                ja=(
+                    f"Size: {self.min_width}〜{self.max_width} x "
+                    f"{self.min_height}〜{self.max_height} にしてください"
+                ),
+                en=(
+                    f"Size: use {self.min_width}-{self.max_width} x "
+                    f"{self.min_height}-{self.max_height}"
+                ),
+            )
+        return None
 
     def _sanitize_generation_args(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """steps/CFG/seed を有限値かつ許容範囲へ正規化する。"""
@@ -309,7 +432,8 @@ class ImageGenerator:
             return False
 
     def get_models_by_provider(self) -> Dict[str, List[str]]:
-        provider = "local"
+        # 実際の provider。モデル ID にスラッシュがあっても接頭辞は1つだけ付ける。
+        provider = getattr(self, "provider", "local")
         return {provider: [f"{provider}/{name}" for name in self.available_models]}
 
     # ------------------------------------------------------------------
@@ -326,7 +450,9 @@ class ImageGenerator:
             "function": {
                 "name": self.name,
                 "description": (
-                    "Generate an image via local Stable Diffusion pipeline using the provided text prompt."
+                    "Ask the user to confirm image generation in a Discord modal. "
+                    "Do not claim an image was generated until the user submits that modal. "
+                    "After confirmation the configured provider runs (Modal GPU or local diffusers)."
                 ),
                 "parameters": {
                     "type": "object",
@@ -388,6 +514,13 @@ class ImageGenerator:
                     "(llm.image_generator.enabled=false).\n\n"
                     "エラー: 画像生成は設定ファイルで無効化されています "
                     "(llm.image_generator.enabled=false)。"
+                )
+            if getattr(self, "provider", "local") == "modal":
+                return (
+                    "❌ Error: Modal image generation has no model id. "
+                    "Set image_generator.model and image_generator.modal.repo_id.\n\n"
+                    "エラー: Modal 画像生成のモデル ID がありません。"
+                    "image_generator.model と image_generator.modal.repo_id を設定してください。"
                 )
             return (
                 "❌ Error: Image generation is disabled. "
@@ -552,6 +685,9 @@ class ImageGenerator:
 
         prompt = task.arguments.get("prompt", "").strip()
         negative_prompt = task.arguments.get("negative_prompt", "").strip()
+        # 未指定なら設定の既定ネガティブを使う。
+        if not negative_prompt:
+            negative_prompt = str(self.default_params.get("negative_prompt") or "").strip()
         size_input = task.arguments.get("size", self.default_size)
         width, height, adjusted_size = self._validate_and_adjust_size(size_input)
 
@@ -569,7 +705,10 @@ class ImageGenerator:
             if requested_model and requested_model not in self.available_models:
                 logger.warning("Requested model '%s' not available. Falling back to channel/default model.", requested_model)
             model_name = self.get_model_for_channel(task.channel_id)
-        model_info = self.model_registry.ensure_model(model_name)
+        # ローカルだけ重みファイルを解決する。Modal はリポジトリ ID のまま。
+        model_info = None
+        if self.provider != "modal":
+            model_info = self.model_registry.ensure_model(model_name)
 
         params = GenerationParams(
             prompt=prompt,
@@ -657,11 +796,25 @@ class ImageGenerator:
                         logger.warning("Event loop is not running, skipping progress update")
 
         try:
-            image_bytes = await self.pipeline.generate(
-                model_info,
-                params,
-                progress_callback=progress_callback,
-            )
+            # Modal はリモートのステップを既存の進捗メッセージへ載せる。
+            if self.provider == "modal":
+                image_bytes = await self._generate_on_modal(
+                    params,
+                    progress_message,
+                    prompt,
+                    model_name,
+                    adjusted_size,
+                    steps,
+                    sampler_name or "default",
+                    start_time,
+                    progress_state,
+                )
+            else:
+                image_bytes = await self.pipeline.generate(
+                    model_info,
+                    params,
+                    progress_callback=progress_callback,
+                )
         except Exception as exc:  # noqa: BLE001
             if progress_message:
                 await self._update_progress_message(
@@ -864,6 +1017,64 @@ class ImageGenerator:
             await message.edit(embed=embed)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to update queue message: %s", exc)
+
+    async def _generate_on_modal(
+        self,
+        params: GenerationParams,
+        progress_message: Optional[discord.Message],
+        prompt: str,
+        model_name: str,
+        adjusted_size: str,
+        steps: int,
+        sampler_name: str,
+        start_time: float,
+        progress_state: Dict[str, Any],
+    ) -> bytes:
+        """確定後に Modal を呼び、ステップを既存の進捗メッセージへ反映する。"""
+
+        async def on_progress(step: int, total: int, status: str) -> None:
+            # メッセージが無ければ表示だけ飛ばす。
+            if progress_message is None:
+                return
+            # 現在時刻。
+            now = time.time()
+            # ステップ更新は 1 秒に 1 回。起動中の文言はすぐ出す。
+            step_update = "生成中" in status
+            if step_update and now - progress_state.get("last_message_edit", 0) < 1.0 and step < total:
+                progress_state["last_step"] = step
+                return
+            # 編集時刻を記録する。
+            progress_state["last_message_edit"] = now
+            progress_state["last_step"] = step
+            # 経過秒。
+            elapsed = now - start_time
+            # ステップが始まるまでは速度を出さない。
+            speed = (step / elapsed) if elapsed > 0 and step else 0.0
+            await self._update_progress_message(
+                progress_message,
+                prompt,
+                model_name,
+                adjusted_size,
+                total,
+                step,
+                sampler_name,
+                elapsed,
+                speed,
+                status,
+            )
+
+        # クライアントが進捗と PNG を返す。
+        return await self.pipeline.generate(
+            prompt=params.prompt,
+            negative_prompt=params.negative_prompt,
+            width=params.width,
+            height=params.height,
+            steps=params.steps,
+            cfg_scale=params.cfg_scale,
+            seed=params.seed,
+            sampler_name=params.sampler_name or "",
+            on_progress=on_progress,
+        )
 
     async def _send_progress_message(
         self,
@@ -1196,6 +1407,12 @@ class ImageGenerationModal(discord.ui.Modal):
                 updated_args["cfg_scale"] = cfg
         if self.size_input.value.strip():
             updated_args["size"] = self.size_input.value.strip()
+        # 空欄なら既存引数か既定サイズ。Modal は範囲外を確定前に返す。
+        generator = self.parent_view.image_generator
+        effective_size = str(updated_args.get("size") or generator.default_size)
+        size_error = generator.modal_size_error(effective_size, self.lang)
+        if size_error:
+            errors.append(size_error)
         if (seed := parse_int(self.seed_input.value, "Seed")) is not None:
             updated_args["seed"] = seed
         if self.sampler_input.value.strip():

@@ -4,8 +4,8 @@
 
 # MOMOKA
 
-**JA:** 多機能 Discord ボット — PLANA（主）+ ARONA（コンパニオン）。AIチャット・音楽・読み上げ・通知・Link Fix など。  
-**EN:** Multi-functional Discord bot — PLANA (primary) + ARONA (companion). AI chat, music, TTS, notifications, Link Fix, and more.
+**JA:** 多機能 Discord ボット — PLANA（主）+ ARONA（コンパニオン）。AIチャット・音楽・読み上げ・通知・Link Fix・画像生成（Modal GPU）など。  
+**EN:** Multi-functional Discord bot — PLANA (primary) + ARONA (companion). AI chat, music, TTS, notifications, Link Fix, image generation (Modal GPU), and more.
 
 [![Website](https://img.shields.io/badge/Website-momoka--project.com-1c1917?style=for-the-badge)](https://momoka-project.com/)
 [![Invite PLANA](https://img.shields.io/badge/Invite%20PLANA-24/7%20Online-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/oauth2/authorize?client_id=1031673203774464160)
