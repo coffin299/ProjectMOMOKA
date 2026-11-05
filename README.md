@@ -105,7 +105,7 @@
 
 ## Also included / その他
 
-- **TTS** — Style-Bert-VITS2（**JA:** PLANA のみ · **EN:** PLANA only）
+- **TTS** — Style-Bert-VITS2（**JA:** PLANA のみ。英単語は kanalizer でカタカナ化 · **EN:** PLANA only; English words → katakana via kanalizer）
 - **Link Fix** — **JA:** SNS 向け公式 embed を抑制し Fix URL で引用置換（`/linkfix`、デフォルト無効） · **EN:** suppress original social embeds and quote-replace via fixers (`/linkfix`, disabled by default)
 - **JA:** 地震速報 / Twitch 通知 · **EN:** Earthquake / Twitch notifications
 - **JA:** ゲーム統計（VALORANT、Rainbow Six Siege） · **EN:** Game trackers (VALORANT, Rainbow Six Siege)

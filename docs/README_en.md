@@ -85,6 +85,8 @@ Requests on ARONA are redirected to PLANA.
 
 Integrated [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) (vendored: `third_party/style_bert_vits2/`, wrapper: `MOMOKA/generator/tts/`). Models under `models/tts-models/`. See `NOTICE`.
 
+English words are converted to katakana with [kanalizer](https://github.com/VOICEVOX/kanalizer) before synthesis (single letters / all-caps stay letter-by-letter). Applied in the TTS worker after the user dictionary.
+
 ### 5. Game Trackers (PLANA only)
 
 Rainbow Six Siege / VALORANT stats.

@@ -85,6 +85,8 @@ ARONA に画像生成を頼むと、PLANA への誘導メッセージが返り�
 
 統合 [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2) エンジン（同梱: `third_party/style_bert_vits2/`、ラッパー: `MOMOKA/generator/tts/`）。モデルは `models/tts-models/`。詳細は `NOTICE` を参照。
 
+英単語は合成前に [kanalizer](https://github.com/VOICEVOX/kanalizer) でカタカナ読みへ置換します（略語・1文字はアルファベット読み）。ユーザー辞書の置換のあとにワーカー側で適用されます。
+
 ### 5. ゲーム統計追跡（PLANA 専用）
 
 Rainbow Six Siege / VALORANT の統計表示。

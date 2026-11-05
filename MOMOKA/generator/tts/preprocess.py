@@ -1,6 +1,8 @@
 import re
 from typing import Optional
 
+from .english_reading import apply_english_reading
+
 try:
     import pyopenjtalk
 except Exception:  # pragma: no cover - optional dependency at runtime
@@ -48,6 +50,7 @@ def normalize_text(text: str, dictionary_dir: Optional[str] = None) -> str:
 
     - Strips URLs
     - Converts fullwidth punctuation to halfwidth
+    - Rewrites English words as katakana via kanalizer
     - Removes characters that may cause issues with TTS processing
     - Collapses whitespace
     - Optionally uses pyopenjtalk for reading normalization if available
@@ -62,7 +65,10 @@ def normalize_text(text: str, dictionary_dir: Optional[str] = None) -> str:
     # 全角記号を半角に変換
     for fullwidth, halfwidth in FULLWIDTH_TO_HALFWIDTH.items():
         text = text.replace(fullwidth, halfwidth)
-    
+
+    # 記号を消す前に英単語を kanalizer のカタカナ読みへ置換する
+    text = apply_english_reading(text)
+
     # TTSで問題を起こす可能性のある記号を除去（スペースに置換）
     # カタカナ変換で問題になる記号をフィルタリング
     text = re.sub(r'[!?.,;:()[\]{}<>&*@#$%^_=+\-/\\|~`"\']', ' ', text)
