@@ -166,15 +166,22 @@ def _apply_clip_skip(pipe: Any, clip_skip: int) -> None:
     # 1 以下は最終層のまま。
     if clip_skip <= 1:
         return
-    # CLIP-L の末尾層を外す（A1111 の clip skip と同じ考え方）。
-    encoder = pipe.text_encoder.text_model.encoder
+    # Diffusers のラッパー型は text_encoder.text_model.encoder、
+    # safetensors 読み込み後の型によっては text_encoder.encoder。
+    text_encoder = getattr(pipe, "text_encoder", None)
+    transformer = getattr(text_encoder, "text_model", text_encoder)
+    encoder = getattr(transformer, "encoder", None)
+    layers = getattr(encoder, "layers", None)
+    if layers is None:
+        # CLIP 構造が異なる重みでは Skip を適用せず標準出力を使う。
+        return
     # 残す層数。
-    keep = len(encoder.layers) - (clip_skip - 1)
+    keep = len(layers) - (clip_skip - 1)
     # 全部消す指定は無視する。
     if keep < 1:
         return
     # 推論で使う層だけ残す。
-    encoder.layers = encoder.layers[:keep]
+    encoder.layers = layers[:keep]
 
 
 def _apply_sampler(pipe: Any, sampler_name: str) -> None:
