@@ -373,6 +373,9 @@ Music messages are sent `@silent` (suppress notifications) by default.
 | Command | Description |
 |---------|-------------|
 | `/say <text>` | Speak text |
+| `/tts join` | Join VC and enable read-aloud for the command channel until leave (shares music mixer) |
+| `/speech enable` `/speech disable` | Enable / disable channel read-aloud |
+| `/tts volume` | TTS volume |
 | `/tts-help` | TTS help |
 
 ### Game Trackers (PLANA)

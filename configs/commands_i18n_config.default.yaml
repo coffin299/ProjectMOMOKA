@@ -766,6 +766,21 @@ commands_i18n:
             ru: Громкость (целое 0–200).
             th: ระดับเสียง (จำนวนเต็ม 0 ถึง 200)
             id: Volume (bilangan bulat 0–200).
+    tts join:
+      description:
+        en: Join your voice channel for TTS. Enables channel read-aloud until leave; shares the music mixer when music is playing.
+        ja: 読み上げ用に今いる VC へ参加し、退出までこのチャンネルの読み上げを有効にします。音楽再生中は同じミキサーを使います
+        ko: TTS용으로 현재 음성 채널에 참가하고, 퇴장할 때까지 이 채널 읽어주기를 켭니다. 음악 재생 중에는 같은 믹서를 사용합니다.
+        vi: Vào kênh thoại hiện tại để TTS, bật đọc kênh đến khi rời; khi đang phát nhạc thì dùng chung mixer.
+        zh-CN: 加入你所在的语音频道进行朗读，退出前启用本频道朗读。正在播放音乐时共用同一个混音器。
+        zh-TW: 加入你所在的語音頻道進行朗讀，退出前啟用本頻道朗讀。正在播放音樂時共用同一個混音器。
+        es: Únete a tu canal de voz para TTS. Activa la lectura del canal hasta salir; si hay música, usa el mismo mezclador.
+        fr: Rejoint votre salon vocal pour le TTS. Active la lecture du salon jusqu'à la sortie ; partage le mixeur si la musique joue.
+        de: Tritt deinem Sprachkanal für TTS bei. Aktiviert Vorlesen bis zum Verlassen; nutzt bei Musik denselben Mixer.
+        pt-BR: Entra no seu canal de voz para TTS. Ativa a leitura do canal até sair; com música, usa o mesmo mixer.
+        ru: Заходит в ваш голосовой канал для TTS. Включает озвучку канала до выхода; при музыке использует тот же микшер.
+        th: เข้าร่วมช่องเสียงปัจจุบันเพื่อ TTS และเปิดอ่านช่องจนกว่าจะออก หากมีเพลงจะใช้มิกเซอร์เดียวกัน
+        id: Gabung ke channel suara untuk TTS. Mengaktifkan baca saluran sampai keluar; saat musik diputar, memakai mixer yang sama.
     speech:
       description:
         en: Text channel read-aloud commands.

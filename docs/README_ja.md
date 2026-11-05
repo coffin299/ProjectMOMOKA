@@ -401,6 +401,9 @@ Now Playing パネル（Components V2）: 曲名（##）直下にチャンネル
 | コマンド | 説明 |
 |---------|------|
 | `/say <テキスト>` | 読み上げ |
+| `/tts join` | VC 参加＋実行チャンネルの読み上げを退出まで有効化（音楽再生中は同じミキサー） |
+| `/speech enable` `/speech disable` | チャンネル読み上げの有効／無効 |
+| `/tts volume` | TTS 音量 |
 | `/tts-help` | TTS ヘルプ |
 
 ### ゲーム統計（PLANA）

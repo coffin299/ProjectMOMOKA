@@ -354,6 +354,19 @@ class TTSCog(commands.Cog, name="tts_cog"):
         self.speech_settings[guild_id_str].setdefault("volume", self.default_volume)
         return self.speech_settings[guild_id_str]
 
+    def _disable_speech_readout(self, guild_id: int) -> None:
+        """チャンネル読み上げを規定の無効に戻す。"""
+        # ギルド設定を取る
+        settings = self._get_guild_speech_settings(guild_id)
+        # すでに無効なら保存しない
+        if settings.get("speech_channel_id") is None:
+            # 変更なし
+            return
+        # 参加中オーバーライドを消す
+        settings["speech_channel_id"] = None
+        # 再起動後も無効のままにする
+        self._save_speech_settings(guild_id)
+
     def _get_channel_settings(self, channel_id: int) -> Dict:
         if channel_id not in self.channel_settings:
             return {
@@ -460,6 +473,120 @@ class TTSCog(commands.Cog, name="tts_cog"):
         # いずれも無ければ占有なし
         return False
 
+    def _music_state(self, guild_id: int):
+        """既存の音楽ギルド状態だけを返す。無ければ None。"""
+        # MusicCog を取得する
+        music_cog: Optional[MusicCog] = self.bot.get_cog(_MUSIC_COG_NAME)
+        # 未ロードなら状態なし
+        if music_cog is None or not hasattr(music_cog, "get_existing_guild_state"):
+            # 作成しない
+            return None
+        # 既存状態のみ
+        return music_cog.get_existing_guild_state(guild_id)
+
+    def _active_voice_client(self, guild: discord.Guild) -> Optional[discord.VoiceClient]:
+        """音楽状態かギルド接続のうち、生きている VoiceClient を返す。"""
+        # 音楽側が握っている接続を優先する（ミキサーと同じクライアント）
+        state = self._music_state(guild.id)
+        # 音楽の VoiceClient
+        music_client = getattr(state, "voice_client", None) if state is not None else None
+        # 接続中ならそれを使う
+        if music_client is not None and music_client.is_connected():
+            # ミキサーの再生先
+            return music_client
+        # 読み上げだけが接続している場合
+        client = guild.voice_client
+        # 接続中ならそれを使う
+        if client is not None and client.is_connected():
+            # ギルドの現在接続
+            return client
+        # 未接続
+        return None
+
+    def _music_blocks_channel_change(
+        self,
+        guild: discord.Guild,
+        target_channel_id: int,
+    ) -> Optional[str]:
+        """別 VC で音楽が生きているなら移動拒否の文言を返す。"""
+        # 今の接続
+        client = self._active_voice_client(guild)
+        # 未接続、または既に目的の VC なら移動しない
+        if client is None or client.channel is None or client.channel.id == target_channel_id:
+            # ブロックなし
+            return None
+        # 音楽の状態
+        state = self._music_state(guild.id)
+        # 再生・キュー・一時停止・退出待ちは接続を動かさない
+        held = self._music_occupies_voice(guild.id) or (
+            state is not None
+            and (
+                state.is_paused
+                or state.current_track is not None
+                or state.leave_after_queue_end
+            )
+        )
+        # 音楽が掴んでいなければ移動してよい
+        if not held:
+            # ブロックなし
+            return None
+        # ミキサーごと別チャンネルへ連れていかない
+        return (
+            f"❌ 音楽が {client.channel.mention} に接続中です。"
+            "読み上げは同じ VC のミキサーに載るので、そのチャンネルに入ってから実行してください。"
+        )
+
+    async def _deafen_like_music(self, guild: discord.Guild) -> None:
+        """音楽と同じサーバー側スピーカーミュートを適用する。"""
+        # MusicCog を取得する
+        music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
+        # ヘルパーが無ければ何もしない
+        if music_cog is None or not hasattr(music_cog, "_apply_server_deafen"):
+            # 早期リターン
+            return
+        # 緑アイコンの deafen
+        await music_cog._apply_server_deafen(guild)
+
+    async def _connect_tts_voice(
+        self,
+        guild: discord.Guild,
+        channel: discord.abc.Connectable,
+    ) -> Optional[str]:
+        """TTS 用に VC へ接続する。成功時は None。読み上げチャンネル設定は変えない。"""
+        # 相方ボットが同じ VC にいる間は接続しない
+        block_msg = self._partner_voice_block_message(guild.id, channel.id)
+        # 拒否文言があれば返す
+        if block_msg:
+            # ユーザーへ返す
+            return block_msg
+        # 音楽が別 VC を掴んでいる間は移動しない
+        held_msg = self._music_blocks_channel_change(guild, channel.id)
+        # 拒否文言があれば返す
+        if held_msg:
+            # ミキサーの接続を維持する
+            return held_msg
+        # 既存接続
+        client = self._active_voice_client(guild)
+        try:
+            # 未接続なら新規参加。自己deafはせず、直後にサーバー側 mute
+            if client is None:
+                # 新規接続
+                await channel.connect(self_deaf=False)
+            # 別 VC で音楽が掴んでいなければ移動する
+            elif client.channel is None or client.channel.id != channel.id:
+                # 既存 VoiceClient を移動する（再生中ミキサーは上で拒否済み）
+                await client.move_to(channel)
+            else:
+                # 同じ VC。ミキサーの play は止めない
+                return None
+            # 接続後に音楽と同じ deafen を掛ける
+            await self._deafen_like_music(guild)
+        except Exception as exc:
+            # 接続失敗を文言にする
+            return f"❌ 接続失敗: `{exc}`"
+        # 成功
+        return None
+
     @staticmethod
     def _music_mixer_is_live(music_cog, music_state) -> bool:
         """MusicCog のミキサーが VoiceClient で実際に再生され続けているか。"""
@@ -504,6 +631,11 @@ class TTSCog(commands.Cog, name="tts_cog"):
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
         if member.id == self.bot.user.id:
+            # VC から抜けたら読み上げを規定の無効へ戻す。移動だけでは消さない
+            if before.channel is not None and after.channel is None:
+                # セッション中の有効化を解除する
+                self._disable_speech_readout(member.guild.id)
+            # ボット自身の入室処理はここではしない
             return
 
         guild = member.guild
@@ -589,6 +721,36 @@ class TTSCog(commands.Cog, name="tts_cog"):
 
         await interaction.response.send_message(f"🔊 TTSの音量を **{volume}%** に設定しました。")
 
+    @tts_group.command(name="join", description="Join your voice channel for TTS.")
+    async def tts_join(self, interaction: discord.Interaction):
+        # 実行者が VC にいることを確認する
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            # 未接続は拒否する
+            return await interaction.response.send_message(
+                "❌ ボイスチャンネルに接続してから実行してください。",
+                ephemeral=True,
+            )
+        # 参加先
+        channel = interaction.user.voice.channel
+        # 音楽のミキサー接続を奪わずに参加する
+        error = await self._connect_tts_voice(interaction.guild, channel)
+        # 拒否・失敗は ephemeral
+        if error:
+            # 接続しない
+            return await interaction.response.send_message(error, ephemeral=True)
+        # 規定は無効。参加中だけこのチャンネルの読み上げを上書きで有効にする
+        guild_settings = self._get_guild_speech_settings(interaction.guild.id)
+        # コマンドを打ったチャンネルを読み上げ対象にする
+        guild_settings["speech_channel_id"] = interaction.channel.id
+        # 退出時に消すため、今の有効化も保存する
+        self._save_speech_settings(interaction.guild.id)
+        # チャンネル読み上げは VC 在籍中だけ。/say は同じ接続のミキサーに重ねる
+        await interaction.response.send_message(
+            f"🔊 {channel.mention} に接続しました。"
+            "このチャンネルの読み上げを、VC を出るまで有効にします。"
+            "音楽再生中は同じミキサーに重ねます。"
+        )
+
     speech_group = app_commands.Group(name="speech", description="Text channel read-aloud commands.")
 
     @speech_group.command(name="enable", description="Enable message read-aloud for this channel.")
@@ -597,27 +759,12 @@ class TTSCog(commands.Cog, name="tts_cog"):
             return await interaction.response.send_message("❌ ボイスチャンネルに接続してから実行してください。", ephemeral=True)
         
         vc = interaction.user.voice.channel
-        # 相方が同一 VC にいる場合は接続・移動を拒否する
-        block_msg = self._partner_voice_block_message(interaction.guild.id, vc.id)
-        # 拒否メッセージがあれば ephemeral で返して終了する
-        if block_msg:
-            # ユーザーへ同居不可を伝える
-            return await interaction.response.send_message(block_msg, ephemeral=True)
-        try:
-            if interaction.guild.voice_client:
-                # 既存接続をユーザーのVCへ移動する
-                await interaction.guild.voice_client.move_to(vc)
-            else:
-                # 新規接続（自己deafはせずサーバー側 mute を後で適用）
-                await vc.connect(self_deaf=False)
-            # MusicCog のサーバー側スピーカーミュート処理を再利用する
-            music_cog = self.bot.get_cog(_MUSIC_COG_NAME)
-            # ヘルパーが存在する場合のみ適用する
-            if music_cog and hasattr(music_cog, "_apply_server_deafen"):
-                # 緑アイコンのサーバー側スピーカーミュートを適用
-                await music_cog._apply_server_deafen(interaction.guild)
-        except Exception as e:
-            return await interaction.response.send_message(f"❌ 接続失敗: `{e}`", ephemeral=True)
+        # 音楽ミキサーの接続を維持したまま参加する
+        error = await self._connect_tts_voice(interaction.guild, vc)
+        # 拒否・失敗は ephemeral
+        if error:
+            # 読み上げ対象は変えない
+            return await interaction.response.send_message(error, ephemeral=True)
 
         guild_settings = self._get_guild_speech_settings(interaction.guild.id)
         guild_settings["speech_channel_id"] = interaction.channel.id
