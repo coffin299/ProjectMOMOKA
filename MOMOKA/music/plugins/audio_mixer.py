@@ -146,7 +146,7 @@ async def _acquire_thread_lock(lock: threading.Lock) -> None:
 
 
 class AudioMixer(discord.AudioSource):
-    def __init__(self, on_source_removed_callback=None, *, guild_id: Optional[int] = None):
+    def __init__(self, on_source_removed_callback=None):
         # ソース辞書: ソース名→AudioSourceオブジェクト
         self.sources: Dict[str, discord.AudioSource] = {}
         # ボリューム辞書: ソース名→音量(float)
@@ -163,16 +163,6 @@ class AudioMixer(discord.AudioSource):
         self.active = True
         # ソース削除時に呼ばれるコールバック（各ソース削除ごとに発火）
         self.on_source_removed_callback = on_source_removed_callback
-        # 定期的に PCM ピークだけ記録し、音源側と Discord 送信側を切り分ける。
-        self.guild_id = guild_id
-        self._last_pcm_meter_log = time.monotonic()
-        self._meter_source_peaks: Dict[str, int] = {}
-        self._meter_source_sumsq: Dict[str, int] = {}
-        self._meter_source_samples: Dict[str, int] = {}
-        self._meter_source_volumes: Dict[str, float] = {}
-        self._meter_output_peak = 0
-        self._meter_output_sumsq = 0
-        self._meter_output_samples = 0
 
     def is_done(self) -> bool:
         """ミキサーが終了したかどうかを返す"""
@@ -236,17 +226,6 @@ class AudioMixer(discord.AudioSource):
                 # 16bit LE PCM をゼロコピーで int16 ビュー化
                 src = np.frombuffer(frame, dtype=_PCM_DTYPE)
                 src32 = src.astype(np.int32, copy=False)
-                source_peak = int(np.max(np.abs(src32))) if src32.size else 0
-                self._meter_source_peaks[name] = max(
-                    self._meter_source_peaks.get(name, 0), source_peak
-                )
-                self._meter_source_sumsq[name] = self._meter_source_sumsq.get(name, 0) + int(
-                    np.sum(src32.astype(np.int64) ** 2, dtype=np.int64)
-                )
-                self._meter_source_samples[name] = (
-                    self._meter_source_samples.get(name, 0) + int(src32.size)
-                )
-                self._meter_source_volumes[name] = volume
                 # volume=1.0 は乗算を省略して int32 加算のみ
                 if volume == 1.0:
                     mixed += src32
@@ -307,43 +286,6 @@ class AudioMixer(discord.AudioSource):
 
         # 16bit 範囲へ一括クリップして PCM bytes に戻す
         np.clip(mixed, -32768, 32767, out=mixed)
-        frame_output_peak = int(np.max(np.abs(mixed))) if mixed.size else 0
-        self._meter_output_peak = max(self._meter_output_peak, frame_output_peak)
-        self._meter_output_sumsq += int(
-            np.sum(mixed.astype(np.int64) ** 2, dtype=np.int64)
-        )
-        self._meter_output_samples += int(mixed.size)
-        now = time.monotonic()
-        if now - self._last_pcm_meter_log >= 5.0:
-            source_rms = {
-                name: round(
-                    (self._meter_source_sumsq[name] / max(1, self._meter_source_samples[name])) ** 0.5,
-                    1,
-                )
-                for name in self._meter_source_sumsq
-            }
-            output_rms = round(
-                (self._meter_output_sumsq / max(1, self._meter_output_samples)) ** 0.5,
-                1,
-            )
-            logger.info(
-                "Guild %s: AudioMixer PCM meter 5s source_peak=%s source_rms=%s "
-                "output_peak=%s output_rms=%s volumes=%s",
-                self.guild_id if self.guild_id is not None else "unknown",
-                self._meter_source_peaks,
-                source_rms,
-                self._meter_output_peak,
-                output_rms,
-                self._meter_source_volumes,
-            )
-            self._last_pcm_meter_log = now
-            self._meter_source_peaks.clear()
-            self._meter_source_sumsq.clear()
-            self._meter_source_samples.clear()
-            self._meter_source_volumes.clear()
-            self._meter_output_peak = 0
-            self._meter_output_sumsq = 0
-            self._meter_output_samples = 0
         return mixed.astype(_PCM_DTYPE).tobytes()
 
     async def add_source(self, name: str, source: discord.AudioSource, volume: float = 1.0):

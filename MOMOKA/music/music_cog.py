@@ -1605,7 +1605,7 @@ class MusicCog(commands.Cog, name="music_cog"):
                 self.bot.loop,
             )
 
-        return AudioMixer(on_source_removed_callback=on_source_removed, guild_id=guild_id)
+        return AudioMixer(on_source_removed_callback=on_source_removed)
 
     def _log_voice_output_route(self, voice_client: discord.VoiceClient) -> None:
         """Log Discord-side flags that can suppress a valid PCM stream."""
