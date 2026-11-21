@@ -241,6 +241,15 @@ class TipsManager:
             en="-# Looking for donations to cover API costs. Click Buy me a coffee to donate from $5.",
         )
 
+    def _announcement_footer_text(self, lang: str) -> str:
+        """tips最下部の告知（画像生成の復活）。"""
+        # 言語別の小文字行を返す
+        return pick_str(
+            lang,
+            ja="-# StableDiffusionによる画像生成が復活しました！",
+            en="-# Image generation with Stable Diffusion is back!",
+        )
+
     def _create_tips_list(self) -> List[Dict[str, Any]]:
         """tipsのリストを作成する（日英分離）。"""
         return [
@@ -409,6 +418,10 @@ class TipsManager:
         tip_desc = self._tip_description(tip_data, lang)
         # フッター文言（API費用の寄付募集・連絡先は config 由来）
         footer = self._contact_footer_text(lang)
+        # 最下部の告知（寄付文のさらに下）
+        announcement = self._announcement_footer_text(lang)
+        # 寄付文と告知をこの順で繋ぐ
+        footer = f"{footer}\n{announcement}"
         # router 振り分け中はモデル名・予想時間を出さない
         if not include_model:
             body = (
