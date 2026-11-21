@@ -217,7 +217,7 @@ class TipsManager:
         )
 
     def _contact_footer_text(self, lang: str) -> str:
-        """GPU 寄付募集フッター（プロフィール URL があるときだけ連絡先を付ける）。"""
+        """API費用の寄付募集フッター（プロフィール URL があるときだけ連絡先を付ける）。"""
         # プロフィール URL
         contact = self._support.developer_profile_url
         # 連絡先がある場合
@@ -226,19 +226,19 @@ class TipsManager:
             return pick_str(
                 lang,
                 ja=(
-                    "-# メインサーバーのGPUを寄付してくれる方を募集しています...\n"
+                    "-# API費用を寄付してくれる方を募集しています。Buy me a coffeeをクリックで5ドルから寄付出来ます\n"
                     f"-# コンタクト: {contact}"
                 ),
                 en=(
-                    "-# Looking for GPU donations for our main server...\n"
+                    "-# Looking for donations to cover API costs. Click Buy me a coffee to donate from $5.\n"
                     f"-# Contact: {contact}"
                 ),
             )
         # 連絡先無し
         return pick_str(
             lang,
-            ja="-# メインサーバーのGPUを寄付してくれる方を募集しています...",
-            en="-# Looking for GPU donations for our main server...",
+            ja="-# API費用を寄付してくれる方を募集しています。Buy me a coffeeをクリックで5ドルから寄付出来ます",
+            en="-# Looking for donations to cover API costs. Click Buy me a coffee to donate from $5.",
         )
 
     def _create_tips_list(self) -> List[Dict[str, Any]]:
@@ -407,7 +407,7 @@ class TipsManager:
         # tip 文言を言語別に取る
         tip_title = self._tip_title(tip_data, lang)
         tip_desc = self._tip_description(tip_data, lang)
-        # フッター文言（GPU 寄付募集・連絡先は config 由来）
+        # フッター文言（API費用の寄付募集・連絡先は config 由来）
         footer = self._contact_footer_text(lang)
         # router 振り分け中はモデル名・予想時間を出さない
         if not include_model:
