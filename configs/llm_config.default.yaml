@@ -24,6 +24,9 @@ llm:
   - mistral/mistral-medium-latest
   # OpenRouter Free Models Router（API モデル ID: openrouter/free）
   - openrouter/free
+  # Numes（OpenAI 互換）。設定 ID は numes/<author>/<model>、API へは author/model を送る
+  - numes/deepseek/deepseek-chat-v3.1
+  - numes/anthropic/claude-opus-5
   # メインモデルの全 API キー失敗時に、上から順に試すフォールバックモデル一覧
   fallback_models:
   - nvidia_nim/mistralai/mistral-medium-3.5-128b
@@ -178,7 +181,7 @@ llm:
       # API キー（プレースホルダ。実運用は llm_config.yaml または環境変数側で設定）
       api_key1: YOUR_OPENAI_API_KEY
     # NVIDIA NIM（OpenAI 互換）
-    nvidia_nim: null
+    nvidia_nim:
       # NVIDIA NIM API のベース URL
       base_url: https://integrate.api.nvidia.com/v1
       # API キー（プレースホルダ）
@@ -218,6 +221,17 @@ llm:
       # OpenRouter ランキング用 HTTP-Referer（任意）。未設定時は下記デフォルトを送る
       http_referer: https://momoka-project.com
       # OpenRouter ランキング用 X-Title（アプリ表示名）
+      x_title: Project MOMOKA
+    # Numes（OpenAI Chat Completions 互換）。推論キー: https://numes.ai の Keys
+    # モデル ID はカタログの author/model。設定上は numes/ を前置する
+    numes:
+      # Numes API のベース URL
+      base_url: https://api.numes.ai/api/v1
+      # API キー（プレースホルダ）
+      api_key1: YOUR_NUMES_API_KEY
+      # Activity のアプリ分類用 HTTP-Referer（任意）
+      http_referer: https://momoka-project.com
+      # 互換用 X-Title（Numes は受け取るが転送しない）
       x_title: Project MOMOKA
     # ローカル KoboldCPP（OpenAI 互換）
     koboldcpp:

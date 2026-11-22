@@ -32,7 +32,7 @@
 
 ### Features
 
-- 🤖 **Multi-model AI chat** — OpenAI, Google Gemini, NVIDIA NIM, OpenRouter, KoboldCPP, and more
+- 🤖 **Multi-model AI chat** — OpenAI, Google Gemini, NVIDIA NIM, OpenRouter, Numes, KoboldCPP, and more
 - 🧭 **Agent router** — Auto-dispatch to conversation / coding / command
 - 🎵 **Music playback** — YouTube, Spotify, NicoNico, and more (both bots)
 - 🎨 **Image generation / TTS / notifications / trackers** — **PLANA only**
@@ -53,6 +53,7 @@ Mention `@PLANA` or `@ARONA` to chat. **In DMs, no mention is required** — pla
 - **Google**: Gemini family
 - **NVIDIA NIM**: Kimi, Llama, DeepSeek R1, and more
 - **OpenRouter**: Free Models Router (`openrouter/free`) and more (unified API)
+- **Numes**: OpenAI Chat Completions-compatible marketplace (`numes/<author>/<model>`; the API receives `author/model`)
 - **KoboldCPP**: Local LLM servers
 
 #### Highlights
@@ -316,6 +317,12 @@ llm:
       base_url: https://openrouter.ai/api/v1
       api_key1: YOUR_OPENROUTER_KEY
       # optional (ranking / app identity)
+      http_referer: https://momoka-project.com
+      x_title: Project MOMOKA
+    # Numes example: model: "numes/deepseek/deepseek-chat-v3.1"
+    numes:
+      base_url: https://api.numes.ai/api/v1
+      api_key1: YOUR_NUMES_KEY
       http_referer: https://momoka-project.com
       x_title: Project MOMOKA
 ```

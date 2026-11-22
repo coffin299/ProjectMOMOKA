@@ -64,7 +64,7 @@
 **JA:** `@PLANA` / `@ARONA` をメンションして会話を始め、リプライで会話を続けられます。  
 **EN:** Mention `@PLANA` / `@ARONA` to start a conversation, then keep chatting with replies.
 
-- **JA:** 複数モデル対応（OpenAI、Gemini、NVIDIA NIM、OpenRouter など） · **EN:** Multiple models (OpenAI, Gemini, NVIDIA NIM, OpenRouter, and more)
+- **JA:** 複数モデル対応（OpenAI、Gemini、NVIDIA NIM、OpenRouter、Numes など） · **EN:** Multiple models (OpenAI, Gemini, NVIDIA NIM, OpenRouter, Numes, and more)
 - **JA:** 会話履歴、Web検索、画像理解（対応モデル） · **EN:** Conversation history, web search, and image understanding (supported models)
 
 ![AI Chat](https://momoka-project.com/assets/images/conversation.png)

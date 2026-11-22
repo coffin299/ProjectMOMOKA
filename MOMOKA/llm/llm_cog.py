@@ -871,8 +871,9 @@ class LLMCog(commands.Cog, name="llm"):
         if provider_name.lower() == "koboldcpp":
             # 設定値または 300 秒を使う
             kwargs["timeout"] = provider_config.get("timeout", 300.0)
-        # OpenRouter 推奨ヘッダ（ランキング・識別用）
-        if provider_name.lower() == "openrouter":
+        # OpenRouter / Numes の識別ヘッダ（任意。未設定なら送らない）
+        # Numes は HTTP-Referer を Activity のアプリ分類に使い、X-Title は互換のため受け取る
+        if provider_name.lower() in ("openrouter", "numes"):
             # Referer / アプリ名は設定値のみ使う（個人・サイトのコード既定なし）
             referer = str(provider_config.get("http_referer") or "").strip()
             # アプリ表示名（X-Title）

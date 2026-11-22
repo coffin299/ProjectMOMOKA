@@ -32,7 +32,7 @@
 
 ### 特徴
 
-- 🤖 **マルチモデルAI対話** - OpenAI、Google Gemini、NVIDIA NIM、OpenRouter、KoboldCPP など
+- 🤖 **マルチモデルAI対話** - OpenAI、Google Gemini、NVIDIA NIM、OpenRouter、Numes、KoboldCPP など
 - 🧭 **Agent ルーター** - 会話 / コーディング / コマンドへ自動振り分け
 - 🎵 **音楽再生** - YouTube、Spotify、ニコニコ動画 など（両ボット）
 - 🎨 **画像生成 / TTS / 通知 / tracker** - **PLANA 専用**
@@ -53,6 +53,7 @@
 - **Google**: Gemini 系
 - **NVIDIA NIM**: Kimi、Llama、DeepSeek R1 など
 - **OpenRouter**: Free Models Router（`openrouter/free`）など（集約 API）
+- **Numes**: OpenAI Chat Completions 互換の集約 API（`numes/<author>/<model>`。API へは `author/model`）
 - **KoboldCPP**: ローカル LLM サーバー
 
 #### 主な機能
@@ -320,6 +321,12 @@ llm:
       base_url: https://openrouter.ai/api/v1
       api_key1: YOUR_OPENROUTER_KEY
       # 任意（ランキング用）
+      http_referer: https://momoka-project.com
+      x_title: Project MOMOKA
+    # Numes 利用例: model: "numes/deepseek/deepseek-chat-v3.1"
+    numes:
+      base_url: https://api.numes.ai/api/v1
+      api_key1: YOUR_NUMES_KEY
       http_referer: https://momoka-project.com
       x_title: Project MOMOKA
 ```
