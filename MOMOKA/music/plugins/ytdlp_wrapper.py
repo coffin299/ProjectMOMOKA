@@ -16,6 +16,7 @@ import yt_dlp
 logger = logging.getLogger("MOMOKA.music.plugins.ytdlp")
 from yt_dlp.utils import DownloadError, ExtractorError  # 抽出・ダウンロード失敗を個別に捕捉する
 
+from MOMOKA.music.plugins.process_tree import install_ytdlp_popen_guard
 from MOMOKA.utilities.url_safety import (
     UnsafeURLError,
     assert_info_urls_safe,
@@ -23,6 +24,9 @@ from MOMOKA.utilities.url_safety import (
     assert_user_media_query_safe,
     has_explicit_uri_scheme,
 )
+
+# 抽出プロセスが起動する JS ランタイムもジョブで回収する
+install_ytdlp_popen_guard()
 
 
 class UnsupportedMediaError(RuntimeError):

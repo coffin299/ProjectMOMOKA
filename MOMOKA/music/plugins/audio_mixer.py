@@ -19,6 +19,11 @@ from MOMOKA.music.plugins.process_log_bridge import (
     ChildProcessLogPump,
     redact_media_url,
 )
+from MOMOKA.music.plugins.process_tree import (
+    KillJob,
+    child_process_env,
+    popen_in_job,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +50,7 @@ _FFMPEG_FILE_GUARD = [
 _DYNAMIC_NORMALIZER = "dynaudnorm=f=150:g=5:p=0.95:m=20"
 
 
-def _spawn_ytdlp(cmd: list[str]) -> subprocess.Popen:
+def _spawn_ytdlp(cmd: list[str], job: Optional[KillJob]) -> subprocess.Popen:
     """yt-dlp を起動する。Windows ではコンソール窓を出さない。"""
     # 標準出力は ffmpeg へ、標準エラーはログポンプへ渡す
     kwargs: dict = {
@@ -54,6 +59,8 @@ def _spawn_ytdlp(cmd: list[str]) -> subprocess.Popen:
         "stdin": subprocess.DEVNULL,
         # 親の Python バッファにメディア本体を溜めない
         "bufsize": 0,
+        # 子 Python に Deno 回収パッチを読ませる
+        "env": child_process_env(),
     }
     # Windows はコンソールを割り当てない
     if os.name == "nt":
@@ -62,8 +69,8 @@ def _spawn_ytdlp(cmd: list[str]) -> subprocess.Popen:
     else:
         # POSIX はプロセスグループごと殺せるようにする
         kwargs["start_new_session"] = True
-    # パイプ再生のダウンローダを起動する
-    return subprocess.Popen(cmd, **kwargs)
+    # ジョブへ入れてから実行し、終了時に Deno ごと回収できるようにする
+    return popen_in_job(job, cmd, **kwargs)
 
 
 def _terminate_process_tree(proc: Optional[subprocess.Popen]) -> None:
@@ -492,6 +499,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
         self._primed_frame: Optional[bytes] = None
         # yt-dlp パイプ用プロセス（未使用時は None）
         self._ytdlp_proc: Optional[subprocess.Popen] = None
+        # yt-dlp と Deno をまとめて終了する Windows ジョブ（未使用時は None）
+        self._process_job: Optional[KillJob] = KillJob.create()
         # yt-dlp stderrを常時排出するログポンプ（未使用時はNone）
         self._ytdlp_stderr_pump: Optional[ChildProcessLogPump] = None
         # 一度も PCM を出せずに終了したか
@@ -559,7 +568,7 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 use_cookies=pipe_use_cookies,
             )
             # yt-dlp を起動し stdout をパイプする（停止時は子プロセスもまとめて殺す）
-            self._ytdlp_proc = _spawn_ytdlp(ytdlp_cmd)
+            self._ytdlp_proc = _spawn_ytdlp(ytdlp_cmd, self._process_job)
             try:
                 # stderrを常時排出してパイプ満杯とread()ブロックを防ぐ。
                 self._ytdlp_stderr_pump = ChildProcessLogPump(
@@ -620,6 +629,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 if self._ytdlp_proc.stdout:
                     # 親の複製 FD を閉じる
                     self._ytdlp_proc.stdout.close()
+                # パイプ再生の FFmpeg もジョブへ入れ、停止時に Deno と一緒に回収する
+                self._assign_ffmpeg_to_job()
             except Exception:
                 # 初期化途中の子プロセス・ログポンプ・stderrを確実に解放する
                 self._cleanup_failed_pipe_initialization()
@@ -655,6 +666,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
                 stdin=subprocess.DEVNULL,
                 stderr=self._stderr_file,
             )
+            # 直接再生の FFmpeg もジョブへ入れる
+            self._assign_ffmpeg_to_job()
 
         # FFmpegのPIDをログ出力
         pid = "N/A"
@@ -669,8 +682,40 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
             f"url={self._safe_stream_url[:150]}..."
         )
 
+    def _assign_ffmpeg_to_job(self) -> None:
+        """起動済み FFmpeg を再生ジョブへ入れる。"""
+        # ジョブが無い環境では所属させない
+        if self._process_job is None:
+            # taskkill 側の回収に任せる
+            return
+        # discord.py が起動した FFmpeg
+        ffmpeg_proc = getattr(self, "_process", None)
+        # プロセスが無ければ何もしない
+        if ffmpeg_proc is None:
+            # 未起動
+            return
+        # 以後この FFmpeg もジョブ終了で止まる
+        self._process_job.assign(getattr(ffmpeg_proc, "_handle", None))
+
+    def _reap_process_job(self) -> None:
+        """再生ジョブを終了し、Deno を含む子孫を回収する。"""
+        # ジョブ参照を外してから終了する
+        job = self._process_job
+        # 二重回収を防ぐ
+        self._process_job = None
+        # ジョブが無い環境では taskkill に任せる
+        if job is None:
+            # 回収対象なし
+            return
+        # ジョブ内の yt-dlp / Deno / FFmpeg を止める
+        job.terminate()
+        # ハンドルを閉じて取り残しも終了させる
+        job.close()
+
     def _cleanup_failed_pipe_initialization(self):
         """yt-dlp パイプ初期化の途中失敗で確保済みリソースを解放する。"""
+        # Deno が残らないよう、個別 kill より先にジョブを閉じる
+        self._reap_process_job()
         # 作成済みのyt-dlpプロセスをローカル変数で保持する
         ytdlp_proc = self._ytdlp_proc
         # 再利用されないよう先に状態参照をクリアする
@@ -973,6 +1018,8 @@ class MusicAudioSource(discord.FFmpegPCMAudio):
     def cleanup(self):
         """FFmpeg / yt-dlp プロセスと一時ファイルのクリーンアップ"""
         logger.info(f"Guild {self.guild_id}: Music FFmpeg process for '{self.title}' is being cleaned up.")
+        # FFmpeg の wait より先に Deno ごと止める。wait が返らないと回収できないため。
+        self._reap_process_job()
         # 先に FFmpeg を止める
         try:
             super().cleanup()

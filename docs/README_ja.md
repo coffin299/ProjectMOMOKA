@@ -70,7 +70,7 @@
 ストリーム取得失敗（HTTP 403 / NO audio 等）時はエラーパネルを出し、`current_track` をクリアして次の `/play` が詰まらないように復旧します。YouTube のみ代替 `player_client` で 1 回リトライします（ニコニコ等の非 YouTube には適用しません）。
 ただし **同一 VC への同時接続は不可**（負荷対策）。片方の Bot が接続中のチャンネルへ、もう一方は入れません。既に同居している場合は **ARONA（companion）のみ切断**し、PLANA を維持します。
 
-PCM ミキサー（`AudioMixer`）は NumPy でフレーム加算・クリップし、音楽と TTS を同一 VC で重ねます。
+PCM ミキサー（`AudioMixer`）は NumPy でフレーム加算・クリップし、音楽と TTS を同一 VC で重ねます。YouTube の JS チャレンジ解決（Deno / Node）は V8 ヒープを 1024MB に制限し、スキップや再生終了でプロセスツリーごと回収します。親プロセスだけ止めて Deno が残るのを防ぎます。
 
 #### 対応ソース
 

@@ -70,7 +70,7 @@ Both bots can play in voice channels (queue, loop, shuffle, etc.).
 On stream failures (HTTP 403 / NO audio, etc.), an error panel is shown and `current_track` is cleared so the next `/play` is not stuck. YouTube-only: one retry with an alternate `player_client` (not applied to NicoNico and other non-YouTube sources).
 They **cannot share the same VC at once** (load control): if one bot is already connected, the other is refused. If both are already in the same channel, **ARONA (companion) disconnects** and PLANA stays.
 
-The PCM mixer (`AudioMixer`) uses NumPy vectorized add/clip so music and TTS can share one VC with lower CPU cost.
+The PCM mixer (`AudioMixer`) uses NumPy vectorized add/clip so music and TTS can share one VC with lower CPU cost. YouTube JS challenge solvers (Deno / Node) are capped at a 1024MB V8 heap and killed with their process tree on skip or stop, so Deno is not left running after the parent exits.
 
 #### Sources
 

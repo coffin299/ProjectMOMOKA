@@ -76,8 +76,8 @@
 
 ## Music Playback / 音楽再生
 
-**JA:** ボイスチャンネルで再生（キュー・ループ・シャッフルなど）。両ボット対応（同一 VC への同時接続は不可）。PCM ミキサーは NumPy で音楽+TTS を合成。ストリーム失敗時は状態を復旧し、次の `/play` が詰まらないようにします。  
-**EN:** Play audio in voice channels with queue, loop, shuffle, and more. Both bots (same VC at once is not allowed). PCM mixer uses NumPy for music+TTS mix. Stream failures recover guild state so the next `/play` is not stuck.
+**JA:** ボイスチャンネルで再生（キュー・ループ・シャッフルなど）。両ボット対応（同一 VC への同時接続は不可）。PCM ミキサーは NumPy で音楽+TTS を合成。ストリーム失敗時は状態を復旧し、次の `/play` が詰まらないようにします。YouTube の Deno / Node は V8 ヒープを 1024MB に制限し、再生停止時にプロセスツリーごと終了します。  
+**EN:** Play audio in voice channels with queue, loop, shuffle, and more. Both bots (same VC at once is not allowed). PCM mixer uses NumPy for music+TTS mix. Stream failures recover guild state so the next `/play` is not stuck. YouTube Deno / Node heaps are capped at 1024MB and the process tree is killed when playback stops.
 
 - YouTube / Spotify / ニコニコ動画 / その他 yt-dlp 対応ソース  
   **EN:** YouTube, Spotify, NicoNico, and other yt-dlp sources
