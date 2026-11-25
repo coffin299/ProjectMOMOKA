@@ -520,10 +520,10 @@ def _log_ejs_readiness() -> None:
             break
         version_parts.append(int(digits))
     # 古い yt-dlp は再生不能なので起動時に知らせる
-    if tuple(version_parts) < (2026, 3, 17):
+    if tuple(version_parts) < (2026, 11, 23):
         logger.warning(
-            "yt-dlp %s is too old for current YouTube signatures (need >=2026.3.17). "
-            "Upgrade with: py -3.11 -m pip install -U \"yt-dlp[default]>=2026.3.17\"",
+            "yt-dlp %s is too old for current YouTube signatures (need >=2026.11.23). "
+            "Upgrade with: py -3.11 -m pip install -U \"yt-dlp[default]>=2026.11.23\"",
             ytdlp_version,
         )
     else:
@@ -564,6 +564,15 @@ def apply_youtube_ejs_opts(opts: dict) -> dict:
     merged.setdefault("js_runtimes", _detect_js_runtimes())
     # EJS リモート取得が未指定なら GitHub を許可する
     merged.setdefault("remote_components", ["ejs:github"])
+    # 2026.11.23 より前の yt-dlp でも既知の n challenge 破損を避ける
+    extractor_args = {
+        key: value.copy() if isinstance(value, dict) else value
+        for key, value in (merged.get("extractor_args") or {}).items()
+    }
+    youtube_args = dict(extractor_args.get("youtube") or {})
+    youtube_args.setdefault("player_js_variant", ["tv"])
+    extractor_args["youtube"] = youtube_args
+    merged["extractor_args"] = extractor_args
     # 注入後のオプションを返す
     return merged
 
@@ -582,6 +591,8 @@ def _merge_youtube_extractor_args(
     }
     # YouTube固有設定を独立した辞書として複製する。
     youtube_args = dict(extractor_args.get("youtube") or {})
+    # 既知の YouTube player n challenge 破損を避ける（新しい yt-dlp では既定値）。
+    youtube_args.setdefault("player_js_variant", ["tv"])
     # クライアント指定がある場合だけ単一候補を設定する。
     if player_clients:
         # yt-dlp Python APIが要求する文字列リストを保存する。
@@ -1198,6 +1209,7 @@ COMMON_YTDL_OPTS: dict = {
     "extractor_args": {
         "youtube": {
             "player_client": [_YOUTUBE_PLAYER_CLIENT_PRIMARY[0]],
+            "player_js_variant": ["tv"],
         }
     },
     # YouTube JS チャレンジ解決用ランタイム（deno 優先、無ければ node）
