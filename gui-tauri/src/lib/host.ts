@@ -4,8 +4,10 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 export type ApiResponse = {
   ok: boolean;
   status: number;
-  json: unknown;
+  data: unknown;
   text: string;
+  /** 旧フィールド互換（リネーム前バイナリ向け） */
+  json?: unknown;
 };
 
 export type ConnInfo = {
@@ -29,11 +31,15 @@ export async function apiRequest(opts: {
   body?: unknown;
 }): Promise<ApiResponse> {
   // 引数はフラットに渡す（ネスト args は WebView によって落ちることがある）
-  return invoke<ApiResponse>("momoka_api", {
+  const args: Record<string, unknown> = {
     method: opts.method ?? "GET",
     path: opts.path,
-    body: opts.body ?? null,
-  });
+  };
+  // null は送らず省略（Option はキー無しで None）
+  if (opts.body !== undefined && opts.body !== null) {
+    args.body = opts.body;
+  }
+  return invoke<ApiResponse>("momoka_api", args);
 }
 
 export async function startLogSse(): Promise<void> {

@@ -113,21 +113,26 @@ export function createStatusStore(pollMs = 1000) {
 
       const tick = async () => {
         if (cancelled || inFlight) return;
-        if (document.hidden) {
-          timer = undefined;
-          return;
-        }
+        // バックグラウンドでもポーリングは継続する。
+        // Tauri WebView2 は起動直後 document.hidden=true のことがあり、
+        // ここで return すると visibilitychange が来ず永続的に空表示になる。
         inFlight = true;
         const myGen = ++generation;
         try {
-          const [s, v, g, l] = await Promise.all([
+          // 1 本失敗で全部落ちないよう個別に取る
+          const [sRes, vRes, gRes, lRes] = await Promise.allSettled([
             apiGet<StatusPayload>("/status"),
             apiGet<{ items: VcItem[] }>("/vc"),
             apiGet<{ items: GuildItem[] }>("/guilds"),
             apiGet<{ average_seconds: number | null }>("/llm/stats"),
           ]);
           if (cancelled || myGen !== generation) return;
-          commit(s, v.items || [], g.items || [], l.average_seconds);
+          const s = sRes.status === "fulfilled" ? sRes.value : null;
+          const v = vRes.status === "fulfilled" ? vRes.value.items || [] : [];
+          const g = gRes.status === "fulfilled" ? gRes.value.items || [] : [];
+          const l =
+            lRes.status === "fulfilled" ? lRes.value.average_seconds : null;
+          commit(s, v, g, l);
         } catch {
           if (cancelled || myGen !== generation) return;
           commit(null, [], [], null);
@@ -139,16 +144,10 @@ export function createStatusStore(pollMs = 1000) {
         }
       };
 
-      const onVisibility = () => {
-        if (document.hidden || timer !== undefined) return;
-        void tick();
-      };
-      document.addEventListener("visibilitychange", onVisibility);
       void tick();
 
       return () => {
         cancelled = true;
-        document.removeEventListener("visibilitychange", onVisibility);
         if (timer !== undefined) window.clearTimeout(timer);
       };
     }

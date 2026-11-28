@@ -63,6 +63,47 @@ def _preload_torch() -> None:
 # Cog 読込より前に torch を確定する（C10 衝突回避）
 _preload_torch()
 
+
+def _silence_win_proactor_connection_reset() -> None:
+    """Windows Proactor の切断時 WinError 10054 traceback を抑止する。
+
+    リモートが先に RST したあとの ``_call_connection_lost`` 内 shutdown が
+    ConnectionResetError を投げ、asyncio が ERROR で連発する既知ノイズ。
+    """
+    # Windows 以外は何もしない
+    if sys.platform != "win32":
+        return
+    try:
+        # Proactor パイプ実装を取る
+        from asyncio.proactor_events import _ProactorBasePipeTransport
+    except ImportError:
+        # 実装が無い環境はスキップ
+        return
+    # 元のコールバックを保持する
+    _orig = _ProactorBasePipeTransport._call_connection_lost
+
+    def _safe_call_connection_lost(self, exc) -> None:  # type: ignore[no-untyped-def]
+        """shutdown 時の ConnectionResetError を握りつぶす。"""
+        try:
+            # 通常の切断処理
+            _orig(self, exc)
+        except ConnectionResetError:
+            # WinError 10054: 既に切断済み
+            return
+        except OSError as err:
+            # winerror が 10054 のときだけ無視する
+            if getattr(err, "winerror", None) == 10054:
+                return
+            # それ以外は再送出
+            raise
+
+    # モンキーパッチを適用する
+    _ProactorBasePipeTransport._call_connection_lost = _safe_call_connection_lost
+
+
+# Windows asyncio 切断ノイズを抑える
+_silence_win_proactor_connection_reset()
+
 # Windows ダークモード（ログビューア用）を有効化する
 set_dark_mode()
 

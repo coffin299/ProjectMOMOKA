@@ -128,10 +128,12 @@ impl HostConfig {
 
 /// IPC / 内部共用の API 応答
 #[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiResponse {
     pub ok: bool,
     pub status: u16,
-    pub json: Value,
+    /// レスポンス JSON（`json` は予約語衝突を避けるため data）
+    pub data: Value,
     pub text: String,
 }
 
@@ -210,7 +212,7 @@ async fn request(
     Ok(ApiResponse {
         ok,
         status,
-        json,
+        data: json,
         text,
     })
 }
