@@ -194,13 +194,13 @@ Recommended: rate-limit `/d/*` on Cloudflare. Do not force Cloudflare Access log
    pip install -r requirements.txt
    python main.py
    ```
-   On start, the **Electron** host GUI (Discord dark) opens. Sidebar: Overview / General / LLM / TTS+Music / Error / **Log management**. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently.  
+   On start, the **Tauri 2 + Svelte** host GUI (Discord dark, WebView2) opens. Sidebar: Overview / Web / General / LLM / TTS+Music / Error / **Log management**. Overview shows Active VC, LLM I/O summary + average latency, joined servers (name/id only), join/leave, ping/uptime. Panels scroll independently. The Web tab embeds a WebView for YouTube / Niconico login and cookie export to the Host API; the WebView is hidden when not selected to reduce memory.  
    Log colors: `[USER_INPUT]` yellow-green, `[LLM_RESPONSE]` cyan, `[GUILD_EVENT]` blue; `[PLANA]` / `[ARONA]` tag colors unchanged. `[LLM_RESPONSE]` includes `requester_id=<Discord user id>` for search.  
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
    All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores up to **10000 lines** from the `.log` tail (history across restarts, including join/leave). Clear affects the UI only.  
    **Log management** panel: search logs and DB (`speech_auto_join_users` / VC restart-session `requester_id`) by Discord user ID. Logs: mask selected/all (keep timestamp only in `.log`/`.txt`). DB: hard-delete selected/all. APIs: `GET /privacy/search`, `POST /privacy/logs/mask`, `POST /privacy/db/delete`.  
-   On first run, `startMOMOKA.bat` builds `gui-electron` (skips when `dist\index.html` exists). If only `dist` is missing but `node_modules` is present, it runs `vite build` only (no `npm ci`). Leftover Host Electron is stopped first to avoid `icudtl.dat` EBUSY. Bot still runs if the GUI build fails.  
-   Code: `MOMOKA/GUI/` + `gui-electron/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
+   On first run, `startMOMOKA.bat` builds `gui-tauri` (skips when `src-tauri/target/release/gui-tauri.exe` exists). Requires Rust/cargo; if missing, warns and continues without the GUI. Leftover Host Tauri is stopped first. Bot still runs if the GUI build fails.  
+   Code: `MOMOKA/GUI/` + `gui-tauri/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
    Provider v1.3.1. MOMOKA starts it before the bots, checks `/ping`, and
@@ -248,14 +248,13 @@ If TTS / speech settings fail to load, empty in-memory state is not written back
 - `allowed_channel_ids` is enforced in the LLM listener and `interaction_check` (empty = allow all). DMs use `allowed_channel_allow_dm`
 - Invite OAuth permissions are minimized (View/Send/Embed/Attach/History/Connect/Speak/Voice Activity/Manage Messages)
 - Host GUI log masking uses atomic file replace plus live `event_id` / `content_hash` updates. Delete-all requires a strict boolean
-- Host GUI Bearer token stays in the Electron **main process only** (not exposed to renderer/preload; API and SSE go through IPC)
-- Host GUI waits for `/status` readiness before launching Electron; start/stop uses a generation lock against races
-- On Bot shutdown, console / Host GUI / persistent file logs are flushed first, then Electron is terminated (PID tracking, orphan sweep under gui-electron, `app.quit` when the Host API dies). Discord log-channel forwarding is detached during shutdown
+- Host GUI Bearer token stays in the Tauri **Rust side only** (not exposed to the frontend; API and SSE go through invoke/events)
+- Host GUI waits for `/status` readiness before launching Tauri; start/stop uses a generation lock against races
+- On Bot shutdown, console / Host GUI / persistent file logs are flushed first, then Tauri is terminated (PID tracking, orphan sweep under gui-tauri, `app.exit` when the Host API dies). Discord log-channel forwarding is detached during shutdown
 - Status / VC / guilds metrics are snapshotted on the Bot event loop (not read directly from the API thread)
 - Discord forwarded logs drop `[USER_INPUT]` / `[LLM_RESPONSE]`
 - `channel_llm_models` / `response_time_samples` use per-bot_id / per-model UPSERT (avoids dual-bot wipe races)
 - webpage GitHub Actions pin third-party actions to commit SHAs
-- **M-10 (electron:dev CORS) is intentionally unchanged**
 
 #### Host vs. guild settings boundary
 
@@ -272,11 +271,11 @@ The web dashboard may change only guild-admin namespaces: earthquake, Twitch, Li
 | Bot token / LLM API keys / Twitch secret | Host YAML only | **Never expose to the browser** |
 | logging_channels / shutdown / admin | Bot owner only | Out of dashboard scope |
 
-#### Host ops GUI (Electron) vs future guild dashboard
+#### Host ops GUI (Tauri) vs future guild dashboard
 
 - Host GUI API (`/host-gui/*`, `127.0.0.1`, startup Bearer token) is for the bot operator only. It is **separate** from guild settings, OAuth, and any public browser UI.
-- Host GUI log delivery uses **main-process Bearer SSE** (token never reaches the renderer) plus `/logs/history` polling (every 10 s as a gap filler while SSE is live, every 1 s otherwise; no new request while one is pending). Live log lines are batched into the UI every 100 ms. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
-- After Bot/GUI shutdown, Electron is not left behind: **shutdown logs are flushed and briefly drained first**, then Python sweeps tracked/orphan PIDs; Electron also quits when the Host API becomes unreachable (Shutdown does not close the window immediately)
+- Host GUI log delivery uses **Rust-side Bearer SSE** (token never reaches the frontend) plus `/logs/history` polling (every 30 s as a gap filler while SSE is live, every 1 s otherwise; no new request while one is pending). Live log lines are batched into the UI every 100 ms. WebSocket `/logs` remains compatibility-only (`bearer.<token>`). Message-auth WebSockets are not used
+- After Bot/GUI shutdown, Tauri is not left behind: **shutdown logs are flushed and briefly drained first**, then Python sweeps tracked/orphan PIDs; Tauri also quits when the Host API becomes unreachable (Shutdown does not close the window immediately)
 - LLM image URL fetches use `MOMOKA.utilities.url_safety` for SSRF protection (private IPs + redirect re-validation)
 - The future guild-admin dashboard must use Discord OAuth + Manage Guild + `save_guild` only. Do not expose host namespaces, shutdown, tokens, or local-service proxies there.
 

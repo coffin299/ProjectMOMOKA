@@ -467,8 +467,8 @@ def build_status_payload() -> Dict[str, Any]:
 def request_shutdown() -> bool:
     """全 Bot を閉じるコルーチンをスケジュールする。成功で True。
 
-    Electron はここでは落とさない。ログ出し切り後に main の finally が
-    stop_host_gui する（または Host API 断で Electron 側 watchdog が終了）。
+    Tauri はここでは落とさない。ログ出し切り後に main の finally が
+    stop_host_gui する（または Host API 断で Tauri 側 watchdog が終了）。
     """
     # 循環 import 回避
     import asyncio

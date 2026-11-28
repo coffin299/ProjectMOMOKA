@@ -740,7 +740,7 @@ if __name__ == "__main__":
     
     # ログビューアをスレッドで起動する
     log_viewer_thread = run_log_viewer_thread(log_queue)
-    print("ホスト GUI（Electron）を起動しました。")
+    print("ホスト GUI（Tauri）を起動しました。")
 
     # --- 設定の読み込みとバリデーション ---
     from MOMOKA.config.loader import load_merged_config, validate_bot_tokens
@@ -1013,7 +1013,7 @@ if __name__ == "__main__":
             flush_all_logging()
             # SSE 配信待ち（短い固定待ち）
             await asyncio.sleep(1.0)
-            # ホスト Electron GUI も落とす（コンソール pause 阻害防止）
+            # ホスト Tauri GUI も落とす（コンソール pause 阻害防止）
             try:
                 from MOMOKA.GUI.runner import stop_host_gui
 

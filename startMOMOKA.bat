@@ -198,29 +198,35 @@ if not exist "third_party\bgutil-ytdlp-pot-provider\server\build\main.js" (
 echo [SUCCESS] BgUtils PO Token Provider is ready.
 echo.
 
-REM Host Electron GUI ^(skip when already built^)
-echo [INFO] Checking host Electron GUI ^(gui-electron^)...
-if not exist "gui-electron\package.json" (
-    echo [WARN] gui-electron\package.json not found — host GUI will be skipped.
-    goto gui_electron_done
+REM Host Tauri GUI ^(skip when release binary already built^)
+echo [INFO] Checking host Tauri GUI ^(gui-tauri^)...
+if not exist "gui-tauri\package.json" (
+    echo [WARN] gui-tauri\package.json not found — host GUI will be skipped.
+    goto gui_tauri_done
 )
-if exist "gui-electron\dist\index.html" (
-    echo [INFO] gui-electron dist already exists — skipping build.
-    goto gui_electron_done
+if exist "gui-tauri\src-tauri\target\release\gui-tauri.exe" (
+    echo [INFO] gui-tauri release binary already exists — skipping build.
+    goto gui_tauri_done
 )
 
-REM dist 再ビルド前に残留 Electron を落とす（icudtl.dat EBUSY 防止）
-echo [INFO] Stopping leftover Host Electron GUI processes if any...
-powershell -NoProfile -ExecutionPolicy Bypass -File "gui-electron\stop-leftover-electron.ps1" >nul 2>&1
+where cargo >nul 2>&1
+if errorlevel 1 (
+    echo [WARN] Rust cargo not found in PATH — host Tauri GUI build skipped.
+    echo [WARN] Install Rust from https://rustup.rs/ then rerun startMOMOKA.bat
+    goto gui_tauri_done
+)
 
-echo [INFO] Building host Electron GUI ^(dist missing^)...
-pushd "gui-electron"
+REM 再ビルド前に残留 Tauri を落とす
+echo [INFO] Stopping leftover Host Tauri GUI processes if any...
+powershell -NoProfile -ExecutionPolicy Bypass -File "gui-tauri\stop-leftover-tauri.ps1" >nul 2>&1
 
-REM node_modules 済みなら npm ci 不要（dist 削除だけの再ビルドを軽く・安全に）
-if exist "node_modules\vite\package.json" (
-    echo [INFO] node_modules present — skipping npm ci/install, running vite build only.
+echo [INFO] Building host Tauri GUI ^(release binary missing^)...
+pushd "gui-tauri"
+
+if exist "node_modules\@tauri-apps\cli\package.json" (
+    echo [INFO] node_modules present — skipping npm ci/install.
 ) else (
-    echo [INFO] node_modules missing — installing gui-electron dependencies...
+    echo [INFO] node_modules missing — installing gui-tauri dependencies...
     if exist "package-lock.json" (
         call npm ci
     ) else (
@@ -228,25 +234,24 @@ if exist "node_modules\vite\package.json" (
     )
     if errorlevel 1 (
         popd
-        echo [WARN] gui-electron npm install failed — Bot will start without Electron GUI.
-        echo [WARN] If you see EBUSY on electron\dist\icudtl.dat, close leftover Electron and retry.
-        goto gui_electron_done
+        echo [WARN] gui-tauri npm install failed — Bot will start without Tauri GUI.
+        goto gui_tauri_done
     )
 )
 
-call npm run build
+call npm run tauri build -- --no-bundle
 if errorlevel 1 (
     popd
-    echo [WARN] gui-electron build failed — Bot will start without Electron GUI.
-    goto gui_electron_done
+    echo [WARN] gui-tauri build failed — Bot will start without Tauri GUI.
+    goto gui_tauri_done
 )
 popd
-if exist "gui-electron\dist\index.html" (
-    echo [SUCCESS] Host Electron GUI is ready.
+if exist "gui-tauri\src-tauri\target\release\gui-tauri.exe" (
+    echo [SUCCESS] Host Tauri GUI is ready.
 ) else (
-    echo [WARN] gui-electron build finished but dist\index.html is missing.
+    echo [WARN] gui-tauri build finished but release binary is missing.
 )
-:gui_electron_done
+:gui_tauri_done
 echo.
 
 REM Start MOMOKA

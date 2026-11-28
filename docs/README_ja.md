@@ -183,9 +183,9 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
 5. **起動**
 
    `startMOMOKA.bat` は初回のみ同梱 Provider v1.3.1へ `npm ci` と
-   TypeScriptビルドを行います。同様に `gui-electron` も `dist\index.html` が無ければ
-   再ビルドします（`node_modules` 済みなら `npm run build` のみ。未導入時のみ `npm ci`）。
-   ビルド前に残留 Host Electron を停止して `icudtl.dat` の EBUSY を防ぎます。
+   TypeScriptビルドを行います。同様に `gui-tauri` も release バイナリが無ければ
+   `npm` + `tauri build` します（Rust / cargo 必須。未導入時は警告して Bot 継続）。
+   ビルド前に残留 Host Tauri を停止します。
    Bot起動前にProviderを開始して `/ping` を確認し、
    GUI・`/shutdown`・Ctrl+Cによる終了時にはMOMOKAが起動したProviderも停止します。
    Providerとyt-dlpの出力は秘密値を除去してGUIの「TTS+Musicログ」へ表示されます。
@@ -205,13 +205,13 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
    pip install -r requirements.txt
    python main.py
    ```
-   起動時のホスト GUI は **Electron**（Discord ダーク）。左サイドバーで Overview（運用）/ 一般 / LLM / TTS+Music / エラー / **ログ管理** を切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。  
+   起動時のホスト GUI は **Tauri 2 + Svelte**（Discord ダーク・WebView2）。左サイドバーで Overview（運用）/ Web / 一般 / LLM / TTS+Music / エラー / **ログ管理** を切替。Overview では Active VC・LLM 入出力要約と平均応答時間・参加サーバー（名前/ID）・join/leave・ping/uptime を表示。各区画は独立スクロール。Web タブは埋め込み WebView で YouTube / ニコニコにログインし cookie を Host API へ保存する。非表示時は WebView を hide してメモリを抑える。  
    ログ色: `[USER_INPUT]` は黄緑、`[LLM_RESPONSE]` はシアン。`[GUILD_EVENT]` は青。`[PLANA]` / `[ARONA]` タグ色はそのまま。`[LLM_RESPONSE]` には検索用に `requester_id=<DiscordユーザーID>` を付与。  
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
    全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾 **最大 10000 行** を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
    **ログ管理**パネル: Discord ユーザー ID でログ・DB（`speech_auto_join_users` / VC 再起動セッション内 `requester_id`）を検索。ログは選択／一括で日時のみ残してマスク（`.log`/`.txt`）、DB は選択／一括で完全削除。API: `GET /privacy/search`・`POST /privacy/logs/mask`・`POST /privacy/db/delete`。  
-   初回は `startMOMOKA.bat` が `gui-electron` をビルド（`dist\index.html` があればスキップ）。`dist` のみ消した場合は `node_modules` 済みなら `npm run build` のみ。ビルド前に残留 Electron を停止。未ビルドでも Bot は起動継続。  
-   本体は `MOMOKA/GUI/` + `gui-electron/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
+   初回は `startMOMOKA.bat` が `gui-tauri` をビルド（`src-tauri/target/release/gui-tauri.exe` があればスキップ）。Rust 未導入時は警告して Bot 継続。ビルド前に残留 Tauri を停止。  
+   本体は `MOMOKA/GUI/` + `gui-tauri/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
 ---
 
@@ -251,14 +251,13 @@ TTS / 読み上げ設定のロードに失敗した場合、Cog unload 時の空
 - `allowed_channel_ids` を LLM listener・`interaction_check` で実施（空 = 全許可）。DM は `allowed_channel_allow_dm`
 - Discord 招待権限は最小セット（View/Send/Embed/Attach/History/Connect/Speak/Voice Activity/Manage Messages）
 - Host GUI のログマスクはファイル原子置換 + ライブログ `event_id` / `content_hash` 反映。`all` 削除は strict bool
-- Host GUI Bearer は Electron **main process のみ**保持（renderer / preload に渡さない。API・SSE は IPC 代理）
-- Host GUI API ready は `/status` ヘルス確認後に Electron 起動。起動停止は世代ロックで競合回避
-- Bot シャットダウン時はログ（コンソール / Host GUI / 永続ファイル）を出し切ってから Electron を終了する（PID 追跡・gui-electron 配下の孤児掃討・API 断検知での `app.quit`）。Discord ログチャンネルへの転送はシャットダウン中に切り離す
+- Host GUI Bearer は Tauri **Rust 側のみ**保持（フロントへ渡さない。API・SSE は invoke / イベント代理）
+- Host GUI API ready は `/status` ヘルス確認後に Tauri 起動。起動停止は世代ロックで競合回避
+- Bot シャットダウン時はログ（コンソール / Host GUI / 永続ファイル）を出し切ってから Tauri を終了する（PID 追跡・gui-tauri 配下の孤児掃討・API 断検知での `app.exit`）。Discord ログチャンネルへの転送はシャットダウン中に切り離す
 - status / VC / guilds メトリクスは Bot イベントループ上でスナップショット（API スレッドから直接触らない）
 - Discord 転送ログから `[USER_INPUT]` / `[LLM_RESPONSE]` を除外
 - `channel_llm_models` / `response_time_samples` は bot_id・model 単位 UPSERT（二体 Bot の消し合い防止）
 - webpage GitHub Actions は third-party action をコミット SHA ピン
-- **M-10（electron:dev CORS）は意図的に未変更**（触ると開発フローが壊れやすい）
 
 #### ホスト設定とギルド設定の境界
 
@@ -275,11 +274,11 @@ Web ダッシュボードが変更できるのはギルド管理 namespace（地
 | Bot token / LLM API key / Twitch secret | ホスト YAML のみ | **ブラウザに出さない** |
 | logging_channels / shutdown / admin | ボット管理者のみ | ダッシュボード対象外 |
 
-#### ホスト運用 GUI（Electron）と将来ギルドダッシュボード
+#### ホスト運用 GUI（Tauri）と将来ギルドダッシュボード
 
 - ホスト GUI API（`/host-gui/*`, `127.0.0.1`, 起動時 Bearer）は Bot 運用者専用。ギルド設定・OAuth・公開ブラウザ UI とは**別系統**
-- Host GUI のログ配信は **main process 経由の Bearer SSE**（renderer に token を渡さない）と `/logs/history` ポーリング（SSE 接続中は 10 秒ごとの取りこぼし補完、未接続時は 1 秒ごと。応答待ち中は次を送らない）。ライブログは 100ms 単位でまとめて画面へ反映する。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
-- Bot / GUI シャットダウン後に Electron ウィンドウが残らないよう、**シャットダウンログの flush と短い drain のあと** Python 側が PID 掃討し、Electron 側の API 断検知終了も併用する（GUI の Shutdown 直後にウィンドウを落とさない）
+- Host GUI のログ配信は **Rust 経由の Bearer SSE**（フロントに token を渡さない）と `/logs/history` ポーリング（SSE 接続中は 30 秒ごとの取りこぼし補完、未接続時は 1 秒ごと。応答待ち中は次を送らない）。ライブログは 100ms 単位でまとめて画面へ反映する。WebSocket `/logs` は互換用（`bearer.<token>` のみ）。メッセージ認証 WS は使わない
+- Bot / GUI シャットダウン後に Tauri ウィンドウが残らないよう、**シャットダウンログの flush と短い drain のあと** Python 側が PID 掃討し、Tauri 側の API 断検知終了も併用する（GUI の Shutdown 直後にウィンドウを落とさない）
 - LLM 画像 URL 取得は `MOMOKA.utilities.url_safety` で SSRF 対策（プライベート IP・リダイレクト再検証・peer IP 確認）
 - 画像生成パラメータは steps/CFG 範囲制限・キュー上限あり。モデルは safetensors のみ
 - 将来のギルド管理者ダッシュボードは Discord OAuth + Manage Guild + `save_guild` のみ。ホスト namespace・shutdown・トークン・ローカルサービスプロキシを載せない

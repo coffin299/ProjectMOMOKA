@@ -72,7 +72,7 @@ def netscape_cookie_file(
         path = str(cookie.get("path") or "/")
         # Secure
         secure = "TRUE" if cookie.get("secure") else "FALSE"
-        # Electron は expirationDate、Playwright は expires
+        # Host GUI / Playwright は expirationDate または expires
         expires = cookie.get("expires", cookie.get("expirationDate"))
         # セッション cookie は 0
         if not isinstance(expires, (int, float)) or expires < 0:

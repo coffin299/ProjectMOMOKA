@@ -549,7 +549,7 @@ def create_host_gui_app(
 
     @router.get("/youtube-browser-login")
     def get_youtube_browser_login(_: None = Depends(require_token)) -> Dict[str, Any]:
-        """Web タブの自動入力用。renderer からは IPC で拒否し、Electron main だけが取る。"""
+        """Web タブの自動入力用。フロントからは IPC で拒否し、Tauri Rust 側だけが取る。"""
         # 遅延インポート（音楽プラグインの読み込み失敗でも API 自体は起動する）
         from MOMOKA.music.plugins.youtube_cookie_fetcher import youtube_account_for_gui
 
@@ -829,20 +829,20 @@ def create_host_gui_app(
     # ルーター登録
     app.include_router(router)
 
-    # ビルド済み UI を同一オリジンで配信（file:// CORS 回避）
-    dist_dir = Path(__file__).resolve().parents[2] / "gui-electron" / "dist"
+    # ビルド済み UI のフォールバック配信（本番 Tauri は同梱アセットを使う）
+    dist_dir = Path(__file__).resolve().parents[2] / "gui-tauri" / "build"
     if dist_dir.is_dir():
-        assets = dist_dir / "assets"
+        assets = dist_dir / "_app"
         if assets.is_dir():
             app.mount(
-                "/assets",
+                "/_app",
                 StaticFiles(directory=str(assets)),
                 name="assets",
             )
 
         @app.get("/")
         def _index() -> FileResponse:
-            """Electron が開くインデックス。"""
+            """開発 / フォールバック用インデックス。"""
             # 旧バンドルキャッシュを避ける
             return FileResponse(
                 dist_dir / "index.html",
