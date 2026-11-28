@@ -28,7 +28,7 @@ npm run tauri build -- --no-bundle
 
 成果物: `src-tauri/target/release/gui-tauri.exe`
 
-`startMOMOKA.bat` は release バイナリが無ければ上記相当を実行します。
+`startMOMOKA.bat` は初回起動時に release バイナリ（`gui-tauri.exe`）が無ければ上記相当を自動実行します。
 
 ## 構成
 

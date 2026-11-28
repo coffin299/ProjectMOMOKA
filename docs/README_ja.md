@@ -183,8 +183,8 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
 5. **起動**
 
    `startMOMOKA.bat` は初回のみ同梱 Provider v1.3.1へ `npm ci` と
-   TypeScriptビルドを行います。同様に `gui-tauri` も release バイナリが無ければ
-   `npm` + `tauri build` します（Rust / cargo 必須。未導入時は警告して Bot 継続）。
+   TypeScriptビルドを行います。Host GUI も `gui-tauri.exe` が無ければ
+   初回自動で `npm` + `tauri build` します（Rust / Node 必須。未導入時は警告して Bot 継続）。
    ビルド前に残留 Host Tauri を停止します。
    Bot起動前にProviderを開始して `/ping` を確認し、
    GUI・`/shutdown`・Ctrl+Cによる終了時にはMOMOKAが起動したProviderも停止します。
@@ -210,7 +210,7 @@ yt-dlp で取得したメディアを **Cloudflare Named Tunnel** 経由の一�
    API は `127.0.0.1` のみ・起動時 Bearer トークン必須（**ギルド管理者向け Web ダッシュボードとは別**。ブラウザ公開しない）。  
    全ログは `data/momoka_gui.txt` と `data/momoka_gui.log` へ追記。起動時 GUI は `.log` 末尾 **最大 10000 行** を復元表示（再起動後も履歴維持・Join/Leave 含む）。Clear は画面のみ。  
    **ログ管理**パネル: Discord ユーザー ID でログ・DB（`speech_auto_join_users` / VC 再起動セッション内 `requester_id`）を検索。ログは選択／一括で日時のみ残してマスク（`.log`/`.txt`）、DB は選択／一括で完全削除。API: `GET /privacy/search`・`POST /privacy/logs/mask`・`POST /privacy/db/delete`。  
-   初回は `startMOMOKA.bat` が `gui-tauri` をビルド（`src-tauri/target/release/gui-tauri.exe` があればスキップ）。Rust 未導入時は警告して Bot 継続。ビルド前に残留 Tauri を停止。  
+   初回は `startMOMOKA.bat` が `gui-tauri.exe` 未作成なら自動ビルド（`src-tauri/target/release/gui-tauri.exe` があればスキップ）。cargo / npm の PATH も補完。Rust・Node 未導入時は警告して Bot 継続。ビルド前に残留 Tauri を停止。  
    本体は `MOMOKA/GUI/` + `gui-tauri/`。ステータスの **Servers** は PLANA 単体、**VC / LLM** は PLANA + ARONA 合算。
 
 ---

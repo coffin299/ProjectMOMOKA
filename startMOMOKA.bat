@@ -198,16 +198,31 @@ if not exist "third_party\bgutil-ytdlp-pot-provider\server\build\main.js" (
 echo [SUCCESS] BgUtils PO Token Provider is ready.
 echo.
 
-REM Host Tauri GUI ^(skip when release binary already built^)
+REM Host Tauri GUI — 初回（release バイナリ無し）は自動ビルド
 echo [INFO] Checking host Tauri GUI ^(gui-tauri^)...
 if not exist "gui-tauri\package.json" (
     echo [WARN] gui-tauri\package.json not found — host GUI will be skipped.
     goto gui_tauri_done
 )
-if exist "gui-tauri\src-tauri\target\release\gui-tauri.exe" (
-    echo [INFO] gui-tauri release binary already exists — skipping build.
+
+REM ダブルクリック起動でも cargo / npm を見つけられるよう PATH を補完
+if exist "%USERPROFILE%\.cargo\bin\cargo.exe" (
+    set "PATH=%USERPROFILE%\.cargo\bin;!PATH!"
+)
+where node >nul 2>&1
+if errorlevel 1 (
+    if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%ProgramFiles%\nodejs;!PATH!"
+    if exist "%LocalAppData%\Programs\node\node.exe" set "PATH=%LocalAppData%\Programs\node;!PATH!"
+)
+
+set "MOMOKA_GUI_EXE=gui-tauri\src-tauri\target\release\gui-tauri.exe"
+if exist "!MOMOKA_GUI_EXE!" (
+    echo [INFO] Host Tauri GUI already built — skipping build.
     goto gui_tauri_done
 )
+
+echo [INFO] Host Tauri GUI binary not found — first-time build starting...
+echo [INFO] ^(Rust + Node required. This may take several minutes.^)
 
 where cargo >nul 2>&1
 if errorlevel 1 (
@@ -215,18 +230,25 @@ if errorlevel 1 (
     echo [WARN] Install Rust from https://rustup.rs/ then rerun startMOMOKA.bat
     goto gui_tauri_done
 )
+where npm >nul 2>&1
+if errorlevel 1 (
+    echo [WARN] npm not found in PATH — host Tauri GUI build skipped.
+    echo [WARN] Install Node.js 20+ then rerun startMOMOKA.bat
+    goto gui_tauri_done
+)
 
-REM 再ビルド前に残留 Tauri を落とす
+REM ビルド前に残留 Tauri を落とす
 echo [INFO] Stopping leftover Host Tauri GUI processes if any...
-powershell -NoProfile -ExecutionPolicy Bypass -File "gui-tauri\stop-leftover-tauri.ps1" >nul 2>&1
+if exist "gui-tauri\stop-leftover-tauri.ps1" (
+    powershell -NoProfile -ExecutionPolicy Bypass -File "gui-tauri\stop-leftover-tauri.ps1" >nul 2>&1
+)
 
-echo [INFO] Building host Tauri GUI ^(release binary missing^)...
 pushd "gui-tauri"
 
 if exist "node_modules\@tauri-apps\cli\package.json" (
     echo [INFO] node_modules present — skipping npm ci/install.
 ) else (
-    echo [INFO] node_modules missing — installing gui-tauri dependencies...
+    echo [INFO] Installing gui-tauri npm dependencies...
     if exist "package-lock.json" (
         call npm ci
     ) else (
@@ -239,17 +261,26 @@ if exist "node_modules\@tauri-apps\cli\package.json" (
     )
 )
 
-call npm run tauri build -- --no-bundle
+echo [INFO] Building gui-tauri release ^(npm run tauri:build -- --no-bundle^)...
+call npm run tauri:build -- --no-bundle
 if errorlevel 1 (
+    echo [WARN] tauri:build failed — trying cargo build --release fallback...
+    pushd "src-tauri"
+    call cargo build --release
+    set "CARGO_GUI_ERR=!errorlevel!"
     popd
-    echo [WARN] gui-tauri build failed — Bot will start without Tauri GUI.
-    goto gui_tauri_done
+    if not "!CARGO_GUI_ERR!"=="0" (
+        popd
+        echo [WARN] gui-tauri build failed — Bot will start without Tauri GUI.
+        goto gui_tauri_done
+    )
 )
 popd
-if exist "gui-tauri\src-tauri\target\release\gui-tauri.exe" (
+
+if exist "!MOMOKA_GUI_EXE!" (
     echo [SUCCESS] Host Tauri GUI is ready.
 ) else (
-    echo [WARN] gui-tauri build finished but release binary is missing.
+    echo [WARN] gui-tauri build finished but !MOMOKA_GUI_EXE! is missing.
 )
 :gui_tauri_done
 echo.

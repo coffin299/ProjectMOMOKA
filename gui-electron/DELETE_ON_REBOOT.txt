@@ -1,1 +1,0 @@
-﻿Locked by Cursor while deleting Electron GUI. Remaining default_app.asar is scheduled for deletion on reboot via MoveFileEx.
