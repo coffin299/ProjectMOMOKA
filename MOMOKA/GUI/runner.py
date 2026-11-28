@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import atexit
+import json
 import os
 import subprocess
 import threading
@@ -247,14 +248,50 @@ def _popen_detached(args: list, *, cwd: str, env: dict) -> subprocess.Popen:
         "stderr": subprocess.DEVNULL,
         "close_fds": True,
     }
-    # Windows はデタッチ
+    # Windows: プロセスグループのみ（DETACHED は env 取りこぼし報告があるため使わない）
     if os.name == "nt":
-        kwargs["creationflags"] = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"] = _CREATE_NEW_PROCESS_GROUP
     else:
         # 新しいセッション
         kwargs["start_new_session"] = True
     # 起動
     return subprocess.Popen(args, **kwargs)
+
+
+def _write_conn_file(port: int, token: str) -> Optional[Path]:
+    """Tauri が読む接続情報 JSON を書く（env/CLI の保険）。
+
+    Returns:
+        書き込みに成功した先頭パス（無ければ None）。
+    """
+    # JSON 本文
+    payload = {
+        "host": "127.0.0.1",
+        "port": str(port),
+        "token": token,
+    }
+    # 書き出し先候補（exe 隣が最優先）
+    targets: list[Path] = [
+        _tauri_release_exe().parent / "momoka-host-gui.conn.json",
+        _REPO_ROOT / "data" / "momoka-host-gui.conn.json",
+    ]
+    # TEMP も書く
+    temp = os.environ.get("TEMP") or os.environ.get("TMP")
+    if temp:
+        targets.append(Path(temp) / "momoka-host-gui.conn.json")
+    # 本文
+    text = json.dumps(payload, ensure_ascii=False)
+    # 成功した先頭パス
+    first_ok: Optional[Path] = None
+    for path in targets:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+            if first_ok is None:
+                first_ok = path
+        except OSError as e:
+            print(f"WARNING: 接続情報ファイルを書けませんでした ({path}): {e}")
+    return first_ok
 
 
 def _wait_api_ready(port: int, token: str, timeout_sec: float = 15.0) -> bool:
@@ -366,6 +403,10 @@ def _launch_tauri(port: int, token: str, generation: int) -> Optional[subprocess
     env["MOMOKA_HOST_GUI_PORT"] = str(port)
     env["MOMOKA_HOST_GUI_TOKEN"] = token
     env["MOMOKA_HOST_GUI_HOST"] = "127.0.0.1"
+    # 接続ファイルも書く（最も確実）
+    conn_path = _write_conn_file(port, token)
+    if conn_path is not None:
+        env["MOMOKA_HOST_GUI_CONN_FILE"] = str(conn_path)
     # 実行ファイル候補（release 優先）
     release_exe = _tauri_release_exe()
     debug_exe = _tauri_debug_exe()
@@ -388,7 +429,7 @@ def _launch_tauri(port: int, token: str, generation: int) -> Optional[subprocess
             # 不採用
             return None
 
-        # 接続情報は env + CLI の両方で渡す（DETACHED でも取りこぼしにくくする）
+        # 接続情報は env + CLI + ファイルの三重で渡す
         launch_args_tail = [
             f"--momoka-host=127.0.0.1",
             f"--momoka-port={port}",

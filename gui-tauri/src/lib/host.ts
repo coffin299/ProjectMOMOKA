@@ -8,8 +8,19 @@ export type ApiResponse = {
   text: string;
 };
 
+export type ConnInfo = {
+  host: string;
+  port: string;
+  hasAuth: boolean;
+  apiBase: string;
+};
+
 export async function hostHasAuth(): Promise<boolean> {
   return Boolean(await invoke<boolean>("momoka_has_auth"));
+}
+
+export async function getConnInfo(): Promise<ConnInfo> {
+  return invoke<ConnInfo>("momoka_conn_info");
 }
 
 export async function apiRequest(opts: {
@@ -17,7 +28,12 @@ export async function apiRequest(opts: {
   path: string;
   body?: unknown;
 }): Promise<ApiResponse> {
-  return invoke<ApiResponse>("momoka_api", { args: opts });
+  // 引数はフラットに渡す（ネスト args は WebView によって落ちることがある）
+  return invoke<ApiResponse>("momoka_api", {
+    method: opts.method ?? "GET",
+    path: opts.path,
+    body: opts.body ?? null,
+  });
 }
 
 export async function startLogSse(): Promise<void> {

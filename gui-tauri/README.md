@@ -11,7 +11,9 @@ Bot 運用者向けホスト GUI。ギルド管理者ダッシュボードとは
 
 `gui-tauri.exe` は `.gitignore` 対象です。別 PC では clone 後に必ず一度ビルドが必要です。
 
-Bot は `MOMOKA_HOST_GUI_*` 環境変数と `--momoka-port` / `--momoka-token` 引数で Host API へ接続します。
+Host API 接続は `MOMOKA_HOST_GUI_*` 環境変数、`--momoka-port` / `--momoka-token` CLI、および `momoka-host-gui.conn.json`（exe 隣 / TEMP / data）の三重渡しです。ステータスバーの `link` が `ok :ポート` なら接続成功、`no-token` / `ipc-fail` なら要再ビルドです。
+
+`startMOMOKA.bat` は `gui-tauri/GUI_BUILD_ID` が変わると release を再ビルドします。
 
 ## 開発
 

@@ -216,9 +216,19 @@ if errorlevel 1 (
 )
 
 set "MOMOKA_GUI_EXE=gui-tauri\src-tauri\target\release\gui-tauri.exe"
-if exist "!MOMOKA_GUI_EXE!" (
+set "MOMOKA_GUI_STAMP=gui-tauri\GUI_BUILD_ID"
+set "MOMOKA_GUI_STAMP_INSTALLED=gui-tauri\src-tauri\target\release\GUI_BUILD_ID"
+set "MOMOKA_NEED_GUI_BUILD=1"
+if exist "!MOMOKA_GUI_EXE!" if exist "!MOMOKA_GUI_STAMP!" if exist "!MOMOKA_GUI_STAMP_INSTALLED!" (
+    fc /b "!MOMOKA_GUI_STAMP!" "!MOMOKA_GUI_STAMP_INSTALLED!" >nul 2>&1
+    if not errorlevel 1 set "MOMOKA_NEED_GUI_BUILD=0"
+)
+if "!MOMOKA_NEED_GUI_BUILD!"=="0" (
     echo [INFO] Host Tauri GUI already built — skipping build.
     goto gui_tauri_done
+)
+if exist "!MOMOKA_GUI_EXE!" (
+    echo [INFO] Host Tauri GUI binary exists but build id changed — rebuilding...
 )
 
 echo [INFO] Host Tauri GUI binary not found — first-time build starting...
@@ -279,6 +289,9 @@ popd
 
 if exist "!MOMOKA_GUI_EXE!" (
     echo [SUCCESS] Host Tauri GUI is ready.
+    if exist "!MOMOKA_GUI_STAMP!" (
+        copy /y "!MOMOKA_GUI_STAMP!" "!MOMOKA_GUI_STAMP_INSTALLED!" >nul
+    )
 ) else (
     echo [WARN] gui-tauri build finished but !MOMOKA_GUI_EXE! is missing.
 )

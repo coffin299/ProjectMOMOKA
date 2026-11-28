@@ -6,6 +6,7 @@
     ping,
     uptime,
     alive,
+    linkLabel = "API",
   }: {
     servers: string;
     vc: string;
@@ -13,6 +14,7 @@
     ping: string;
     uptime: string;
     alive: Record<string, boolean> | undefined;
+    linkLabel?: string;
   } = $props();
 
   const plana = $derived(alive?.plana);
@@ -21,6 +23,7 @@
 
 <div class="brand">MOMOKA</div>
 <div class="pills">
+  <span class="pill">link<strong>{linkLabel}</strong></span>
   <span class="pill">Servers<strong>{servers}</strong></span>
   <span class="pill">VC<strong>{vc}</strong></span>
   <span class="pill">LLM<strong>{llm}</strong></span>

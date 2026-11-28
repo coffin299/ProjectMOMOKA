@@ -1,8 +1,10 @@
 //! Host GUI API への代理呼び出し（Bearer はここだけ保持）。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
+use std::fs;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// 代理 API の既定タイムアウト
@@ -21,17 +23,33 @@ pub struct HostConfig {
     pub token: String,
 }
 
+/// runner が書く接続情報ファイルの形
+#[derive(Debug, Deserialize)]
+struct ConnFile {
+    host: Option<String>,
+    port: Option<String>,
+    token: Option<String>,
+}
+
 impl HostConfig {
-    /// 環境変数と CLI 引数から構築する（CLI 優先）。
-    ///
-    /// Windows の DETACHED 起動でも確実に渡るよう、
-    /// `--momoka-host` / `--momoka-port` / `--momoka-token` を受け付ける。
+    /// 環境変数・CLI・接続ファイルから構築する（CLI > env > ファイル）。
     pub fn from_env() -> Self {
-        // 環境変数の既定値
-        let mut host = env::var("MOMOKA_HOST_GUI_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-        let mut port = env::var("MOMOKA_HOST_GUI_PORT").unwrap_or_else(|_| "18765".into());
-        let mut token = env::var("MOMOKA_HOST_GUI_TOKEN").unwrap_or_default();
-        // CLI で上書き（runner が付与）
+        // 接続ファイル（DETACHED でも確実）
+        let file_cfg = read_conn_file();
+        // 環境変数
+        let mut host = env::var("MOMOKA_HOST_GUI_HOST")
+            .ok()
+            .or_else(|| file_cfg.as_ref().and_then(|c| c.host.clone()))
+            .unwrap_or_else(|| "127.0.0.1".into());
+        let mut port = env::var("MOMOKA_HOST_GUI_PORT")
+            .ok()
+            .or_else(|| file_cfg.as_ref().and_then(|c| c.port.clone()))
+            .unwrap_or_else(|| "18765".into());
+        let mut token = env::var("MOMOKA_HOST_GUI_TOKEN")
+            .ok()
+            .or_else(|| file_cfg.as_ref().and_then(|c| c.token.clone()))
+            .unwrap_or_default();
+        // CLI で上書き（最優先）
         let args: Vec<String> = env::args().collect();
         let mut i = 1usize;
         while i < args.len() {
@@ -62,7 +80,41 @@ impl HostConfig {
         }
         Self { host, port, token }
     }
+}
 
+/// env 明示パス / exe 隣 / TEMP / data から接続ファイルを探す。
+fn read_conn_file() -> Option<ConnFile> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    // runner が渡す絶対パスを最優先
+    if let Ok(explicit) = env::var("MOMOKA_HOST_GUI_CONN_FILE") {
+        if !explicit.trim().is_empty() {
+            candidates.push(PathBuf::from(explicit));
+        }
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            candidates.push(dir.join("momoka-host-gui.conn.json"));
+        }
+    }
+    if let Ok(tmp) = env::var("TEMP") {
+        candidates.push(PathBuf::from(tmp).join("momoka-host-gui.conn.json"));
+    }
+    if let Ok(tmp) = env::var("TMP") {
+        candidates.push(PathBuf::from(tmp).join("momoka-host-gui.conn.json"));
+    }
+    // cwd 相対（gui-tauri 起動時は効きにくいが保険）
+    candidates.push(PathBuf::from("data").join("momoka-host-gui.conn.json"));
+    for path in candidates {
+        if let Ok(text) = fs::read_to_string(&path) {
+            if let Ok(cfg) = serde_json::from_str::<ConnFile>(&text) {
+                return Some(cfg);
+            }
+        }
+    }
+    None
+}
+
+impl HostConfig {
     /// API ベース URL。
     pub fn api_base(&self) -> String {
         format!("http://{}:{}/host-gui/api", self.host, self.port)

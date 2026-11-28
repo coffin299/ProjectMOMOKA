@@ -15,6 +15,7 @@
     takeLastMatching,
     type LogEntry,
   } from "$lib/stores/logs";
+  import { getConnInfo } from "$lib/host";
   import "$lib/styles/discord-theme.css";
 
   type LogNavId = Exclude<NavId, "overview" | "privacy" | "web">;
@@ -42,9 +43,22 @@
     error: "WARNING",
   });
   let autoScroll = $state(true);
+  let linkLabel = $state("checking…");
 
   const statusStore = createStatusStore(1000);
   const logStore = createLogStore(5000);
+
+  void (async () => {
+    try {
+      const info = await getConnInfo();
+      linkLabel = info.hasAuth
+        ? `ok :${info.port}`
+        : `no-token :${info.port}`;
+    } catch (e) {
+      linkLabel = `ipc-fail`;
+      console.error("momoka_conn_info failed", e);
+    }
+  })();
 
   onDestroy(() => {
     logStore.destroy();
@@ -84,6 +98,7 @@
       ping={statusSnap.format.ping}
       uptime={statusSnap.format.uptime}
       alive={statusSnap.status?.alive}
+      {linkLabel}
     />
     <ShutdownButton />
   </header>

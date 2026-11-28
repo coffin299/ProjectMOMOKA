@@ -1,0 +1,17 @@
+[[permission]]
+identifier = "allow-momoka-commands"
+description = "Host GUI の IPC コマンドを許可する"
+commands.allow = [
+  "momoka_api",
+  "momoka_has_auth",
+  "momoka_sse_start",
+  "momoka_sse_stop",
+  "momoka_quit",
+  "momoka_conn_info",
+  "browser_set_visible",
+  "browser_navigate",
+  "browser_reload",
+  "browser_go_back",
+  "browser_go_forward",
+  "browser_get_url",
+]

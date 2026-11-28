@@ -9,35 +9,36 @@ mod watchdog;
 
 use browser::BrowserBounds;
 use host_api::{proxy_api, ApiResponse};
-use serde::Deserialize;
 use serde_json::Value;
 use state::AppState;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State};
 
-#[derive(Deserialize)]
-struct ApiArgs {
+#[tauri::command]
+async fn momoka_api(
+    state: State<'_, Arc<AppState>>,
     method: Option<String>,
     path: String,
     body: Option<Value>,
-}
-
-#[tauri::command]
-async fn momoka_api(state: State<'_, Arc<AppState>>, args: ApiArgs) -> Result<ApiResponse, String> {
-    let method = args.method.unwrap_or_else(|| "GET".into());
-    proxy_api(
-        &state.client,
-        &state.cfg,
-        &method,
-        &args.path,
-        args.body,
-    )
-    .await
+) -> Result<ApiResponse, String> {
+    let method = method.unwrap_or_else(|| "GET".into());
+    proxy_api(&state.client, &state.cfg, &method, &path, body).await
 }
 
 #[tauri::command]
 fn momoka_has_auth(state: State<'_, Arc<AppState>>) -> bool {
     state.cfg.has_auth()
+}
+
+#[tauri::command]
+fn momoka_conn_info(state: State<'_, Arc<AppState>>) -> Value {
+    // トークン本体は返さない（接続診断用）
+    serde_json::json!({
+        "host": state.cfg.host,
+        "port": state.cfg.port,
+        "hasAuth": state.cfg.has_auth(),
+        "apiBase": state.cfg.api_base(),
+    })
 }
 
 #[tauri::command]
@@ -103,6 +104,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             momoka_api,
             momoka_has_auth,
+            momoka_conn_info,
             momoka_sse_start,
             momoka_sse_stop,
             momoka_quit,
