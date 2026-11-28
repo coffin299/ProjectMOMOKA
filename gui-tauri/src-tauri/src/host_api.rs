@@ -216,3 +216,29 @@ async fn request(
         text,
     })
 }
+
+/// `/snapshot` を叩き、成功時は JSON 本体だけ返す（フロント向け）。
+pub async fn fetch_snapshot(
+    client: &reqwest::Client,
+    cfg: &HostConfig,
+) -> Result<Value, String> {
+    // 認証必須
+    if !cfg.has_auth() {
+        return Err("missing_token".into());
+    }
+    let url = format!("{}/snapshot", cfg.api_base());
+    let res = client
+        .get(&url)
+        .bearer_auth(&cfg.token)
+        .timeout(PROXY_TIMEOUT)
+        .send()
+        .await
+        .map_err(|e| format!("connect: {e}"))?;
+    let status = res.status();
+    let text = res.text().await.map_err(|e| format!("read: {e}"))?;
+    if !status.is_success() {
+        let brief = text.chars().take(120).collect::<String>();
+        return Err(format!("http {}: {brief}", status.as_u16()));
+    }
+    serde_json::from_str(&text).map_err(|e| format!("json: {e}"))
+}

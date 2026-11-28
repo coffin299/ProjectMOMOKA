@@ -142,7 +142,8 @@ export function createLogStore(maxLines = 10000) {
             : appendFresh(s.entries, items, maxLines),
         restored: true,
       }));
-    } catch {
+    } catch (e) {
+      console.error("log history fetch failed", e);
       if (!closed) {
         update((s) => ({ ...s, restored: true }));
       }

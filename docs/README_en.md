@@ -199,7 +199,7 @@ Recommended: rate-limit `/d/*` on Cloudflare. Do not force Cloudflare Access log
    API binds `127.0.0.1` only with a startup Bearer token (**not** the future guild-admin web dashboard; do not expose in a browser).  
    All logs append to `data/momoka_gui.txt` and `data/momoka_gui.log`. On start the GUI restores up to **10000 lines** from the `.log` tail (history across restarts, including join/leave). Clear affects the UI only.  
    **Log management** panel: search logs and DB (`speech_auto_join_users` / VC restart-session `requester_id`) by Discord user ID. Logs: mask selected/all (keep timestamp only in `.log`/`.txt`). DB: hard-delete selected/all. APIs: `GET /privacy/search`, `POST /privacy/logs/mask`, `POST /privacy/db/delete`.  
-   On first run, `startMOMOKA.bat` auto-builds `gui-tauri` when the binary is missing, or when `gui-tauri/GUI_BUILD_ID` differs from the installed release stamp. It also prepends common cargo/npm PATH locations. Requires Rust, Node, and VS Build Tools; if missing, warns and continues without the GUI. `gui-tauri.exe` is gitignored, so other PCs must build locally. Host API connection is passed via env vars, CLI args, and `momoka-host-gui.conn.json` (next to the exe / TEMP / data). Status polling does not depend on `document.hidden` (avoids empty UI on WebView2 startup). Leftover Host Tauri is stopped first. Bot still runs if the GUI build fails.  
+   On first run, `startMOMOKA.bat` auto-builds `gui-tauri` when the binary is missing, or when `gui-tauri/GUI_BUILD_ID` differs from the installed release stamp. It also prepends common cargo/npm PATH locations. Requires Rust, Node, and VS Build Tools; if missing, warns and continues without the GUI. `gui-tauri.exe` is gitignored, so other PCs must build locally. The GUI loads metrics via a single `/snapshot` endpoint (`momoka_snapshot` IPC). Connection uses env, CLI, and conn JSON; the StatusBar `api` pill shows failures. Process lifetime uses a Windows Job Object (kill-on-job-close), `MOMOKA_PARENT_PID` polling, and an API watchdog after a grace period. Leftover Host Tauri is stopped first. Bot still runs if the GUI build fails.  
    Code: `MOMOKA/GUI/` + `gui-tauri/`. Status **Servers** is PLANA only; **VC / LLM** combine PLANA + ARONA.
 
    On first run, `startMOMOKA.bat` runs `npm ci` and builds the bundled
@@ -249,7 +249,7 @@ If TTS / speech settings fail to load, empty in-memory state is not written back
 - Invite OAuth permissions are minimized (View/Send/Embed/Attach/History/Connect/Speak/Voice Activity/Manage Messages)
 - Host GUI log masking uses atomic file replace plus live `event_id` / `content_hash` updates. Delete-all requires a strict boolean
 - Host GUI Bearer token stays in the Tauri **Rust side only** (not exposed to the frontend; API and SSE go through invoke/events)
-- Host GUI waits for `/status` readiness before launching Tauri; start/stop uses a generation lock against races
+- Host GUI waits for `/status` readiness before launching Tauri; metrics use `/snapshot`. Start/stop uses a generation lock, Windows Job Object, and parent-PID watchdog
 - On Bot shutdown, console / Host GUI / persistent file logs are flushed first, then Tauri is terminated (PID tracking, orphan sweep under gui-tauri, `app.exit` when the Host API dies). Discord log-channel forwarding is detached during shutdown
 - Status / VC / guilds metrics are snapshotted on the Bot event loop (not read directly from the API thread)
 - Discord forwarded logs drop `[USER_INPUT]` / `[LLM_RESPONSE]`

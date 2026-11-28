@@ -8,7 +8,7 @@ mod state;
 mod watchdog;
 
 use browser::BrowserBounds;
-use host_api::{proxy_api, ApiResponse};
+use host_api::{fetch_snapshot, proxy_api, ApiResponse};
 use serde_json::Value;
 use state::AppState;
 use std::sync::Arc;
@@ -23,6 +23,12 @@ async fn momoka_api(
 ) -> Result<ApiResponse, String> {
     let method = method.unwrap_or_else(|| "GET".into());
     proxy_api(&state.client, &state.cfg, &method, &path, body).await
+}
+
+#[tauri::command]
+async fn momoka_snapshot(state: State<'_, Arc<AppState>>) -> Result<Value, String> {
+    // Host API JSON をそのまま返す（ラッパ無し）
+    fetch_snapshot(&state.client, &state.cfg).await
 }
 
 #[tauri::command]
@@ -103,6 +109,7 @@ pub fn run() {
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             momoka_api,
+            momoka_snapshot,
             momoka_has_auth,
             momoka_conn_info,
             momoka_sse_start,

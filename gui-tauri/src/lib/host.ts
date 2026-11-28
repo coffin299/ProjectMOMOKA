@@ -25,6 +25,11 @@ export async function getConnInfo(): Promise<ConnInfo> {
   return invoke<ConnInfo>("momoka_conn_info");
 }
 
+/** Host API /snapshot の JSON 本体をそのまま取る。 */
+export async function getSnapshot<T = unknown>(): Promise<T> {
+  return invoke<T>("momoka_snapshot");
+}
+
 export async function apiRequest(opts: {
   method?: string;
   path: string;

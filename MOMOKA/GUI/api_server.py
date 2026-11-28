@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from MOMOKA.GUI.bot_bridge import (
+    build_snapshot_payload,
     build_status_payload,
     get_active_vc_snapshots,
     get_guild_list,
@@ -473,6 +474,12 @@ def create_host_gui_app(
         """稼働ステータス。"""
         # bot_bridge に委譲
         return build_status_payload()
+
+    @router.get("/snapshot")
+    def get_snapshot(_: None = Depends(require_token)) -> Dict[str, Any]:
+        """status / vc / guilds / llm を 1 回で返す。"""
+        # GUI ポーリング用の単一路線
+        return build_snapshot_payload()
 
     @router.get("/vc")
     def get_vc(_: None = Depends(require_token)) -> Dict[str, Any]:

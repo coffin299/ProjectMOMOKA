@@ -3,6 +3,7 @@ identifier = "allow-momoka-commands"
 description = "Host GUI の IPC コマンドを許可する"
 commands.allow = [
   "momoka_api",
+  "momoka_snapshot",
   "momoka_has_auth",
   "momoka_sse_start",
   "momoka_sse_stop",

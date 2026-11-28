@@ -22,6 +22,8 @@ _GUI_TAURI_DIR = _REPO_ROOT / "gui-tauri"
 _tauri_proc: Optional[subprocess.Popen] = None
 # Popen ラッパーが先に死んでも追跡できるよう PID を別保持
 _tauri_pid: Optional[int] = None
+# Windows Job Object ハンドル（親終了で子も殺す）
+_job_handle: Optional[int] = None
 # start / stop を直列化する（Popen 代入レース防止）
 _lifecycle_lock = threading.Lock()
 # atexit 登録済みか
@@ -32,6 +34,143 @@ _start_generation = 0
 # Windows: コンソールから切り離し（pause のキー入力を奪わない）
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _DETACHED_PROCESS = 0x00000008
+# Job Object: ハンドル閉鎖時に所属プロセスを終了
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+_JobObjectExtendedLimitInformation = 9
+
+
+def _close_job_handle() -> None:
+    """Job Object を閉じる（KILL_ON_JOB_CLOSE で子も落ちる）。"""
+    # グローバル
+    global _job_handle
+    # 未作成なら何もしない
+    if _job_handle is None:
+        return
+    # Windows のみ
+    if os.name == "nt":
+        try:
+            # カーネルハンドルを閉じる
+            import ctypes
+
+            ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(_job_handle))
+        except Exception:
+            # 閉じ失敗は無視（後続の taskkill に任せる）
+            pass
+    # 参照を捨てる
+    _job_handle = None
+
+
+def _ensure_kill_job() -> Optional[int]:
+    """KILL_ON_JOB_CLOSE 付き Job Object を用意する。"""
+    # グローバル
+    global _job_handle
+    # Windows 以外は未対応
+    if os.name != "nt":
+        return None
+    # 既存があれば再利用
+    if _job_handle is not None:
+        return _job_handle
+    try:
+        # ctypes で Win32 を叩く
+        import ctypes
+        from ctypes import wintypes
+
+        # LARGE_INTEGER
+        class _BasicLimit(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", wintypes.LARGE_INTEGER),
+                ("PerJobUserTimeLimit", wintypes.LARGE_INTEGER),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        # IO_COUNTERS
+        class _IoCounters(ctypes.Structure):
+            _fields_ = [
+                ("ReadOperationCount", ctypes.c_ulonglong),
+                ("WriteOperationCount", ctypes.c_ulonglong),
+                ("OtherOperationCount", ctypes.c_ulonglong),
+                ("ReadTransferCount", ctypes.c_ulonglong),
+                ("WriteTransferCount", ctypes.c_ulonglong),
+                ("OtherTransferCount", ctypes.c_ulonglong),
+            ]
+
+        # EXTENDED_LIMIT
+        class _ExtendedLimit(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", _BasicLimit),
+                ("IoInfo", _IoCounters),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        # kernel32
+        k32 = ctypes.windll.kernel32
+        # Job 作成
+        handle = k32.CreateJobObjectW(None, None)
+        # 失敗
+        if not handle:
+            print("WARNING: CreateJobObject に失敗しました（孤児 GUI 防止が弱くなります）")
+            return None
+        # 制限情報
+        info = _ExtendedLimit()
+        # 親ハンドル閉鎖で子を殺す
+        info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        # 適用
+        ok = k32.SetInformationJobObject(
+            handle,
+            _JobObjectExtendedLimitInformation,
+            ctypes.byref(info),
+            ctypes.sizeof(info),
+        )
+        # 失敗なら閉じる
+        if not ok:
+            k32.CloseHandle(handle)
+            print("WARNING: SetInformationJobObject に失敗しました")
+            return None
+        # 保持（GC で閉じないよう int 化）
+        _job_handle = int(handle)
+        # 返す
+        return _job_handle
+    except Exception as e:
+        # Job 無しでも起動は継続
+        print(f"WARNING: Job Object 初期化に失敗しました: {e}")
+        return None
+
+
+def _assign_to_kill_job(proc: subprocess.Popen) -> None:
+    """Tauri プロセスを Job Object へ所属させる。"""
+    # Job を用意
+    job = _ensure_kill_job()
+    # 無ければ終了
+    if job is None:
+        return
+    # Windows Popen の生ハンドル
+    handle = getattr(proc, "_handle", None)
+    # 取れなければ諦める
+    if handle is None:
+        return
+    try:
+        # Assign
+        import ctypes
+
+        ok = ctypes.windll.kernel32.AssignProcessToJobObject(
+            ctypes.c_void_p(job),
+            ctypes.c_void_p(int(handle)),
+        )
+        # 失敗ログ
+        if not ok:
+            print("WARNING: AssignProcessToJobObject に失敗しました")
+    except Exception as e:
+        # 所属失敗は警告のみ
+        print(f"WARNING: Job Object への所属に失敗しました: {e}")
 
 
 def _tauri_release_exe() -> Path:
@@ -207,6 +346,8 @@ def stop_host_gui() -> None:
         _tauri_proc = None
         # PID もクリア
         _tauri_pid = None
+    # Job を閉じて所属プロセスをまとめて落とす
+    _close_job_handle()
     # 終了対象 PID を集める
     pids: list[int] = []
     # 明示 PID があれば優先
@@ -403,6 +544,8 @@ def _launch_tauri(port: int, token: str, generation: int) -> Optional[subprocess
     env["MOMOKA_HOST_GUI_PORT"] = str(port)
     env["MOMOKA_HOST_GUI_TOKEN"] = token
     env["MOMOKA_HOST_GUI_HOST"] = "127.0.0.1"
+    # 親 PID（Tauri 側の生存監視）
+    env["MOMOKA_PARENT_PID"] = str(os.getpid())
     # 接続ファイルも書く（最も確実）
     conn_path = _write_conn_file(port, token)
     if conn_path is not None:
@@ -413,6 +556,8 @@ def _launch_tauri(port: int, token: str, generation: int) -> Optional[subprocess
     try:
         def _adopt(proc: subprocess.Popen) -> Optional[subprocess.Popen]:
             """世代が一致するときだけグローバルへ登録する。"""
+            # Job Object に所属させて親死亡連動にする
+            _assign_to_kill_job(proc)
             with _lifecycle_lock:
                 # 世代一致なら採用して返す
                 if generation == _start_generation:

@@ -464,6 +464,32 @@ def build_status_payload() -> Dict[str, Any]:
         }
 
 
+def _build_snapshot_unlocked() -> Dict[str, Any]:
+    """Bot ループ上で GUI 用スナップショットを一括構築する（内部用）。"""
+    # status + 一覧を同一瞬間で取る
+    return {
+        "status": _build_status_payload_unlocked(),
+        "vc": {"items": _get_active_vc_snapshots_unlocked()},
+        "guilds": {"items": _get_guild_list_unlocked()},
+        "llm": {"average_seconds": _get_llm_average_seconds_unlocked()},
+    }
+
+
+def build_snapshot_payload() -> Dict[str, Any]:
+    """ホスト GUI 用の一括スナップショット JSON。"""
+    try:
+        # 1 hop で全部読む
+        return _call_on_bot_loop(_build_snapshot_unlocked)
+    except Exception:
+        # 部分失敗時も形は維持する
+        return {
+            "status": build_status_payload(),
+            "vc": {"items": []},
+            "guilds": {"items": []},
+            "llm": {"average_seconds": None},
+        }
+
+
 def request_shutdown() -> bool:
     """全 Bot を閉じるコルーチンをスケジュールする。成功で True。
 

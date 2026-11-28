@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import type { NavId } from "$lib/nav";
   import StatusBar from "$lib/components/StatusBar.svelte";
@@ -8,20 +8,29 @@
   import LogPanel from "$lib/components/LogPanel.svelte";
   import UserDataPanel from "$lib/components/UserDataPanel.svelte";
   import WebPanel from "$lib/components/WebPanel.svelte";
-  import { createStatusStore } from "$lib/stores/status";
+  import {
+    buildFormat,
+    emptyFormat,
+    type GuildItem,
+    type SnapshotPayload,
+    type StatusFormat,
+    type StatusPayload,
+    type VcItem,
+  } from "$lib/stores/status";
   import {
     createLogStore,
     filterLogEntries,
     takeLastMatching,
     type LogEntry,
   } from "$lib/stores/logs";
-  import { getConnInfo } from "$lib/host";
+  import { getConnInfo, getSnapshot } from "$lib/host";
   import "$lib/styles/discord-theme.css";
 
   type LogNavId = Exclude<NavId, "overview" | "privacy" | "web">;
 
   const FEED_ROWS = 80;
   const EMPTY_ENTRIES: LogEntry[] = [];
+  const POLL_MS = 1000;
 
   const isLlmIo = (e: LogEntry) =>
     e.message.includes("[USER_INPUT]") || e.message.includes("[LLM_RESPONSE]");
@@ -44,27 +53,66 @@
   });
   let autoScroll = $state(true);
   let linkLabel = $state("checking…");
+  let apiLabel = $state("…");
+  let status = $state<StatusPayload | null>(null);
+  let vc = $state<VcItem[]>([]);
+  let guilds = $state<GuildItem[]>([]);
+  let avgLatency = $state<number | null>(null);
+  let format = $state<StatusFormat>(emptyFormat);
 
-  const statusStore = createStatusStore(1000);
   const logStore = createLogStore(5000);
+  let pollTimer: number | undefined;
+  let cancelled = false;
 
-  void (async () => {
+  function briefError(err: unknown): string {
+    const raw = err instanceof Error ? err.message : String(err ?? "error");
+    const text = raw.replace(/^[^:]+:\s*/, "").trim() || raw;
+    return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+  }
+
+  async function tickSnapshot() {
     try {
-      const info = await getConnInfo();
-      linkLabel = info.hasAuth
-        ? `ok :${info.port}`
-        : `no-token :${info.port}`;
+      const snap = await getSnapshot<SnapshotPayload>();
+      status = snap.status ?? null;
+      vc = snap.vc?.items ?? [];
+      guilds = snap.guilds?.items ?? [];
+      avgLatency = snap.llm?.average_seconds ?? null;
+      format = buildFormat(status, avgLatency);
+      apiLabel = "ok";
     } catch (e) {
-      linkLabel = `ipc-fail`;
-      console.error("momoka_conn_info failed", e);
+      apiLabel = briefError(e);
+      console.error("momoka_snapshot failed", e);
     }
-  })();
+  }
+
+  onMount(() => {
+    void (async () => {
+      try {
+        const info = await getConnInfo();
+        linkLabel = info.hasAuth ? `ok :${info.port}` : `no-token :${info.port}`;
+      } catch (e) {
+        linkLabel = "ipc-fail";
+        apiLabel = "ipc-fail";
+        console.error("momoka_conn_info failed", e);
+      }
+    })();
+
+    const loop = async () => {
+      if (cancelled) return;
+      await tickSnapshot();
+      if (!cancelled) {
+        pollTimer = window.setTimeout(loop, POLL_MS);
+      }
+    };
+    void loop();
+  });
 
   onDestroy(() => {
+    cancelled = true;
+    if (pollTimer !== undefined) window.clearTimeout(pollTimer);
     logStore.destroy();
   });
 
-  const statusSnap = $derived($statusStore);
   const logSnap = $derived($logStore);
 
   const isOverview = $derived(nav === "overview");
@@ -92,13 +140,14 @@
 <div class="app">
   <header class="topbar">
     <StatusBar
-      servers={statusSnap.format.servers}
-      vc={statusSnap.format.vc}
-      llm={statusSnap.format.llm}
-      ping={statusSnap.format.ping}
-      uptime={statusSnap.format.uptime}
-      alive={statusSnap.status?.alive}
+      servers={format.servers}
+      vc={format.vc}
+      llm={format.llm}
+      ping={format.ping}
+      uptime={format.uptime}
+      alive={status?.alive}
       {linkLabel}
+      {apiLabel}
     />
     <ShutdownButton />
   </header>
@@ -107,13 +156,13 @@
     <div class="content-slot">
       {#if nav === "overview"}
         <OpsDashboard
-          vc={statusSnap.vc}
-          guilds={statusSnap.guilds}
-          avgLatency={statusSnap.format.avgLatency}
+          {vc}
+          {guilds}
+          avgLatency={format.avgLatency}
           {llmFeed}
           {guildEvents}
-          uptime={statusSnap.format.uptime}
-          alive={statusSnap.status?.alive}
+          uptime={format.uptime}
+          alive={status?.alive}
         />
       {:else if nav === "privacy"}
         <UserDataPanel />
