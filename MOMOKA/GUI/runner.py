@@ -437,7 +437,7 @@ def _write_conn_file(port: int, token: str) -> Optional[Path]:
 
 def _wait_api_ready(port: int, token: str, timeout_sec: float = 15.0) -> bool:
     """Host GUI /status が 200 を返すまで待つ。"""
-    # ヘルス確認 URL
+    # ヘルス確認 URL（UI は同ポートの / で配信）
     url = f"http://127.0.0.1:{port}/host-gui/api/status"
     # 期限
     deadline = time.monotonic() + timeout_sec

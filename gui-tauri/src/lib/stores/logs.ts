@@ -1,11 +1,6 @@
 import { writable } from "svelte/store";
 import { apiGet, hostHasAuth } from "$lib/api";
-import {
-  onLogSse,
-  onLogSseEnd,
-  startLogSse,
-  stopLogSse,
-} from "$lib/host";
+import { apiUrl, getToken } from "$lib/session";
 
 export type LogEntry = {
   name: string;
@@ -87,7 +82,7 @@ export type LogState = {
   restored: boolean;
 };
 
-/** ログ SSE + 履歴補完 store */
+/** ログ SSE（EventSource）+ 履歴補完 store */
 export function createLogStore(maxLines = 10000) {
   const { subscribe, set, update } = writable<LogState>({
     entries: [],
@@ -101,7 +96,7 @@ export function createLogStore(maxLines = 10000) {
   let flushTimer: number | undefined;
   let pending: Omit<LogEntry, "id">[] = [];
   let live = false;
-  let unsubs: Array<() => void> = [];
+  let es: EventSource | null = null;
 
   const flushPending = () => {
     flushTimer = undefined;
@@ -150,82 +145,70 @@ export function createLogStore(maxLines = 10000) {
     }
   };
 
-  const teardownSse = async () => {
-    for (const off of unsubs) {
+  const teardownSse = () => {
+    if (es) {
       try {
-        off();
+        es.close();
       } catch {
         /* ignore */
       }
-    }
-    unsubs = [];
-    try {
-      await stopLogSse();
-    } catch {
-      /* ignore */
+      es = null;
     }
     live = false;
     update((s) => ({ ...s, connected: false }));
   };
 
-  const connectSse = async () => {
-    if (closed) return;
-    const ok = await hostHasAuth();
-    if (!ok || closed) return;
-    await teardownSse();
+  const connectSse = () => {
+    if (closed || !hostHasAuth()) return;
+    teardownSse();
+    const url = `${apiUrl("/logs/stream")}?token=${encodeURIComponent(getToken())}`;
     try {
-      const offData = await onLogSse((raw) => {
-        const row = raw as Omit<LogEntry, "id"> & { type?: string };
-        if (row && typeof row.message === "string") {
-          pushLive(row);
+      es = new EventSource(url);
+      es.onopen = () => {
+        live = true;
+        update((s) => ({ ...s, connected: true }));
+      };
+      es.onmessage = (ev) => {
+        try {
+          const row = JSON.parse(ev.data) as Omit<LogEntry, "id"> & {
+            type?: string;
+          };
+          if (row && typeof row.message === "string") {
+            pushLive(row);
+          }
+        } catch {
+          /* ignore bad frame */
         }
-      });
-      const offEnd = await onLogSseEnd(() => {
+      };
+      es.onerror = () => {
         live = false;
         update((s) => ({ ...s, connected: false }));
+        teardownSse();
         if (!closed) {
-          retry = window.setTimeout(() => {
-            void connectSse();
-          }, LIVE_RETRY_MS);
+          retry = window.setTimeout(() => connectSse(), LIVE_RETRY_MS);
         }
-      });
-      unsubs = [offData, offEnd];
-      await startLogSse();
-      if (closed) {
-        await teardownSse();
-        return;
-      }
-      live = true;
-      update((s) => ({ ...s, connected: true }));
-    } catch {
-      live = false;
-      update((s) => ({ ...s, connected: false }));
+      };
+    } catch (e) {
+      console.error("EventSource failed", e);
       if (!closed) {
-        retry = window.setTimeout(() => {
-          void connectSse();
-        }, LIVE_RETRY_MS);
+        retry = window.setTimeout(() => connectSse(), LIVE_RETRY_MS);
       }
     }
   };
 
   void (async () => {
-    const ok = await hostHasAuth();
-    if (!ok || closed) {
+    if (!hostHasAuth() || closed) {
       update((s) => ({ ...s, restored: true }));
       return;
     }
     await loadHistory("replace");
     if (closed) return;
-    void connectSse();
+    connectSse();
     const schedulePoll = () => {
       if (closed) return;
       const isLive = live;
       pollTimer = window.setTimeout(async () => {
         if (closed) return;
-        if (document.hidden) {
-          schedulePoll();
-          return;
-        }
         await loadHistory(
           "append",
           Math.min(
@@ -248,7 +231,7 @@ export function createLogStore(maxLines = 10000) {
       if (pollTimer) window.clearTimeout(pollTimer);
       if (flushTimer) window.clearTimeout(flushTimer);
       pending = [];
-      void teardownSse();
+      teardownSse();
       set({ entries: [], connected: false, restored: true });
     },
   };

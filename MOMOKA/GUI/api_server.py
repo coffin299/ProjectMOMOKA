@@ -440,14 +440,18 @@ def create_host_gui_app(
     def require_token(
         authorization: Optional[str] = Header(default=None),
         x_momoka_host_token: Optional[str] = Header(default=None),
+        token: Optional[str] = Query(default=None),
     ) -> None:
-        """REST 用トークン検証。不一致は 401。"""
-        # Bearer または専用ヘッダ
-        token = _extract_bearer(authorization) or (
+        """REST 用トークン検証。不一致は 401。
+
+        Bearer / X-Momoka-Host-Token / ?token=（EventSource 用）を許可。
+        """
+        # Bearer または専用ヘッダまたはクエリ
+        provided = _extract_bearer(authorization) or (
             x_momoka_host_token.strip() if x_momoka_host_token else None
-        )
+        ) or (token.strip() if token else None)
         # 不一致（比較例外含む）は常に 401
-        if not _tokens_match(token, auth.token):
+        if not _tokens_match(provided, auth.token):
             # 認証失敗
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -836,7 +840,7 @@ def create_host_gui_app(
     # ルーター登録
     app.include_router(router)
 
-    # ビルド済み UI のフォールバック配信（本番 Tauri は同梱アセットを使う）
+    # ビルド済み UI を Host API と同じ origin で配信（Tauri はここに navigate）
     dist_dir = Path(__file__).resolve().parents[2] / "gui-tauri" / "build"
     if dist_dir.is_dir():
         assets = dist_dir / "_app"
@@ -849,7 +853,7 @@ def create_host_gui_app(
 
         @app.get("/")
         def _index() -> FileResponse:
-            """開発 / フォールバック用インデックス。"""
+            """ホスト GUI 本体（Tauri WebView が開く）。"""
             # 旧バンドルキャッシュを避ける
             return FileResponse(
                 dist_dir / "index.html",
@@ -858,6 +862,15 @@ def create_host_gui_app(
                     "Pragma": "no-cache",
                 },
             )
+    else:
+        @app.get("/")
+        def _index_missing() -> Dict[str, Any]:
+            """UI 未ビルド時の案内。"""
+            return {
+                "ok": False,
+                "error": "gui_ui_not_built",
+                "hint": "Run startMOMOKA.bat to build gui-tauri (gui-tauri/build).",
+            }
 
     # 返す
     return app

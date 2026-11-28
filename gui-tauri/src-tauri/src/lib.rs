@@ -126,6 +126,18 @@ pub fn run() {
             let handle = app.handle().clone();
             let state = app.state::<Arc<AppState>>().inner().clone();
             browser::clear_main_cache(&handle);
+            // メイン WebView を Host API 配信 UI へ向ける（HTTP fetch でデータ取得）
+            if state.cfg.has_auth() {
+                let ui = format!(
+                    "http://{}:{}/?t={}",
+                    state.cfg.host, state.cfg.port, state.cfg.token
+                );
+                if let Ok(parsed) = url::Url::parse(&ui) {
+                    if let Some(win) = handle.get_webview_window("main") {
+                        let _ = win.navigate(parsed);
+                    }
+                }
+            }
             watchdog::start_api_watchdog(handle.clone(), state.clone());
             tauri::async_runtime::spawn({
                 let handle = handle.clone();

@@ -3,6 +3,9 @@
   "identifier": "default",
   "description": "Capability for the main Host GUI window",
   "windows": ["main", "momoka-browser"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
   "permissions": [
     "core:default",
     "allow-momoka-commands",

@@ -11,16 +11,20 @@ Bot 運用者向けホスト GUI。ギルド管理者ダッシュボードとは
 
 `gui-tauri.exe` は `.gitignore` 対象です。別 PC では clone 後に必ず一度ビルドが必要です。
 
-Host API 接続は `MOMOKA_HOST_GUI_*` 環境変数、`--momoka-port` / `--momoka-token` CLI、および `momoka-host-gui.conn.json`（exe 隣 / TEMP / data）の三重渡しです。メトリクスは `GET /host-gui/api/snapshot` を `momoka_snapshot` IPC で取得します。
+## アーキテクチャ（再構成）
+
+Tauri は **シェル + Web タブ**専用。メトリクス / ログは Host API へ **HTTP 直結**します。
+
+1. FastAPI が `gui-tauri/build` を `http://127.0.0.1:<port>/` で配信
+2. Tauri 起動時にメイン WebView を `http://127.0.0.1:<port>/?t=<token>` へ navigate
+3. フロントは `fetch(/host-gui/api/snapshot)` と `EventSource(/logs/stream?token=)` を使用
+4. YouTube / ニコニコ WebView・cookie だけ Tauri IPC
+
+接続情報は従来どおり env / CLI / conn JSON。`MOMOKA_PARENT_PID` + Job Object + API watchdog で孤児 GUI を防ぎます。
 
 ステータスバー:
-- `link` … トークン有無（`ok :ポート` / `no-token` / `ipc-fail`）
+- `link` … セッション（`ok :ポート` / `no-token` 等）
 - `api` … snapshot 成否（`ok` または短いエラー文）
-
-寿命制御:
-- Windows Job Object（親 Python 終了で GUI も終了）
-- `MOMOKA_PARENT_PID` 監視
-- Host API watchdog（起動 grace 後の連続失敗で終了）
 
 `startMOMOKA.bat` は `gui-tauri/GUI_BUILD_ID` が変わると release を再ビルドします。
 

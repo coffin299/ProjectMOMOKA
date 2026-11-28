@@ -1,28 +1,46 @@
-import { apiRequest, hostHasAuth } from "./host";
+import { apiUrl, getToken, hasSession } from "./session";
 
-export { hostHasAuth };
+export { hasSession as hostHasAuth };
 
-async function viaIpc<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await apiRequest({ method, path, body });
-  if (!res?.ok) {
-    throw new Error(`${method} ${path} failed: ${res?.status ?? "?"}`);
+async function viaHttp<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (!hasSession()) {
+    throw new Error("no-session");
   }
-  // data 優先、旧 json フィールドも許容
-  return (res.data ?? res.json) as T;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${getToken()}`,
+    Accept: "application/json",
+  };
+  const init: RequestInit = { method, headers, cache: "no-store" };
+  if (body !== undefined && method !== "GET" && method !== "HEAD") {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(apiUrl(path), init);
+  const text = await res.text();
+  if (!res.ok) {
+    const brief = text.slice(0, 120);
+    throw new Error(`http ${res.status}: ${brief || res.statusText}`);
+  }
+  if (!text) return null as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("json-parse");
+  }
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  return viaIpc<T>("GET", path);
+  return viaHttp<T>("GET", path);
 }
 
 export async function apiPost<T>(path: string): Promise<T> {
-  return viaIpc<T>("POST", path);
+  return viaHttp<T>("POST", path);
 }
 
 export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
-  return viaIpc<T>("POST", path, body);
+  return viaHttp<T>("POST", path, body);
 }
 
 export async function apiPut<T>(path: string, body: unknown): Promise<T> {
-  return viaIpc<T>("PUT", path, body);
+  return viaHttp<T>("PUT", path, body);
 }

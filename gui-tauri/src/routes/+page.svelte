@@ -12,7 +12,6 @@
     buildFormat,
     emptyFormat,
     type GuildItem,
-    type SnapshotPayload,
     type StatusFormat,
     type StatusPayload,
     type VcItem,
@@ -24,6 +23,7 @@
     type LogEntry,
   } from "$lib/stores/logs";
   import { getConnInfo, getSnapshot } from "$lib/host";
+  import { initSession } from "$lib/session";
   import "$lib/styles/discord-theme.css";
 
   type LogNavId = Exclude<NavId, "overview" | "privacy" | "web">;
@@ -31,6 +31,9 @@
   const FEED_ROWS = 80;
   const EMPTY_ENTRIES: LogEntry[] = [];
   const POLL_MS = 1000;
+
+  // 最初に URL から token / origin を確定（ログ store より前）
+  const boot = initSession();
 
   const isLlmIo = (e: LogEntry) =>
     e.message.includes("[USER_INPUT]") || e.message.includes("[LLM_RESPONSE]");
@@ -52,8 +55,8 @@
     error: "WARNING",
   });
   let autoScroll = $state(true);
-  let linkLabel = $state("checking…");
-  let apiLabel = $state("…");
+  let linkLabel = $state(boot.ok ? "…" : boot.reason);
+  let apiLabel = $state(boot.ok ? "…" : boot.reason);
   let status = $state<StatusPayload | null>(null);
   let vc = $state<VcItem[]>([]);
   let guilds = $state<GuildItem[]>([]);
@@ -66,13 +69,12 @@
 
   function briefError(err: unknown): string {
     const raw = err instanceof Error ? err.message : String(err ?? "error");
-    const text = raw.replace(/^[^:]+:\s*/, "").trim() || raw;
-    return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+    return raw.length > 48 ? `${raw.slice(0, 48)}…` : raw;
   }
 
   async function tickSnapshot() {
     try {
-      const snap = await getSnapshot<SnapshotPayload>();
+      const snap = await getSnapshot();
       status = snap.status ?? null;
       vc = snap.vc?.items ?? [];
       guilds = snap.guilds?.items ?? [];
@@ -81,19 +83,19 @@
       apiLabel = "ok";
     } catch (e) {
       apiLabel = briefError(e);
-      console.error("momoka_snapshot failed", e);
+      console.error("snapshot failed", e);
     }
   }
 
   onMount(() => {
+    if (!boot.ok) return;
+
     void (async () => {
       try {
         const info = await getConnInfo();
-        linkLabel = info.hasAuth ? `ok :${info.port}` : `no-token :${info.port}`;
+        linkLabel = `ok :${info.port}`;
       } catch (e) {
-        linkLabel = "ipc-fail";
-        apiLabel = "ipc-fail";
-        console.error("momoka_conn_info failed", e);
+        linkLabel = briefError(e);
       }
     })();
 
@@ -154,7 +156,13 @@
   <div class="body">
     <Sidebar active={nav} onSelect={(id) => (nav = id)} />
     <div class="content-slot">
-      {#if nav === "overview"}
+      {#if !boot.ok}
+        <div class="boot-msg">
+          セッション未確立（{boot.reason}）。Tauri が
+          <code>http://127.0.0.1:&lt;port&gt;/?t=…</code>
+          を開いているか確認してください。
+        </div>
+      {:else if nav === "overview"}
         <OpsDashboard
           {vc}
           {guilds}
@@ -180,7 +188,18 @@
           live={logSnap.connected}
         />
       {/if}
-      <WebPanel visible={nav === "web"} />
+      <WebPanel visible={nav === "web" && boot.ok} />
     </div>
   </div>
 </div>
+
+<style>
+  .boot-msg {
+    padding: 24px;
+    color: #b5bac1;
+    font-size: 14px;
+  }
+  .boot-msg code {
+    color: #dbdee1;
+  }
+</style>
