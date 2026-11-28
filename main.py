@@ -740,7 +740,8 @@ if __name__ == "__main__":
     
     # ログビューアをスレッドで起動する
     log_viewer_thread = run_log_viewer_thread(log_queue)
-    print("ホスト GUI（Tauri）を起動しました。")
+    # 成否は runner 側が詳細ログを出す（ここは起動要求のみ）
+    print("ホスト GUI の起動を要求しました（詳細は直後のログ）。")
 
     # --- 設定の読み込みとバリデーション ---
     from MOMOKA.config.loader import load_merged_config, validate_bot_tokens

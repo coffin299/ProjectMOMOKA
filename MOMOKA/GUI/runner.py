@@ -388,20 +388,28 @@ def _launch_tauri(port: int, token: str, generation: int) -> Optional[subprocess
             # 不採用
             return None
 
+        # 接続情報は env + CLI の両方で渡す（DETACHED でも取りこぼしにくくする）
+        launch_args_tail = [
+            f"--momoka-host=127.0.0.1",
+            f"--momoka-port={port}",
+            f"--momoka-token={token}",
+        ]
         # 1) release バイナリ
         if release_exe.is_file():
+            print(f"ホスト GUI を起動します: {release_exe}")
             return _adopt(
                 _popen_detached(
-                    [str(release_exe)],
+                    [str(release_exe), *launch_args_tail],
                     cwd=str(_GUI_TAURI_DIR),
                     env=env,
                 )
             )
         # 2) debug バイナリ（開発用）
         if debug_exe.is_file():
+            print(f"ホスト GUI を起動します（debug）: {debug_exe}")
             return _adopt(
                 _popen_detached(
-                    [str(debug_exe)],
+                    [str(debug_exe), *launch_args_tail],
                     cwd=str(_GUI_TAURI_DIR),
                     env=env,
                 )
@@ -413,8 +421,11 @@ def _launch_tauri(port: int, token: str, generation: int) -> Optional[subprocess
         return None
     # 手段なし
     print(
-        "WARNING: Tauri GUI を起動できませんでした。"
-        "Rust / gui-tauri のビルドを確認してください（Bot は継続）。"
+        "WARNING: Tauri GUI バイナリが見つかりません。"
+        f"（探したパス: {release_exe}）"
+        " startMOMOKA.bat で初回ビルドするか、"
+        "Rust / Node 導入後に `cd gui-tauri && npm run tauri:build -- --no-bundle` を実行してください。"
+        "（Bot は継続）"
     )
     return None
 
@@ -443,8 +454,18 @@ def run_log_viewer_thread(log_queue) -> threading.Thread:
                     return
             # 起動ログ（トークンは出さない）
             print(f"ホスト GUI API を 127.0.0.1:{port} で起動しました。")
-            # Tauri
-            _launch_tauri(port, token, generation)
+            # Tauri（失敗時は WARNING を _launch_tauri が出す）
+            launched = _launch_tauri(port, token, generation)
+            if launched is not None:
+                print(
+                    f"ホスト GUI（Tauri）プロセスを起動しました"
+                    f"（PID {launched.pid}, API 127.0.0.1:{port}）。"
+                )
+            else:
+                print(
+                    "WARNING: ホスト GUI ウィンドウは起動していません。"
+                    "ログ上の WARNING を確認してください。"
+                )
         except Exception as e:
             # GUI 失敗でも Bot 本体は止めない
             print(f"ホスト GUI でエラーが発生しました: {e}")

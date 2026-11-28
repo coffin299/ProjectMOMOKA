@@ -22,14 +22,44 @@ pub struct HostConfig {
 }
 
 impl HostConfig {
-    /// 環境変数から構築する。
+    /// 環境変数と CLI 引数から構築する（CLI 優先）。
+    ///
+    /// Windows の DETACHED 起動でも確実に渡るよう、
+    /// `--momoka-host` / `--momoka-port` / `--momoka-token` を受け付ける。
     pub fn from_env() -> Self {
-        // ホスト（既定 127.0.0.1）
-        let host = env::var("MOMOKA_HOST_GUI_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-        // ポート（既定 18765）
-        let port = env::var("MOMOKA_HOST_GUI_PORT").unwrap_or_else(|_| "18765".into());
-        // トークン（無ければ空）
-        let token = env::var("MOMOKA_HOST_GUI_TOKEN").unwrap_or_default();
+        // 環境変数の既定値
+        let mut host = env::var("MOMOKA_HOST_GUI_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+        let mut port = env::var("MOMOKA_HOST_GUI_PORT").unwrap_or_else(|_| "18765".into());
+        let mut token = env::var("MOMOKA_HOST_GUI_TOKEN").unwrap_or_default();
+        // CLI で上書き（runner が付与）
+        let args: Vec<String> = env::args().collect();
+        let mut i = 1usize;
+        while i < args.len() {
+            let a = &args[i];
+            if let Some(v) = a.strip_prefix("--momoka-host=") {
+                host = v.to_string();
+            } else if a == "--momoka-host" {
+                if let Some(v) = args.get(i + 1) {
+                    host = v.clone();
+                    i += 1;
+                }
+            } else if let Some(v) = a.strip_prefix("--momoka-port=") {
+                port = v.to_string();
+            } else if a == "--momoka-port" {
+                if let Some(v) = args.get(i + 1) {
+                    port = v.clone();
+                    i += 1;
+                }
+            } else if let Some(v) = a.strip_prefix("--momoka-token=") {
+                token = v.to_string();
+            } else if a == "--momoka-token" {
+                if let Some(v) = args.get(i + 1) {
+                    token = v.clone();
+                    i += 1;
+                }
+            }
+            i += 1;
+        }
         Self { host, port, token }
     }
 

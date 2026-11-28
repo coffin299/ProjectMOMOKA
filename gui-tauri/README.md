@@ -4,9 +4,14 @@ Bot 運用者向けホスト GUI。ギルド管理者ダッシュボードとは
 
 ## 要件
 
-- Node.js 20+
-- Rust / cargo（[rustup](https://rustup.rs/)）
-- Windows: WebView2 Runtime（通常は OS 同梱）
+- Node.js 20+（**初回ビルド時**）
+- Rust / cargo（[rustup](https://rustup.rs/)、**初回ビルド時**）
+- Visual Studio Build Tools（「C++ によるデスクトップ開発」、**初回ビルド時**）
+- Windows: WebView2 Runtime（**実行時**。通常は OS 同梱）
+
+`gui-tauri.exe` は `.gitignore` 対象です。別 PC では clone 後に必ず一度ビルドが必要です。
+
+Bot は `MOMOKA_HOST_GUI_*` 環境変数と `--momoka-port` / `--momoka-token` 引数で Host API へ接続します。
 
 ## 開発
 
