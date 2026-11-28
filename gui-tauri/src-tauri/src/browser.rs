@@ -211,31 +211,31 @@ pub async fn load_yt_login(state: &AppState) {
     {
         Ok(res) if res.ok => {
             let email = res
-                .json
+                .data
                 .get("email")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
             let password = res
-                .json
+                .data
                 .get("password")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
             let reload_minutes = res
-                .json
+                .data
                 .get("reload_minutes")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(60)
                 .max(15);
             let niconico_email = res
-                .json
+                .data
                 .get("niconico_email")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
             let niconico_password = res
-                .json
+                .data
                 .get("niconico_password")
                 .and_then(|v| v.as_str())
                 .unwrap_or("")

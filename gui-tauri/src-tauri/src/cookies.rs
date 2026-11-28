@@ -153,7 +153,7 @@ pub async fn export_site_cookies(
         );
         return Ok(());
     }
-    if res.json.get("error").and_then(|v| v.as_str()) == Some("not_logged_in") {
+    if res.data.get("error").and_then(|v| v.as_str()) == Some("not_logged_in") {
         if !quiet_if_logged_out {
             let _ = app.emit(
                 "momoka:youtube-cookie-status",
@@ -163,19 +163,19 @@ pub async fn export_site_cookies(
         return Ok(());
     }
     let changed = res
-        .json
+        .data
         .get("changed")
         .and_then(|v| v.as_array())
         .map(|a| a.len())
         .unwrap_or(0);
-    if changed == 0 && res.json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if changed == 0 && res.data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         let _ = app.emit(
             "momoka:youtube-cookie-status",
             json!({ "ok": true, "message": fresh }),
         );
         return Ok(());
     }
-    let ok = res.json.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+    let ok = res.data.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
     let _ = app.emit(
         "momoka:youtube-cookie-status",
         json!({
